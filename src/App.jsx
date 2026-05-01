@@ -276,16 +276,22 @@ const defaultDB = () => ({
 });
 
 // ─── Court Schedule Generator ─────────────────────────────────────────────────
-const COURT_NAMES = ["Court 1", "Court 2", "Court 3", "Court 4"];
+const MAX_COURTS = 8;
 const MIN_PER_COURT = 4;
 const MAX_PER_COURT = 5;
+// Returns "Court 1", "Court 2", etc. for any index
+function courtName(i) { return `Court ${i + 1}`; }
+function courtNames(count) { return Array.from({ length: count }, (_, i) => courtName(i)); }
+// Backward-compat constant referencing the default 4-court setup
+const COURT_NAMES = courtNames(4);
 
-function distributePlayersToCourts(n) {
-  for (let numCourts = Math.min(4, Math.floor(n / MIN_PER_COURT)); numCourts >= 1; numCourts--) {
-    const sizes = Array(numCourts).fill(MIN_PER_COURT);
-    let remaining = n - numCourts * MIN_PER_COURT;
+function distributePlayersToCourts(n, maxCourts = 4) {
+  // Try every court-count from largest possible down to 1
+  for (let nc = Math.min(maxCourts, Math.floor(n / MIN_PER_COURT)); nc >= 1; nc--) {
+    const sizes = Array(nc).fill(MIN_PER_COURT);
+    let remaining = n - nc * MIN_PER_COURT;
     let i = 0;
-    while (remaining > 0 && i < numCourts) { if (sizes[i] < MAX_PER_COURT) { sizes[i]++; remaining--; } i++; }
+    while (remaining > 0 && i < nc) { if (sizes[i] < MAX_PER_COURT) { sizes[i]++; remaining--; } i++; }
     if (remaining === 0) return sizes;
   }
   return null;
@@ -342,10 +348,12 @@ function doublesMatches(group, weekSeed) {
 }
 
 // ─── Master schedule generator ───────────────────────────────────────────────
-function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles") {
+function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", numCourts = 4) {
   const n = playerIds.length;
-  const sizes = distributePlayersToCourts(n);
-  if (!sizes) return { error: `Cannot schedule ${n} players. Need 4–20 players (4–5 per court, up to 4 courts).` };
+  const sizes = distributePlayersToCourts(n, numCourts);
+  const minNeeded = MIN_PER_COURT;
+  const maxAllowed = numCourts * MAX_PER_COURT;
+  if (!sizes) return { error: `Cannot schedule ${n} players. Need ${minNeeded}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).` };
 
   const isDoubles = format === "Doubles" || format === "Mixed Doubles";
 
@@ -397,12 +405,12 @@ function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles") 
         id: `w${week + 1}_c${c}_m${mi}`,
         ...m,
         week: week + 1,
-        court: COURT_NAMES[c],
+        court: courtName(c),
         date: dateStr,
         format: isDoubles ? "doubles" : "singles",
       }));
 
-      courts.push({ courtName: COURT_NAMES[c], players: group, matches });
+      courts.push({ courtName: courtName(c), players: group, matches });
     }
     schedule.push({ week: week + 1, date: dateStr, courts });
   }
@@ -504,7 +512,7 @@ function PlayerForm({ onSubmit, onCancel, initial }) {
 }
 
 function LeagueForm({ initial, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
+  const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", numCourts: initial?.numCourts || 4, location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function handleSubmit() {
     if (!form.name.trim()) return alert("League name required");
@@ -521,7 +529,17 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
         <div><label style={S.label}>Format</label><select style={S.input} value={form.format} onChange={e => set("format", e.target.value)}><option>Singles</option><option>Doubles</option><option>Mixed Doubles</option></select></div>
         <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option></select></div>
       </div>
-      <div><label style={S.label}>Location</label><input style={S.input} value={form.location} onChange={e => set("location", e.target.value)} placeholder="Community Center" /></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <label style={S.label}>Number of Courts *</label>
+          <select style={S.input} value={form.numCourts} onChange={e => set("numCourts", +e.target.value)}>
+            {Array.from({ length: MAX_COURTS }, (_, i) => i + 1).map(n => (
+              <option key={n} value={n}>{n} court{n!==1?"s":""} (max {n * MAX_PER_COURT} players)</option>
+            ))}
+          </select>
+        </div>
+        <div><label style={S.label}>Location</label><input style={S.input} value={form.location} onChange={e => set("location", e.target.value)} placeholder="Community Center" /></div>
+      </div>
       <div><label style={S.label}>Description</label><textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} value={form.description} onChange={e => set("description", e.target.value)} placeholder="Optional…" /></div>
       <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
         <button style={S.btn("secondary")} onClick={onCancel}>Cancel</button>
@@ -992,9 +1010,12 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
   const weeks = schedule.weeks || [];
   const totalMatches = weeks.reduce((s, w) => s + w.courts.reduce((cs, ct) => cs + ct.matches.length, 0), 0);
   const n = regs.length;
-  const sizes = distributePlayersToCourts(n);
+  const numCourts = league.numCourts || 4;
+  const maxPlayers = numCourts * MAX_PER_COURT;
+  const sizes = distributePlayersToCourts(n, numCourts);
   const capacityOk = !!sizes;
   const paidCount = regs.filter(r => r.paid).length;
+  const courtList = courtNames(numCourts);
 
   return (
     <div>
@@ -1024,15 +1045,16 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
             <div style={{ ...S.card, marginBottom: 16, padding: "14px 16px", background: "var(--color-background-secondary)" }}>
               <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Court Assignments</span>
-                <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{n} of 20 players (ideal: 5 per court)</span>
+                <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{n} of {maxPlayers} players (ideal: {MAX_PER_COURT} per court)</span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-                {COURT_NAMES.map((name, ci) => {
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(numCourts, 4)}, 1fr)`, gap: 8 }}>
+                {courtList.map((name, ci) => {
                   const sz = sizes ? sizes[ci] : 0;
                   const full = sz === MAX_PER_COURT;
+                  const color = COURT_COLORS[ci % COURT_COLORS.length];
                   return (
                     <div key={name} style={{ textAlign: "center" }}>
-                      <div style={{ height: 44, borderRadius: 8, background: sz ? COURT_COLORS[ci] : "var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", opacity: sz ? 1 : 0.35 }}>
+                      <div style={{ height: 44, borderRadius: 8, background: sz ? color : "var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", opacity: sz ? 1 : 0.35 }}>
                         {sz ? (
                           <div>
                             <span style={{ color: "#fff", fontSize: 20, fontWeight: 700 }}>{sz}</span>
@@ -1040,14 +1062,14 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
                           </div>
                         ) : <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>–</span>}
                       </div>
-                      <p style={{ margin: "5px 0 0", fontSize: 11, color: sz ? COURT_COLORS[ci] : "var(--color-text-tertiary)", fontWeight: sz ? 600 : 400 }}>{name}</p>
+                      <p style={{ margin: "5px 0 0", fontSize: 11, color: sz ? color : "var(--color-text-tertiary)", fontWeight: sz ? 600 : 400 }}>{name}</p>
                     </div>
                   );
                 })}
               </div>
-              {!capacityOk && n > 0 && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#A32D2D" }}>⚠ {n} players can't be evenly split. Need 4–20 total players.</p>}
-              {capacityOk && n < 20 && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#854F0B" }}>{20-n} more player{20-n!==1?"s":""} needed for 4 full courts of 5.</p>}
-              {capacityOk && n === 20 && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — 4 courts of 5 players each.</p>}
+              {!capacityOk && n > 0 && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#A32D2D" }}>⚠ {n} players can't be evenly split into {numCourts} court{numCourts!==1?"s":""}. Need {MIN_PER_COURT}–{maxPlayers} players.</p>}
+              {capacityOk && n < maxPlayers && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#854F0B" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
+              {capacityOk && n === maxPlayers && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
             </div>
 
             <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16 }}>
@@ -1233,7 +1255,7 @@ export default function App() {
   async function generateSchedule(leagueId) {
     const league = db.leagues[leagueId];
     const playerIds = getLeagueRegs(leagueId).map(r => r.playerId);
-    const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format);
+    const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, league.numCourts || 4);
     if (result.error) { showToast(result.error, "error"); return; }
     await action(() => dbWriteSchedule(leagueId, result));
     const numCourts = result.weeks[0]?.courts.length || 0;
@@ -1554,7 +1576,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
       <div style={{ background: "#0F6E56", color: "#fff", padding: "40px 24px 32px", textAlign: "center" }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>🏓</div>
         <h1 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 700, letterSpacing: "-1px" }}>Pickleball League Manager</h1>
-        <p style={{ margin: 0, opacity: 0.8, fontSize: 15 }}>4 courts · 4–5 players per court · weekly rotation</p>
+        <p style={{ margin: 0, opacity: 0.8, fontSize: 15 }}>Configurable courts · 4–5 players per court · weekly rotation</p>
       </div>
       <div style={{ maxWidth: 520, margin: "0 auto", padding: "24px 20px" }}>
         <div style={{ ...S.card, marginBottom: 16 }}>
