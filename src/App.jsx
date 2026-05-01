@@ -26,6 +26,22 @@ function playerFullName(p) {
   if (p.firstName) return `${p.firstName} ${p.lastName || ""}`.trim();
   return p.name || "Unknown";
 }
+// ─── Session persistence (browser localStorage) ─────────────────────────────
+const SESSION_KEY = "pickleball_session_v1";
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) || {};
+  } catch (_) { return {}; }
+}
+function saveSession(s) {
+  try {
+    if (!s || (!s.playerId && !s.adminEmail)) localStorage.removeItem(SESSION_KEY);
+    else localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  } catch (_) {}
+}
+
 function playerSearchString(p) {
   if (!p) return "";
   const parts = [p.firstName, p.lastName, p.name, p.email].filter(Boolean);
@@ -1190,11 +1206,21 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
   const [adminEmail, setAdminEmail] = useState(null); // email of logged-in commissioner
+  const [sessionRestored, setSessionRestored] = useState(false);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3200);
   };
+
+  function logout() {
+    setCurrentPlayer(null);
+    setAdminEmail(null);
+    setSelectedLeague(null);
+    setView("home");
+    saveSession(null);
+    showToast("Logged out");
+  }
 
   // Reload from DB — call after every successful write
   const reload = useCallback(async () => {
@@ -1220,6 +1246,56 @@ export default function App() {
       }
     })();
   }, []);
+
+  // Restore login session once db is loaded
+  useEffect(() => {
+    if (!db || sessionRestored) return;
+    const sess = loadSession();
+    if (sess.playerId && db.players[sess.playerId]) {
+      setCurrentPlayer(db.players[sess.playerId]);
+      // If they were last in admin view and are still authorized, drop them there
+      const adminList = (db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase());
+      if (sess.adminEmail && adminList.includes(sess.adminEmail.toLowerCase())) {
+        setAdminEmail(sess.adminEmail);
+        setView(sess.view === "admin" ? "admin" : "player");
+      } else {
+        setView("player");
+      }
+    } else if (sess.adminEmail) {
+      // Admin-only session (no player record) — verify they're still authorized
+      const adminList = (db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase());
+      if (adminList.includes(sess.adminEmail.toLowerCase())) {
+        setAdminEmail(sess.adminEmail);
+        setView("admin");
+      }
+    }
+    setSessionRestored(true);
+  }, [db, sessionRestored]);
+
+  // Persist session whenever the relevant state changes (after restore)
+  useEffect(() => {
+    if (!sessionRestored) return;
+    if (currentPlayer || adminEmail) {
+      saveSession({
+        playerId: currentPlayer?.id || null,
+        adminEmail: adminEmail || null,
+        view, // remember whether they were in player or admin mode
+      });
+    } else {
+      saveSession(null); // logged out
+    }
+  }, [currentPlayer, adminEmail, view, sessionRestored]);
+
+  // Keep currentPlayer fresh: when db reloads (e.g. after profile edit), pick up changes
+  useEffect(() => {
+    if (currentPlayer && db?.players[currentPlayer.id]) {
+      const fresh = db.players[currentPlayer.id];
+      // Only update if anything actually changed (avoid render loops)
+      if (JSON.stringify(fresh) !== JSON.stringify(currentPlayer)) {
+        setCurrentPlayer(fresh);
+      }
+    }
+  }, [db, currentPlayer]);
 
   // Wrap every action: set saving, run write, reload from DB, clear saving
   async function action(fn, successMsg) {
@@ -1435,7 +1511,11 @@ export default function App() {
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
             <h1 style={S.logo}>{league ? league.name : "Commissioner Panel"}</h1>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span><span style={{ fontSize: 12, opacity: 0.5 }}>{saving ? "Saving…" : "●"}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span>
+            <span style={{ fontSize: 12, opacity: 0.5 }}>{saving ? "Saving…" : "●"}</span>
+            <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={logout}>Log Out</button>
+          </div>
         </div>
 
         {league ? (
@@ -1546,7 +1626,7 @@ export default function App() {
       getCheckIn={getCheckIn} setCheckIn={setCheckIn}
       adminEmails={db.adminEmails || [SUPER_ADMIN]}
       onSwitchToAdmin={() => { setAdminEmail(currentPlayer.email.toLowerCase()); setView("admin"); }}
-      onBack={() => setView("home")} scoreModal={scoreModal} />;
+      onBack={() => setView("home")} onLogout={logout} scoreModal={scoreModal} />;
   }
 }
 
@@ -1679,7 +1759,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
 }
 
 // ─── PLAYER VIEW ──────────────────────────────────────────────────────────────
-function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, scoreModal }) {
+function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   const selectedLeague = selectedLeagueId ? db.leagues[selectedLeagueId] : null;
   const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.teal) : COLORS.teal;
@@ -1729,6 +1809,7 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
             </button>
           )}
           <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.15)", border: "0.5px solid rgba(255,255,255,0.4)", color: "#fff" }} onClick={() => setModal({ type: "joinLeague" })}>+ Join League</button>
+          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={onLogout} title="Log out">Log Out</button>
         </div>
       </div>
 
