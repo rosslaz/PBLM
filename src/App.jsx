@@ -6,6 +6,32 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPER_ADMIN = "ross.lazar@gmail.com";
 
+// Display name helper: "Jane S." from a player record.
+// Backward-compat: if a player only has the legacy single-field `name`, returns
+// it as-is. New players store firstName + lastName separately.
+function formatPlayerName(p) {
+  if (!p) return "Unknown";
+  if (p.firstName) {
+    const initial = p.lastName ? `${p.lastName[0].toUpperCase()}.` : "";
+    return initial ? `${p.firstName} ${initial}` : p.firstName;
+  }
+  return p.name || "Unknown";
+}
+function playerInitial(p) {
+  if (!p) return "?";
+  return (p.firstName?.[0] || p.name?.[0] || "?").toUpperCase();
+}
+function playerFullName(p) {
+  if (!p) return "Unknown";
+  if (p.firstName) return `${p.firstName} ${p.lastName || ""}`.trim();
+  return p.name || "Unknown";
+}
+function playerSearchString(p) {
+  if (!p) return "";
+  const parts = [p.firstName, p.lastName, p.name, p.email].filter(Boolean);
+  return parts.join(" ").toLowerCase();
+}
+
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env.local");
 }
@@ -473,17 +499,41 @@ function EmptyState({ msg }) {
 
 // ─── Forms ────────────────────────────────────────────────────────────────────
 function PlayerForm({ onSubmit, onCancel, initial }) {
-  const [form, setForm] = useState({ name: initial?.name || "", email: initial?.email || "", phone: initial?.phone || "", gender: initial?.gender || "", cscMember: initial?.cscMember || false });
+  // Backward-compat: if editing a legacy player with only `name`, split it
+  const [legacyFirst, legacyLast] = (() => {
+    if (!initial?.name || initial?.firstName) return ["", ""];
+    const parts = initial.name.trim().split(/\s+/);
+    return [parts[0] || "", parts.slice(1).join(" ")];
+  })();
+
+  const [form, setForm] = useState({
+    firstName: initial?.firstName ?? legacyFirst,
+    lastName: initial?.lastName ?? legacyLast,
+    email: initial?.email || "",
+    phone: initial?.phone || "",
+    gender: initial?.gender || "",
+    cscMember: initial?.cscMember || false,
+  });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function handleSubmit() {
-    if (!form.name.trim()) return alert("Name required");
+    if (!form.firstName.trim()) return alert("First name required");
+    if (!form.lastName.trim()) return alert("Last name required");
     if (!form.email.trim()) return alert("Email required");
     if (!form.gender) return alert("Please select a gender");
-    onSubmit(form);
+    // Also write the derived name for any legacy code paths that still read it
+    onSubmit({
+      ...form,
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      name: `${form.firstName.trim()} ${form.lastName.trim()}`,
+    });
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div><label style={S.label}>Full Name *</label><input style={S.input} value={form.name} onChange={e => set("name", e.target.value)} placeholder="Jane Smith" /></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><label style={S.label}>First Name *</label><input style={S.input} value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="Jane" /></div>
+        <div><label style={S.label}>Last Name *</label><input style={S.input} value={form.lastName} onChange={e => set("lastName", e.target.value)} placeholder="Smith" /></div>
+      </div>
       <div><label style={S.label}>Email *</label><input style={S.input} type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="jane@email.com" /></div>
       <div><label style={S.label}>Phone Number</label><input style={S.input} type="tel" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" /></div>
       <div>
@@ -975,7 +1025,7 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
 function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePlayer, onClose }) {
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const available = players.filter(p => !existing.includes(p.id) && (p.name.toLowerCase().includes(search.toLowerCase()) || p.email.toLowerCase().includes(search.toLowerCase())));
+  const available = players.filter(p => !existing.includes(p.id) && playerSearchString(p).includes(search.toLowerCase()));
   if (showNew) return <PlayerForm onSubmit={async d => { const id = await onCreatePlayer(d); if (id) await onRegister(leagueId, id); onClose(); }} onCancel={() => setShowNew(false)} />;
   return (
     <div>
@@ -984,10 +1034,10 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
         {available.map(p => (
           <div key={p.id} style={{ ...S.card, marginBottom: 8, cursor: "pointer", padding: "12px 16px" }} onClick={() => { onRegister(leagueId, p.id); onClose(); }}>
             <div style={S.row}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 14, flexShrink: 0 }}>{p.name[0].toUpperCase()}</div>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 14, flexShrink: 0 }}>{playerInitial(p)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{p.name}</p>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{formatPlayerName(p)}</p>
                   {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                   {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC</span>}
                 </div>
@@ -1096,10 +1146,10 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
               return (
                 <div key={r.key} style={S.card}>
                   <div style={{ ...S.row, marginBottom: 8 }}>
-                    <div style={{ width: 38, height: 38, borderRadius: "50%", background: c.light, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: c.bg, fontSize: 15, flexShrink: 0 }}>{p.name[0].toUpperCase()}</div>
+                    <div style={{ width: 38, height: 38, borderRadius: "50%", background: c.light, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: c.bg, fontSize: 15, flexShrink: 0 }}>{playerInitial(p)}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                        <p style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>{p.name}</p>
+                        <p style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>{formatPlayerName(p)}</p>
                         {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                         {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC</span>}
                         {r.paid ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid</span> : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Unpaid</span>}
@@ -1111,7 +1161,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
                     <button style={r.paid ? { ...S.btnSm("secondary"), color: "#854F0B", borderColor: "#854F0B", fontSize: 11 } : { ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onTogglePaid(p.id)}>
                       {r.paid ? "Undo Payment" : "Mark as Paid"}
                     </button>
-                    <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }} onClick={() => { if (confirm(`Remove ${p.name}?`)) onRemovePlayer(p.id); }}>Remove</button>
+                    <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }} onClick={() => { if (confirm(`Remove ${playerFullName(p)}?`)) onRemovePlayer(p.id); }}>Remove</button>
                   </div>
                 </div>
               );
@@ -1194,7 +1244,7 @@ export default function App() {
   const getLeagueRegs = lid => Object.values(db.registrations).filter(r => r.leagueId === lid);
   const getLeagueSchedule = lid => db.schedules[lid] || { weeks: [] };
   const getScore = (lid, week, mid) => db.scores[`${lid}_${week}_${mid}`] || null;
-  const getPlayerName = id => db.players[id]?.name || "Unknown";
+  const getPlayerName = id => formatPlayerName(db.players[id]);
 
   function getStandings(leagueId) {
     const regs = getLeagueRegs(leagueId);
@@ -1269,9 +1319,10 @@ export default function App() {
 
   async function createPlayer(data) {
     let newId = null;
+    const displayName = data.firstName ? `${data.firstName} ${data.lastName || ""}`.trim() : data.name;
     await action(async () => {
       newId = await dbCreatePlayer(data);
-    }, `Player "${data.name}" created!`);
+    }, `Player "${displayName}" created!`);
     setModal(null);
     return newId;
   }
@@ -1444,10 +1495,10 @@ export default function App() {
                 {players.map(p => (
                   <div key={p.id} style={S.card}>
                     <div style={{ ...S.row, marginBottom: 10 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 16, flexShrink: 0 }}>{p.name[0].toUpperCase()}</div>
+                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 16, flexShrink: 0 }}>{playerInitial(p)}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 2 }}>
-                          <p style={{ margin: 0, fontWeight: 600 }}>{p.name}</p>
+                          <p style={{ margin: 0, fontWeight: 600 }}>{formatPlayerName(p)}</p>
                           {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                           {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC Member</span>}
                           {p.paid ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid</span> : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Unpaid</span>}
@@ -1666,7 +1717,7 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
           <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={onBack}>←</button>
           <div>
             <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>Playing as</p>
-            <h1 style={{ ...S.logo, fontSize: 16 }}>{player.name}</h1>
+            <h1 style={{ ...S.logo, fontSize: 16 }}>{playerFullName(player)}</h1>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
