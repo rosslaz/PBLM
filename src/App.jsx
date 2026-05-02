@@ -460,30 +460,45 @@ function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", 
 }
 
 // ─── Color Themes ─────────────────────────────────────────────────────────────
+// CSC Pickleball brand palette — drawn from the club logo
+const CSC = {
+  blue:        "#1B6CC1",  // primary royal blue (logo background)
+  blueDark:    "#0E3A6B",  // dark blue (logo text/title)
+  blueLight:   "#E5F0FA",  // pale blue tint for backgrounds
+  green:       "#7FC93D",  // bright lime (logo dolphin/swoosh)
+  greenDark:   "#4F8C1B",  // accessible green for text/badges
+  yellow:      "#FFE82E",  // pickleball ball yellow
+};
+
 const COLORS = {
-  teal:   { bg: "#0F6E56", light: "#E1F5EE", accent: "#1D9E75", text: "#04342C" },
+  // CSC primary — used as the default theme everywhere
+  csc:    { bg: CSC.blue,   light: CSC.blueLight, accent: CSC.green, text: CSC.blueDark },
+  // Other per-league themes for visual differentiation
+  green:  { bg: CSC.greenDark, light: "#EAF6DC", accent: CSC.green, text: "#1F3D08" },
   coral:  { bg: "#D85A30", light: "#FAECE7", accent: "#993C1D", text: "#4A1B0C" },
-  blue:   { bg: "#185FA5", light: "#E6F1FB", accent: "#378ADD", text: "#042C53" },
   purple: { bg: "#534AB7", light: "#EEEDFE", accent: "#7F77DD", text: "#26215C" },
   amber:  { bg: "#BA7517", light: "#FAEEDA", accent: "#EF9F27", text: "#412402" },
+  // Backward-compat aliases for any existing leagues created with old keys
+  teal:   { bg: CSC.blue, light: CSC.blueLight, accent: CSC.green, text: CSC.blueDark },
+  blue:   { bg: CSC.blue, light: CSC.blueLight, accent: CSC.green, text: CSC.blueDark },
 };
-const LEAGUE_COLORS = ["teal", "coral", "blue", "purple", "amber"];
-const COURT_COLORS = ["#185FA5", "#0F6E56", "#D85A30", "#534AB7"];
+const LEAGUE_COLORS = ["csc", "green", "coral", "purple", "amber"];
+const COURT_COLORS = [CSC.blue, CSC.greenDark, "#D85A30", "#534AB7"];
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
   page: { minHeight: "100vh", background: "var(--color-background-tertiary)", fontFamily: "'Georgia','Times New Roman',serif" },
-  header: (color) => ({ background: color || "#0F6E56", color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }),
+  header: (color) => ({ background: color || CSC.blue, color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }),
   logo: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.5px", margin: 0 },
   card: { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "16px 20px", marginBottom: 12 },
-  btn: (v = "primary", color) => ({ background: v === "primary" ? (color || "#0F6E56") : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 500 }),
-  btnSm: (v = "primary", color) => ({ background: v === "primary" ? (color || "#0F6E56") : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 500 }),
+  btn: (v = "primary", color) => ({ background: v === "primary" ? (color || CSC.blue) : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 500 }),
+  btnSm: (v = "primary", color) => ({ background: v === "primary" ? (color || CSC.blue) : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 500 }),
   input: { width: "100%", padding: "8px 12px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" },
   label: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 4, display: "block" },
   row: { display: "flex", gap: 12, alignItems: "center" },
   section: { padding: "16px 20px" },
   tabBar: { display: "flex", gap: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 20px", background: "var(--color-background-primary)", overflowX: "auto" },
-  tab: (active, color) => ({ padding: "10px 16px", cursor: "pointer", fontSize: 14, border: "none", background: "transparent", fontFamily: "inherit", color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: active ? `2px solid ${color || "#0F6E56"}` : "2px solid transparent", fontWeight: active ? 500 : 400, whiteSpace: "nowrap" }),
+  tab: (active, color) => ({ padding: "10px 16px", cursor: "pointer", fontSize: 14, border: "none", background: "transparent", fontFamily: "inherit", color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: active ? `2px solid ${color || CSC.blue}` : "2px solid transparent", fontWeight: active ? 500 : 400, whiteSpace: "nowrap" }),
   badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 600, display: "inline-block" }; },
   modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 },
   modalBox: { background: "var(--color-background-primary)", borderRadius: 16, padding: "24px", maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto" },
@@ -506,7 +521,7 @@ function Modal({ title, onClose, children }) {
 
 function Toast({ toast }) {
   if (!toast) return null;
-  return <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "error" ? "#A32D2D" : "#0F6E56", color: "#fff", borderRadius: 999, padding: "10px 20px", fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>{toast.msg}</div>;
+  return <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "error" ? "#A32D2D" : CSC.blue, color: "#fff", borderRadius: 999, padding: "10px 20px", fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>{toast.msg}</div>;
 }
 
 function EmptyState({ msg }) {
@@ -561,7 +576,7 @@ function PlayerForm({ onSubmit, onCancel, initial }) {
         </select>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--color-background-secondary)", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer" }} onClick={() => set("cscMember", !form.cscMember)}>
-        <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${form.cscMember ? "#0F6E56" : "var(--color-border-secondary)"}`, background: form.cscMember ? "#0F6E56" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${form.cscMember ? CSC.blue : "var(--color-border-secondary)"}`, background: form.cscMember ? CSC.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           {form.cscMember && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>}
         </div>
         <div>
@@ -913,7 +928,7 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
               week={weekData.week} weekDate={weekData.date} />
           )}
           {weekData.courts.map((court, ci) => {
-            const courtColor = COURT_COLORS[ci] || "#0F6E56";
+            const courtColor = COURT_COLORS[ci] || CSC.blue;
             // For players: show only their own court; for commissioner: show all courts
             const onMyCourt = myId ? court.players.includes(myId) : true;
             if (myId && !onMyCourt) return null;
@@ -954,9 +969,9 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
                         {hasScore ? (
                           <>
-                            <span style={{ fontSize: 17, fontWeight: 700, color: sideAWon ? "#0F6E56" : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.homeScore}</span>
+                            <span style={{ fontSize: 17, fontWeight: 700, color: sideAWon ? CSC.blue : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.homeScore}</span>
                             <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
-                            <span style={{ fontSize: 17, fontWeight: 700, color: !sideAWon ? "#0F6E56" : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.awayScore}</span>
+                            <span style={{ fontSize: 17, fontWeight: 700, color: !sideAWon ? CSC.blue : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.awayScore}</span>
                           </>
                         ) : (
                           <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", padding: "0 6px" }}>vs</span>
@@ -992,7 +1007,7 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
 
 // ─── Standings ────────────────────────────────────────────────────────────────
 function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 0 }) {
-  const c = color || COLORS.teal;
+  const c = color || COLORS.csc;
   if (standings.length === 0) return <EmptyState msg={pendingWeeks > 0 ? `${pendingWeeks} week${pendingWeeks!==1?"s":""} of scores entered, but the commissioner hasn't locked any weeks yet. Standings appear once weeks are locked.` : "No results yet. Standings appear after the commissioner locks completed weeks."} />;
   return (
     <div>
@@ -1021,8 +1036,8 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
                     {getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
                   </td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",color:diff>=0?"#0F6E56":"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",fontWeight:600,color:"#0F6E56" }}>{s.wins}</td>
+                  <td style={{ padding:"10px 8px",textAlign:"center",color:diff>=0?CSC.blue:"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
+                  <td style={{ padding:"10px 8px",textAlign:"center",fontWeight:600,color:CSC.blue }}>{s.wins}</td>
                   <td style={{ padding:"10px 8px",textAlign:"center",color:"#A32D2D" }}>{s.losses}</td>
                   <td style={{ padding:"10px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsFor}</td>
                   <td style={{ padding:"10px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsAgainst}</td>
@@ -1050,7 +1065,7 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
         {available.map(p => (
           <div key={p.id} style={{ ...S.card, marginBottom: 8, cursor: "pointer", padding: "12px 16px" }} onClick={() => { onRegister(leagueId, p.id); onClose(); }}>
             <div style={S.row}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 14, flexShrink: 0 }}>{playerInitial(p)}</div>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 14, flexShrink: 0 }}>{playerInitial(p)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{formatPlayerName(p)}</p>
@@ -1072,7 +1087,7 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
 // ─── League Detail (commissioner) ─────────────────────────────────────────────
 function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, standings, onEdit, onDelete, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, getCheckIn }) {
   const [tab, setTab] = useState("schedule");
-  const c = COLORS[league.color] || COLORS.teal;
+  const c = COLORS[league.color] || COLORS.csc;
   const weeks = schedule.weeks || [];
   const totalMatches = weeks.reduce((s, w) => s + w.courts.reduce((cs, ct) => cs + ct.matches.length, 0), 0);
   const n = regs.length;
@@ -1477,7 +1492,7 @@ export default function App() {
   // ─── COMMISSIONER ─────────────────────────────────────────────────────────
   if (view === "admin") {
     const league = selectedLeague ? db.leagues[selectedLeague] : null;
-    const c = league ? (COLORS[league.color] || COLORS.teal) : COLORS.teal;
+    const c = league ? (COLORS[league.color] || COLORS.csc) : COLORS.teal;
     return (
       <div style={S.page}>
         <Toast toast={toast} />
@@ -1544,7 +1559,7 @@ export default function App() {
                 </div>
                 {leagues.length === 0 && <EmptyState msg="No leagues created yet." />}
                 {leagues.map(l => {
-                  const lc = COLORS[l.color] || COLORS.teal;
+                  const lc = COLORS[l.color] || COLORS.csc;
                   const regs = getLeagueRegs(l.id);
                   const sched = getLeagueSchedule(l.id);
                   return (
@@ -1575,7 +1590,7 @@ export default function App() {
                 {players.map(p => (
                   <div key={p.id} style={S.card}>
                     <div style={{ ...S.row, marginBottom: 10 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 16, flexShrink: 0 }}>{playerInitial(p)}</div>
+                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 16, flexShrink: 0 }}>{playerInitial(p)}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 2 }}>
                           <p style={{ margin: 0, fontWeight: 600 }}>{formatPlayerName(p)}</p>
@@ -1665,7 +1680,7 @@ function AdminsTab({ adminEmails, currentAdminEmail, isSuperAdmin, onAdd, onRemo
         return (
           <div key={email} style={S.card}>
             <div style={S.row}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#E1F5EE", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#0F6E56", fontSize: 14, flexShrink: 0 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 14, flexShrink: 0 }}>
                 {email[0].toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1704,10 +1719,13 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
     <div style={S.page}>
       <Toast toast={toast} />
       {modal?.type === "newPlayer" && <Modal title="Create Player Account" onClose={() => setModal(null)}><PlayerForm onSubmit={async d => { await onCreatePlayer(d); setModal(null); }} onCancel={() => setModal(null)} /></Modal>}
-      <div style={{ background: "#0F6E56", color: "#fff", padding: "40px 24px 32px", textAlign: "center" }}>
-        <div style={{ fontSize: 40, marginBottom: 8 }}>🏓</div>
-        <h1 style={{ margin: "0 0 8px", fontSize: 28, fontWeight: 700, letterSpacing: "-1px" }}>Pickleball League Manager</h1>
-        <p style={{ margin: 0, opacity: 0.8, fontSize: 15 }}>Configurable courts · 4–5 players per court · weekly rotation</p>
+      <div style={{ background: CSC.blue, color: "#fff", padding: "32px 24px 28px", textAlign: "center" }}>
+        <img
+          src="/csc-pickleball.png"
+          alt="CSC Pickleball"
+          style={{ maxWidth: 320, width: "85%", height: "auto", display: "block", margin: "0 auto 12px", borderRadius: 8 }}
+        />
+        <p style={{ margin: 0, color: "#fff", opacity: 0.92, fontSize: 14, fontWeight: 500, letterSpacing: "0.3px" }}>League Manager</p>
       </div>
       <div style={{ maxWidth: 520, margin: "0 auto", padding: "24px 20px" }}>
         <div style={{ ...S.card, marginBottom: 16 }}>
@@ -1737,7 +1755,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
           <div>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--color-text-secondary)" }}>Active Leagues</h3>
             {leagues.map(l => {
-              const lc = COLORS[l.color] || COLORS.teal;
+              const lc = COLORS[l.color] || COLORS.csc;
               const regs = Object.values(db.registrations).filter(r => r.leagueId === l.id);
               return (
                 <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, marginBottom: 8 }}>
@@ -1762,7 +1780,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
 function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   const selectedLeague = selectedLeagueId ? db.leagues[selectedLeagueId] : null;
-  const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.teal) : COLORS.teal;
+  const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.csc) : COLORS.teal;
   const sched = selectedLeagueId ? getLeagueSchedule(selectedLeagueId) : { weeks: [] };
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
 
@@ -1783,7 +1801,7 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
         <Modal title="Join League" onClose={() => setModal(null)}>
           {unregistered.length === 0 && <p style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>You're already in all available leagues!</p>}
           {unregistered.map(l => {
-            const lc = COLORS[l.color] || COLORS.teal;
+            const lc = COLORS[l.color] || COLORS.csc;
             return <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}` }}>
               <div style={S.row}><div style={{ flex: 1 }}><p style={{ margin:"0 0 2px",fontWeight:600 }}>{l.name}</p><p style={{ margin:0,fontSize:12,color:"var(--color-text-secondary)" }}>{l.weeks} weeks · {l.format}</p></div>
               <button style={{ ...S.btnSm("primary"), background: lc.bg }} onClick={() => { registerForLeague(l.id, player.id); setModal(null); setSelectedLeagueId(l.id); }}>Join</button></div>
@@ -1816,7 +1834,7 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
       {myLeagues.length > 1 && (
         <div style={{ padding: "12px 20px", display: "flex", gap: 8, overflowX: "auto", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
           {myLeagues.map(l => {
-            const lc = COLORS[l.color] || COLORS.teal;
+            const lc = COLORS[l.color] || COLORS.csc;
             return <button key={l.id} style={{ ...S.btnSm(selectedLeagueId===l.id?"primary":"secondary"), background: selectedLeagueId===l.id?lc.bg:"transparent", whiteSpace:"nowrap" }} onClick={() => setSelectedLeagueId(l.id)}>{l.name}</button>;
           })}
         </div>
