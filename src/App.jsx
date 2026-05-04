@@ -42,6 +42,19 @@ function saveSession(s) {
   } catch (_) {}
 }
 
+// Sort leagues for display: active first, then open/completed (newest first within),
+// then archived last. Returns a new array.
+const STATUS_ORDER = { active: 0, open: 1, completed: 2, archived: 3 };
+function sortLeagues(leagues) {
+  return [...leagues].sort((a, b) => {
+    const sa = STATUS_ORDER[a.status || "open"] ?? 1;
+    const sb = STATUS_ORDER[b.status || "open"] ?? 1;
+    if (sa !== sb) return sa - sb;
+    // Within the same status, newest first
+    return (b.createdAt || "").localeCompare(a.createdAt || "");
+  });
+}
+
 function playerSearchString(p) {
   if (!p) return "";
   const parts = [p.firstName, p.lastName, p.name, p.email].filter(Boolean);
@@ -618,7 +631,7 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option></select></div>
+        <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option></select></div>
         <div>
           <label style={S.label}>Number of Courts *</label>
           <select style={S.input} value={form.numCourts} onChange={e => set("numCourts", +e.target.value)}>
@@ -1093,7 +1106,7 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
 }
 
 // ─── League Detail (commissioner) ─────────────────────────────────────────────
-function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, standings, onEdit, onDelete, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, getCheckIn }) {
+function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, standings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, getCheckIn }) {
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = schedule.weeks || [];
@@ -1112,12 +1125,21 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
       <div style={{ ...S.card, margin: "16px 20px", borderLeft: `4px solid ${c.bg}`, background: c.light }}>
         <div style={{ ...S.row, justifyContent: "space-between" }}>
           <div>
-            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>{league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks</p>
+            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>
+              {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
+              {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
+              {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
+            </p>
             <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {league.startDate}</p>
             {league.location && <p style={{ margin: 0, fontSize: 13, color: c.text }}>📍 {league.location}</p>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button style={S.btnSm("secondary")} onClick={onEdit}>Edit</button>
+            {(league.status === "completed" || league.status === "archived") && (
+              <button style={S.btnSm("secondary")} onClick={onToggleArchive}>
+                {league.status === "archived" ? "Unarchive" : "Archive"}
+              </button>
+            )}
             <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D" }} onClick={onDelete}>Delete</button>
           </div>
         </div>
@@ -1396,6 +1418,13 @@ export default function App() {
     await action(() => dbUpdateLeague(id, data), "League updated!");
     setModal(null);
   }
+  async function toggleArchiveLeague(id) {
+    const cur = db.leagues[id];
+    if (!cur) return;
+    const newStatus = cur.status === "archived" ? "completed" : "archived";
+    await action(() => dbUpdateLeague(id, { status: newStatus }),
+      newStatus === "archived" ? "League archived." : "League unarchived.");
+  }
   async function doDeleteLeague(id) {
     await action(() => dbDeleteLeague(id), "League deleted.");
     setSelectedLeague(null); setModal(null);
@@ -1547,6 +1576,7 @@ export default function App() {
             getCheckIn={getCheckIn}
             onEdit={() => setModal({ type: "editLeague", league })}
             onDelete={() => setModal({ type: "confirmDelete", league })}
+            onToggleArchive={() => toggleArchiveLeague(league.id)}
             onGenerate={() => generateSchedule(league.id)}
             onAddPlayer={() => setModal({ type: "addPlayerToLeague", leagueId: league.id })}
             onRemovePlayer={pid => removePlayer(league.id, pid)}
@@ -1566,12 +1596,13 @@ export default function App() {
                   <button style={S.btn("primary")} onClick={() => setModal({ type: "createLeague" })}>+ New League</button>
                 </div>
                 {leagues.length === 0 && <EmptyState msg="No leagues created yet." />}
-                {leagues.map(l => {
+                {sortLeagues(leagues).map(l => {
                   const lc = COLORS[l.color] || COLORS.csc;
                   const regs = getLeagueRegs(l.id);
                   const sched = getLeagueSchedule(l.id);
+                  const archived = l.status === "archived";
                   return (
-                    <div key={l.id} style={{ ...S.card, cursor: "pointer", borderLeft: `4px solid ${lc.bg}` }} onClick={() => setSelectedLeague(l.id)}>
+                    <div key={l.id} style={{ ...S.card, cursor: "pointer", borderLeft: `4px solid ${lc.bg}`, opacity: archived ? 0.6 : 1 }} onClick={() => setSelectedLeague(l.id)}>
                       <div style={S.row}>
                         <div style={{ flex: 1 }}>
                           <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 16 }}>{l.name}</p>
@@ -1639,10 +1670,12 @@ export default function App() {
   // ─── PLAYER ───────────────────────────────────────────────────────────────
   if (view === "player") {
     const myRegs = Object.values(db.registrations).filter(r => r.playerId === currentPlayer.id);
-    const myLeagues = myRegs.map(r => db.leagues[r.leagueId]).filter(Boolean);
+    const myLeagues = sortLeagues(myRegs.map(r => db.leagues[r.leagueId]).filter(Boolean));
     const playerGender = currentPlayer.gender;
     const unregistered = leagues.filter(l => {
       if (myRegs.find(r => r.leagueId === l.id)) return false;
+      // Archived leagues are not joinable — they're in read-only mode
+      if (l.status === "archived") return false;
       const leagueGender = l.gender || "Mixed"; // default existing leagues to Mixed
       if (leagueGender === "Mixed") return true;
       if (leagueGender === "Men's") return playerGender === "Male";
@@ -1770,17 +1803,18 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
         {leagues.length > 0 && (
           <div>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--color-text-secondary)" }}>Active Leagues</h3>
-            {leagues.map(l => {
+            {sortLeagues(leagues.filter(l => l.status !== "archived")).map(l => {
               const lc = COLORS[l.color] || COLORS.csc;
               const regs = Object.values(db.registrations).filter(r => r.leagueId === l.id);
+              const archived = l.status === "archived";
               return (
-                <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, marginBottom: 8 }}>
+                <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, marginBottom: 8, opacity: archived ? 0.6 : 1 }}>
                   <div style={S.row}>
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 2px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
                       <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {regs.length} players · {l.weeks} weeks · Starts {l.startDate}</p>
                     </div>
-                    <span style={S.badge(l.status==="active"?"success":"info")}>{l.status||"open"}</span>
+                    <span style={S.badge(l.status==="active"?"success":l.status==="archived"?"warning":"info")}>{l.status==="archived"?"📦 archived":l.status||"open"}</span>
                   </div>
                 </div>
               );
@@ -1851,7 +1885,8 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
         <div style={{ padding: "12px 20px", display: "flex", gap: 8, overflowX: "auto", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
           {myLeagues.map(l => {
             const lc = COLORS[l.color] || COLORS.csc;
-            return <button key={l.id} style={{ ...S.btnSm(selectedLeagueId===l.id?"primary":"secondary"), background: selectedLeagueId===l.id?lc.bg:"transparent", whiteSpace:"nowrap" }} onClick={() => setSelectedLeagueId(l.id)}>{l.name}</button>;
+            const archived = l.status === "archived";
+            return <button key={l.id} style={{ ...S.btnSm(selectedLeagueId===l.id?"primary":"secondary"), background: selectedLeagueId===l.id?lc.bg:"transparent", whiteSpace:"nowrap", opacity: archived ? 0.7 : 1 }} onClick={() => setSelectedLeagueId(l.id)}>{archived ? "📦 " : ""}{l.name}</button>;
           })}
         </div>
       )}
@@ -1872,8 +1907,13 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
             {playerTab === "schedule" && (
               <div>
                 <p style={{ margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)" }}>Your matches in <b>{selectedLeague.name}</b></p>
+                {selectedLeague.status === "archived" && (
+                  <div style={{ padding: "10px 14px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                    📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
+                  </div>
+                )}
                 {myWeeks.length === 0 && <EmptyState msg="No schedule yet. Check back after the commissioner generates this season's schedule." />}
-                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week)} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status) => setCheckIn(selectedLeagueId, week, player.id, status)} />)}
+                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status) => setCheckIn(selectedLeagueId, week, player.id, status)} />)}
               </div>
             )}
             {playerTab === "standings" && (() => {
