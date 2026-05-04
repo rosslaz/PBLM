@@ -593,7 +593,7 @@ function PlayerForm({ onSubmit, onCancel, initial }) {
 }
 
 function LeagueForm({ initial, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", numCourts: initial?.numCourts || 4, location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
+  const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", gender: initial?.gender || "Mixed", numCourts: initial?.numCourts || 4, location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function handleSubmit() {
     if (!form.name.trim()) return alert("League name required");
@@ -608,9 +608,17 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div><label style={S.label}>Format</label><select style={S.input} value={form.format} onChange={e => set("format", e.target.value)}><option>Singles</option><option>Doubles</option><option>Mixed Doubles</option></select></div>
-        <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option></select></div>
+        <div>
+          <label style={S.label}>Gender *</label>
+          <select style={S.input} value={form.gender} onChange={e => set("gender", e.target.value)}>
+            <option value="Mixed">Mixed</option>
+            <option value="Men's">Men's</option>
+            <option value="Women's">Women's</option>
+          </select>
+        </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option></select></div>
         <div>
           <label style={S.label}>Number of Courts *</label>
           <select style={S.input} value={form.numCourts} onChange={e => set("numCourts", +e.target.value)}>
@@ -1104,7 +1112,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
       <div style={{ ...S.card, margin: "16px 20px", borderLeft: `4px solid ${c.bg}`, background: c.light }}>
         <div style={{ ...S.row, justifyContent: "space-between" }}>
           <div>
-            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>{league.format || "Singles"} · {league.weeks} weeks</p>
+            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>{league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks</p>
             <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {league.startDate}</p>
             {league.location && <p style={{ margin: 0, fontSize: 13, color: c.text }}>📍 {league.location}</p>}
           </div>
@@ -1568,7 +1576,7 @@ export default function App() {
                         <div style={{ flex: 1 }}>
                           <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 16 }}>{l.name}</p>
                           <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>{regs.length} players · {l.weeks} weeks · {sched.weeks?.length > 0 ? `${sched.weeks.length} weeks scheduled` : "No schedule yet"}</p>
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {l.startDate} · {l.format || "Singles"}</p>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {l.startDate} · {l.gender || "Mixed"} · {l.format || "Singles"}</p>
                         </div>
                         <span style={{ fontSize: 20, color: lc.bg }}>›</span>
                       </div>
@@ -1632,7 +1640,15 @@ export default function App() {
   if (view === "player") {
     const myRegs = Object.values(db.registrations).filter(r => r.playerId === currentPlayer.id);
     const myLeagues = myRegs.map(r => db.leagues[r.leagueId]).filter(Boolean);
-    const unregistered = leagues.filter(l => !myRegs.find(r => r.leagueId === l.id));
+    const playerGender = currentPlayer.gender;
+    const unregistered = leagues.filter(l => {
+      if (myRegs.find(r => r.leagueId === l.id)) return false;
+      const leagueGender = l.gender || "Mixed"; // default existing leagues to Mixed
+      if (leagueGender === "Mixed") return true;
+      if (leagueGender === "Men's") return playerGender === "Male";
+      if (leagueGender === "Women's") return playerGender === "Female";
+      return false;
+    });
     return <PlayerView db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
       playerTab={playerTab} setPlayerTab={setPlayerTab} modal={modal} setModal={setModal} toast={toast}
       getLeagueSchedule={getLeagueSchedule} getScore={getScore} getPlayerName={getPlayerName}
@@ -1762,7 +1778,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
                   <div style={S.row}>
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 2px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
-                      <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{regs.length} players · {l.weeks} weeks · Starts {l.startDate}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {regs.length} players · {l.weeks} weeks · Starts {l.startDate}</p>
                     </div>
                     <span style={S.badge(l.status==="active"?"success":"info")}>{l.status||"open"}</span>
                   </div>
@@ -1803,7 +1819,7 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
           {unregistered.map(l => {
             const lc = COLORS[l.color] || COLORS.csc;
             return <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}` }}>
-              <div style={S.row}><div style={{ flex: 1 }}><p style={{ margin:"0 0 2px",fontWeight:600 }}>{l.name}</p><p style={{ margin:0,fontSize:12,color:"var(--color-text-secondary)" }}>{l.weeks} weeks · {l.format}</p></div>
+              <div style={S.row}><div style={{ flex: 1 }}><p style={{ margin:"0 0 2px",fontWeight:600 }}>{l.name}</p><p style={{ margin:0,fontSize:12,color:"var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {l.format} · {l.weeks} weeks</p></div>
               <button style={{ ...S.btnSm("primary"), background: lc.bg }} onClick={() => { registerForLeague(l.id, player.id); setModal(null); setSelectedLeagueId(l.id); }}>Join</button></div>
             </div>;
           })}
