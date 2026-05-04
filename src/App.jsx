@@ -1339,6 +1339,9 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = buildDisplayWeeks(league, schedule);
+  const realWeeks = weeks.filter(w => !w.placeholder);
+  const realWeeksCount = realWeeks.length;
+  const lastRealWeek = realWeeks[realWeeks.length - 1] || null;
   const totalMatches = weeks.reduce((s, w) => s + w.courts.reduce((cs, ct) => cs + ct.matches.length, 0), 0);
   const n = regs.length;
   const numCourts = league.numCourts || 4;
@@ -1417,18 +1420,18 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
 
             <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16 }}>
               <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-secondary)" }}>
-                {weeks.length} of {league.weeks} weeks scheduled · {totalMatches} total matches
+                {realWeeksCount} of {league.weeks} weeks scheduled · {totalMatches} total matches
               </p>
               {(() => {
                 const isLadder = league.competitionType === "ladder";
-                const allDone = weeks.length >= league.weeks;
+                const allDone = realWeeksCount >= league.weeks;
                 let label;
                 if (isLadder) {
-                  if (weeks.length === 0) label = "Generate Week 1";
+                  if (realWeeksCount === 0) label = "Generate Week 1";
                   else if (allDone) label = "All Weeks Done";
-                  else label = `Generate Week ${weeks.length + 1}`;
+                  else label = `Generate Week ${realWeeksCount + 1}`;
                 } else {
-                  label = weeks.length ? "Regenerate" : "Generate Schedule";
+                  label = realWeeksCount ? "Regenerate" : "Generate Schedule";
                 }
                 return (
                   <button
@@ -1440,12 +1443,12 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
                 );
               })()}
             </div>
-            {league.competitionType === "ladder" && weeks.length > 0 && weeks.length < league.weeks && !isWeekLocked(weeks[weeks.length - 1].week) && (
+            {league.competitionType === "ladder" && realWeeksCount > 0 && realWeeksCount < league.weeks && lastRealWeek && !isWeekLocked(lastRealWeek.week) && (
               <div style={{ padding: "10px 14px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
-                🪜 Ladder leagues generate one week at a time. Lock Week {weeks[weeks.length - 1].week}'s scores before generating Week {weeks.length + 1}.
+                🪜 Ladder leagues generate one week at a time. Lock Week {lastRealWeek.week}'s scores before generating Week {lastRealWeek.week + 1}.
               </div>
             )}
-            {weeks.length === 0 && <EmptyState msg={capacityOk ? (league.competitionType === "ladder" ? "Click Generate Week 1 to randomly assign starting courts." : "Click Generate Schedule to create court assignments.") : "Fix player count first."} />}
+            {realWeeksCount === 0 && <EmptyState msg={capacityOk ? (league.competitionType === "ladder" ? "Click Generate Week 1 to randomly assign starting courts." : "Click Generate Schedule to create court assignments.") : "Fix player count first."} />}
             {(() => {
               // Build these once per LeagueDetail render so all week cards
               // share the same stable references (helps any future React.memo)
