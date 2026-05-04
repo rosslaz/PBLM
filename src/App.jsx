@@ -293,6 +293,16 @@ async function dbSetCheckIn(leagueId, week, playerId, status) {
   }
 }
 
+async function dbDeletePlayer(playerId) {
+  // Cascade: delete the player + all their registrations + check-ins
+  const [{ error: e1 }, { error: e2 }, { error: e3 }] = await Promise.all([
+    supabase.from("pb_players").delete().eq("id", playerId),
+    supabase.from("pb_registrations").delete().like("key", `%_${playerId}`),
+    supabase.from("pb_checkins").delete().like("key", `%_${playerId}`),
+  ]);
+  if (e1 || e2 || e3) throw (e1 || e2 || e3);
+}
+
 async function dbAddAdmin(email) {
   const { data: cfg, error: e1 } = await supabase
     .from("pb_config").select("admin_emails").eq("id", 1).single();
@@ -1465,6 +1475,12 @@ export default function App() {
     await action(() => dbTogglePlayerPaid(playerId), !p.paid ? "Marked as paid!" : "Payment removed.");
   }
 
+  async function deletePlayer(playerId) {
+    const p = db.players[playerId]; if (!p) return;
+    await action(() => dbDeletePlayer(playerId), `Player "${formatPlayerName(p)}" deleted.`);
+    setModal(null);
+  }
+
   async function registerForLeague(leagueId, playerId) {
     const key = `${leagueId}_${playerId}`;
     if (db.registrations[key]) { showToast("Already registered!", "error"); return; }
@@ -1557,6 +1573,38 @@ export default function App() {
           </Modal>
         )}
         {modal?.type === "confirmDelete" && <Modal title="Delete League" onClose={() => setModal(null)}><p style={{ fontSize: 15, margin: "0 0 20px" }}>Delete <b>{modal.league.name}</b>? This cannot be undone.</p><div style={S.row}><button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => doDeleteLeague(modal.league.id)}>Delete</button><button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button></div></Modal>}
+        {modal?.type === "confirmDeletePlayer" && (() => {
+          const p = modal.player;
+          const playerLeagues = Object.values(db.registrations)
+            .filter(r => r.playerId === p.id)
+            .map(r => db.leagues[r.leagueId])
+            .filter(Boolean);
+          return (
+            <Modal title="Delete Player" onClose={() => setModal(null)}>
+              <p style={{ fontSize: 15, margin: "0 0 12px" }}>
+                Delete <b>{formatPlayerName(p)}</b> ({p.email})?
+              </p>
+              {playerLeagues.length > 0 && (
+                <div style={{ padding: "10px 12px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                  ⚠ This player is registered in {playerLeagues.length} league{playerLeagues.length!==1?"s":""}:
+                  <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
+                    {playerLeagues.map(l => <li key={l.id} style={{ marginBottom: 2 }}>{l.name}</li>)}
+                  </ul>
+                  <p style={{ margin: "8px 0 0", fontSize: 12 }}>
+                    They will be removed from all of them. Existing schedules will still show their name on past matches; regenerate the schedule for each active league afterward.
+                  </p>
+                </div>
+              )}
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "0 0 16px" }}>
+                This permanently deletes the player and all their registrations and check-ins. Past scores remain in the database.
+              </p>
+              <div style={S.row}>
+                <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => deletePlayer(p.id)}>Delete Player</button>
+                <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+              </div>
+            </Modal>
+          );
+        })()}
 
         <div style={S.header(league ? c.bg : undefined)}>
           <div style={S.row}>
@@ -1670,6 +1718,11 @@ export default function App() {
                         {p.paid ? "Undo Payment" : "Mark as Paid"}
                       </button>
                       <button style={S.btnSm("secondary")} onClick={() => setModal({ type: "editPlayer", player: p })}>Edit</button>
+                      <button
+                        style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }}
+                        onClick={() => setModal({ type: "confirmDeletePlayer", player: p })}>
+                        Delete
+                      </button>
                     </div>
                   </div>
                 ))}
