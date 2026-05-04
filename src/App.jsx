@@ -1975,8 +1975,9 @@ export default function App() {
     const playerGender = currentPlayer.gender;
     const unregistered = leagues.filter(l => {
       if (myRegs.find(r => r.leagueId === l.id)) return false;
-      // Archived leagues are not joinable — they're in read-only mode
-      if (l.status === "archived") return false;
+      // Players can only join leagues that are in open registration.
+      // Commissioner can still manually add players to any league anytime.
+      if ((l.status || "open") !== "open") return false;
       const leagueGender = l.gender || "Mixed"; // default existing leagues to Mixed
       if (leagueGender === "Mixed") return true;
       if (leagueGender === "Men's") return playerGender === "Male";
