@@ -2104,7 +2104,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
         {leagues.length > 0 && (
           <div>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--color-text-secondary)" }}>Active Leagues</h3>
-            {sortedLeagues.filter(l => l.status !== "archived").map(l => {
+            {sortLeagues(leagues.filter(l => l.status !== "archived")).map(l => {
               const lc = COLORS[l.color] || COLORS.csc;
               const regs = Object.values(db.registrations).filter(r => r.leagueId === l.id);
               const archived = l.status === "archived";
