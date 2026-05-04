@@ -42,6 +42,43 @@ function saveSession(s) {
   } catch (_) {}
 }
 
+// For commissioners viewing a ladder league, build placeholder week stubs
+// for any weeks not yet generated, so the schedule UI shows the full season.
+// Mixer leagues already contain all weeks from generation.
+// Stored placeholders (from commissioner editing date/time before generation)
+// are kept as-is.
+function buildDisplayWeeks(league, schedule) {
+  const real = (schedule?.weeks || []);
+  const totalWeeks = league.weeks || 0;
+  // Index existing weeks by number (covers both real generated weeks and stored placeholders)
+  const existing = {};
+  real.forEach(w => { existing[w.week] = w; });
+  const startDate = league.startDate;
+  const out = [];
+  for (let n = 1; n <= totalWeeks; n++) {
+    if (existing[n]) {
+      out.push(existing[n]);
+      continue;
+    }
+    // Synthesize a placeholder using the previous week's date if possible
+    let dateStr;
+    const prev = out[out.length - 1];
+    if (prev?.date) {
+      const d = new Date(prev.date);
+      d.setDate(d.getDate() + 7);
+      dateStr = d.toISOString().split("T")[0];
+    } else if (startDate) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + (n - 1) * 7);
+      dateStr = d.toISOString().split("T")[0];
+    } else {
+      dateStr = "";
+    }
+    out.push({ week: n, date: dateStr, time: null, courts: [], placeholder: true });
+  }
+  return out;
+}
+
 // Sort leagues for display: active first, then open/completed (newest first within),
 // then archived last. Returns a new array.
 const STATUS_ORDER = { active: 0, open: 1, completed: 2, archived: 3 };
@@ -249,6 +286,30 @@ async function dbToggleRegPaid(leagueId, playerId) {
   const { error } = await supabase
     .from("pb_registrations").upsert({ key, data: updated });
   if (error) throw error;
+}
+
+async function dbWriteWeekDateTime(leagueId, weekNum, date, time) {
+  // Read the current schedule, mutate just the week's date/time, write back.
+  // If the week doesn't exist yet (e.g. ladder placeholder), append a stub.
+  const { data, error: e1 } = await supabase
+    .from("pb_schedules").select("data").eq("league_id", leagueId).single();
+  if (e1 && e1.code !== "PGRST116") throw e1; // PGRST116 = no rows
+  const sched = data?.data || { weeks: [] };
+  const existing = sched.weeks || [];
+  const found = existing.find(w => w.week === weekNum);
+  let weeks;
+  if (found) {
+    weeks = existing.map(w =>
+      w.week === weekNum ? { ...w, date, time: time || null } : w
+    );
+  } else {
+    // Append placeholder stub so the edit persists even before generation
+    weeks = [...existing, { week: weekNum, date, time: time || null, courts: [], placeholder: true }]
+      .sort((a, b) => a.week - b.week);
+  }
+  const { error: e2 } = await supabase
+    .from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } });
+  if (e2) throw e2;
 }
 
 async function dbWriteSchedule(leagueId, scheduleData) {
@@ -769,6 +830,36 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
   );
 }
 
+function EditWeekForm({ weekData, onSubmit, onCancel }) {
+  const [date, setDate] = useState(weekData.date || "");
+  const [time, setTime] = useState(weekData.time || "");
+  function handleSubmit() {
+    if (!date) return alert("Date is required.");
+    onSubmit(date, time || null);
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>
+        Adjust the date or start time for this week. Players will see the updated time on their schedule.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <label style={S.label}>Date *</label>
+          <input style={S.input} type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div>
+          <label style={S.label}>Start time</label>
+          <input style={S.input} type="time" value={time} onChange={e => setTime(e.target.value)} placeholder="e.g. 18:00" />
+        </div>
+      </div>
+      <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+        <button style={S.btn("secondary")} onClick={onCancel}>Cancel</button>
+        <button style={S.btn("primary")} onClick={handleSubmit}>Save</button>
+      </div>
+    </div>
+  );
+}
+
 function validatePickleballScore(h, a) {
   const hi = parseInt(h, 10), ai = parseInt(a, 10);
   if (isNaN(hi) || isNaN(ai)) return null;
@@ -1015,7 +1106,7 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
 // myCourtPlayers: set of player IDs on the same court as myId this week (for edit gating)
 // isLocked: commissioner has locked this week — players cannot edit, commissioner still can
 // isAdmin: full commissioner access
-function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
+function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
   const totalMatches = weekData.courts.reduce((s, c) => s + c.matches.length, 0);
   const scoredMatches = weekData.courts.reduce((s, c) => s + c.matches.filter(m => getScore(leagueId, m.week, m.id)).length, 0);
@@ -1030,26 +1121,42 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
         onClick={() => setExpanded(!expanded)}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600, fontSize: 15 }}>Week {weekData.week}</span>
-          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{weekData.date}</span>
+          <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+            {weekData.date}{weekData.time ? ` · ${weekData.time}` : ""}
+          </span>
+          {weekData.placeholder && <span style={{ ...S.badge("info"), fontSize: 10 }}>Not generated</span>}
           {isLocked && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒 Locked</span>}
-          {!isLocked && allScored && <span style={{ ...S.badge("success"), fontSize: 10 }}>Complete</span>}
+          {!isLocked && !weekData.placeholder && allScored && totalMatches > 0 && <span style={{ ...S.badge("success"), fontSize: 10 }}>Complete</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {isAdmin && onToggleLock && (
+          {isAdmin && onEditDateTime && (
+            <button
+              style={{ ...S.btnSm("secondary"), padding: "3px 10px", fontSize: 11 }}
+              onClick={e => { e.stopPropagation(); onEditDateTime(weekData); }}
+              title="Edit date and time">
+              ✏ Edit
+            </button>
+          )}
+          {isAdmin && onToggleLock && !weekData.placeholder && (
             <button
               style={{ ...S.btnSm(isLocked ? "primary" : "secondary", isLocked ? "#854F0B" : undefined), padding: "3px 10px", fontSize: 11 }}
               onClick={e => { e.stopPropagation(); onToggleLock(weekData.week); }}>
               {isLocked ? "Unlock" : "Lock Week"}
             </button>
           )}
-          <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{scoredMatches}/{totalMatches} scored</span>
+          {!weekData.placeholder && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{scoredMatches}/{totalMatches} scored</span>}
           <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
         </div>
       </div>
 
       {expanded && (
         <div style={{ paddingBottom: 12 }}>
-          {isLocked && !isAdmin && (
+          {weekData.placeholder && (
+            <div style={{ margin: "12px 16px 0", padding: "10px 14px", background: CSC.blueLight, border: `0.5px solid ${CSC.blue}40`, borderRadius: 8, fontSize: 13, color: CSC.blueDark }}>
+              📅 This week's schedule has not been generated yet. Use the Generate button at the top of the schedule to create it.
+            </div>
+          )}
+          {!weekData.placeholder && isLocked && !isAdmin && (
             <div style={{ margin: "12px 16px 0", padding: "8px 12px", background: "#FAEEDA", borderRadius: 6, fontSize: 12, color: "#854F0B" }}>
               This week has been locked by the commissioner. Scores can no longer be edited.
             </div>
@@ -1228,10 +1335,10 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
 }
 
 // ─── League Detail (commissioner) ─────────────────────────────────────────────
-function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, getCheckIn }) {
+function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onEditWeekDateTime, getCheckIn }) {
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
-  const weeks = schedule.weeks || [];
+  const weeks = buildDisplayWeeks(league, schedule);
   const totalMatches = weeks.reduce((s, w) => s + w.courts.reduce((cs, ct) => cs + ct.matches.length, 0), 0);
   const n = regs.length;
   const numCourts = league.numCourts || 4;
@@ -1343,7 +1450,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
               // Build these once per LeagueDetail render so all week cards
               // share the same stable references (helps any future React.memo)
               const getPlayerEmail = pid => db.players[pid]?.email;
-              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
+              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} onEditDateTime={onEditWeekDateTime} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
             })()}
           </div>
         )}
@@ -1603,6 +1710,11 @@ export default function App() {
     setSelectedLeague(null); setModal(null);
   }
 
+  async function updateWeekDateTime(leagueId, weekNum, date, time) {
+    await action(() => dbWriteWeekDateTime(leagueId, weekNum, date, time), `Week ${weekNum} updated.`);
+    setModal(null);
+  }
+
   async function generateSchedule(leagueId) {
     const league = db.leagues[leagueId];
     const playerIds = getLeagueRegs(leagueId).map(r => r.playerId);
@@ -1620,6 +1732,16 @@ export default function App() {
       // ─── Mixer: full schedule generated at once (existing behavior) ─────
       const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, numCourts);
       if (result.error) { showToast(result.error, "error"); return; }
+      // Preserve any commissioner-edited date/time from the existing schedule
+      const existingByWeek = {};
+      (db.schedules[leagueId]?.weeks || []).forEach(w => { existingByWeek[w.week] = w; });
+      result.weeks = result.weeks.map(w => {
+        const prev = existingByWeek[w.week];
+        if (prev && (prev.date !== w.date || prev.time)) {
+          return { ...w, date: prev.date || w.date, time: prev.time || null };
+        }
+        return w;
+      });
       await action(() => dbWriteSchedule(leagueId, result));
       const courtsCount = result.weeks[0]?.courts.length || 0;
       const sz = result.weeks[0]?.courts.map(c => c.players.length) || [];
@@ -1630,19 +1752,32 @@ export default function App() {
     // ─── Ladder: generate one week at a time ────────────────────────────
     const existingSched = db.schedules[leagueId] || { weeks: [] };
     const existingWeeks = existingSched.weeks || [];
-    const nextWeekNum = existingWeeks.length + 1;
+
+    // Find the next week to generate. A "real" week has courts; a placeholder
+    // (from commissioner editing date/time before generation) doesn't.
+    const realWeeks = existingWeeks.filter(w => !w.placeholder && w.courts.length > 0);
+    const nextWeekNum = realWeeks.length + 1;
 
     if (nextWeekNum > league.weeks) {
       showToast(`All ${league.weeks} weeks already generated.`, "error");
       return;
     }
 
-    const weekDate = new Date(league.startDate);
-    weekDate.setDate(weekDate.getDate() + (nextWeekNum - 1) * 7);
-    const dateStr = weekDate.toISOString().split("T")[0];
+    // Use the placeholder's date/time if the commissioner already set one,
+    // otherwise compute the default (start date + N*7 days)
+    const placeholder = existingWeeks.find(w => w.week === nextWeekNum && w.placeholder);
+    let dateStr, timeStr = null;
+    if (placeholder) {
+      dateStr = placeholder.date;
+      timeStr = placeholder.time || null;
+    } else {
+      const weekDate = new Date(league.startDate);
+      weekDate.setDate(weekDate.getDate() + (nextWeekNum - 1) * 7);
+      dateStr = weekDate.toISOString().split("T")[0];
+    }
 
     let courtGroups;
-    if (existingWeeks.length === 0) {
+    if (realWeeks.length === 0) {
       // Week 1: random court assignment
       const shuffled = seededShuffle(playerIds, Date.now() & 0xffffffff);
       courtGroups = [];
@@ -1653,7 +1788,7 @@ export default function App() {
       }
     } else {
       // Subsequent weeks: require previous week to be locked
-      const prevWeek = existingWeeks[existingWeeks.length - 1];
+      const prevWeek = realWeeks[realWeeks.length - 1];
       const prevLocked = isWeekLocked(leagueId, prevWeek.week);
       if (!prevLocked) {
         showToast(`Lock Week ${prevWeek.week} first, then generate Week ${nextWeekNum}.`, "error");
@@ -1670,7 +1805,10 @@ export default function App() {
     }
 
     const newWeek = buildLadderWeek(courtGroups, nextWeekNum, dateStr, league.format);
-    const newSched = { weeks: [...existingWeeks, newWeek] };
+    if (timeStr) newWeek.time = timeStr;
+    // Replace any existing placeholder for this week, otherwise append
+    const otherWeeks = existingWeeks.filter(w => w.week !== nextWeekNum);
+    const newSched = { weeks: [...otherWeeks, newWeek].sort((a, b) => a.week - b.week) };
     await action(() => dbWriteSchedule(leagueId, newSched));
     showToast(`Week ${nextWeekNum} generated! ${courtGroups.length} courts (${courtGroups.map(g => g.length).join(", ")} players)`);
   }
@@ -1797,6 +1935,17 @@ export default function App() {
           </Modal>
         )}
         {modal?.type === "confirmDelete" && <Modal title="Delete League" onClose={() => setModal(null)}><p style={{ fontSize: 15, margin: "0 0 20px" }}>Delete <b>{modal.league.name}</b>? This cannot be undone.</p><div style={S.row}><button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => doDeleteLeague(modal.league.id)}>Delete</button><button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button></div></Modal>}
+        {modal?.type === "editWeek" && (() => {
+          const w = modal.weekData;
+          return (
+            <Modal title={`Edit Week ${w.week}`} onClose={() => setModal(null)}>
+              <EditWeekForm
+                weekData={w}
+                onSubmit={(date, time) => updateWeekDateTime(modal.leagueId, w.week, date, time)}
+                onCancel={() => setModal(null)} />
+            </Modal>
+          );
+        })()}
         {modal?.type === "confirmDeletePlayer" && (() => {
           const p = modal.player;
           const playerLeagues = Object.values(db.registrations)
@@ -1856,7 +2005,8 @@ export default function App() {
             onTogglePaid={pid => togglePaid(league.id, pid)}
             onToggleLockWeek={(week) => toggleLockWeek(league.id, week)}
             isWeekLocked={(week) => isWeekLocked(league.id, week)}
-            onEnterScore={match => setModal({ type: "enterScore", match, leagueId: league.id })} />
+            onEnterScore={match => setModal({ type: "enterScore", match, leagueId: league.id })}
+            onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })} />
         ) : (
           <>
             <div style={S.tabBar}>
