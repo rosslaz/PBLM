@@ -1596,24 +1596,47 @@ export default function App() {
                   <button style={S.btn("primary")} onClick={() => setModal({ type: "createLeague" })}>+ New League</button>
                 </div>
                 {leagues.length === 0 && <EmptyState msg="No leagues created yet." />}
-                {sortLeagues(leagues).map(l => {
-                  const lc = COLORS[l.color] || COLORS.csc;
-                  const regs = getLeagueRegs(l.id);
-                  const sched = getLeagueSchedule(l.id);
-                  const archived = l.status === "archived";
-                  return (
-                    <div key={l.id} style={{ ...S.card, cursor: "pointer", borderLeft: `4px solid ${lc.bg}`, opacity: archived ? 0.6 : 1 }} onClick={() => setSelectedLeague(l.id)}>
-                      <div style={S.row}>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 16 }}>{l.name}</p>
-                          <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>{regs.length} players · {l.weeks} weeks · {sched.weeks?.length > 0 ? `${sched.weeks.length} weeks scheduled` : "No schedule yet"}</p>
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {l.startDate} · {l.gender || "Mixed"} · {l.format || "Singles"}</p>
+                {leagues.length > 0 && (() => {
+                  // Group leagues by status
+                  const groups = [
+                    { key: "open",      label: "Registering" },
+                    { key: "active",    label: "Active" },
+                    { key: "completed", label: "Closed" },
+                    { key: "archived",  label: "Archived" },
+                  ];
+                  return groups.map(group => {
+                    const inGroup = sortLeagues(leagues.filter(l => (l.status || "open") === group.key));
+                    if (inGroup.length === 0) return null;
+                    return (
+                      <div key={group.key} style={{ marginBottom: 18 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, padding: "0 2px" }}>
+                          <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                            {group.label}
+                          </h3>
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>({inGroup.length})</span>
                         </div>
-                        <span style={{ fontSize: 20, color: lc.bg }}>›</span>
+                        {inGroup.map(l => {
+                          const lc = COLORS[l.color] || COLORS.csc;
+                          const regs = getLeagueRegs(l.id);
+                          const sched = getLeagueSchedule(l.id);
+                          const archived = l.status === "archived";
+                          return (
+                            <div key={l.id} style={{ ...S.card, cursor: "pointer", borderLeft: `4px solid ${lc.bg}`, opacity: archived ? 0.6 : 1 }} onClick={() => setSelectedLeague(l.id)}>
+                              <div style={S.row}>
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 16 }}>{l.name}</p>
+                                  <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>{regs.length} players · {l.weeks} weeks · {sched.weeks?.length > 0 ? `${sched.weeks.length} weeks scheduled` : "No schedule yet"}</p>
+                                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {l.startDate} · {l.gender || "Mixed"} · {l.format || "Singles"}</p>
+                                </div>
+                                <span style={{ fontSize: 20, color: lc.bg }}>›</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             )}
             {adminTab === "players" && (
