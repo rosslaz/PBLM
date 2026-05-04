@@ -482,6 +482,108 @@ function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", 
   return { weeks: schedule };
 }
 
+// ─── Ladder Scheduling ───────────────────────────────────────────────────────
+// Compute weekly per-court standings (within one week's matches only).
+// Returns { courtIndex → [playerId sorted top → bottom by +/-, then wins] }
+function rankCourtPlayers(courtData, scoresMap, leagueId, weekNum) {
+  // courtData is a single court object: { courtName, players, matches }
+  const stats = {};
+  courtData.players.forEach(pid => { stats[pid] = { wins: 0, losses: 0, pf: 0, pa: 0 }; });
+  courtData.matches.forEach(match => {
+    const score = scoresMap[`${leagueId}_${weekNum}_${match.id}`];
+    if (!score) return;
+    const sideA = match.format === "doubles" ? match.team1 : [match.home];
+    const sideB = match.format === "doubles" ? match.team2 : [match.away];
+    const aWon = score.homeScore > score.awayScore;
+    sideA.forEach(pid => {
+      if (!stats[pid]) return;
+      stats[pid].pf += score.homeScore;
+      stats[pid].pa += score.awayScore;
+      if (aWon) stats[pid].wins++; else stats[pid].losses++;
+    });
+    sideB.forEach(pid => {
+      if (!stats[pid]) return;
+      stats[pid].pf += score.awayScore;
+      stats[pid].pa += score.homeScore;
+      if (!aWon) stats[pid].wins++; else stats[pid].losses++;
+    });
+  });
+  // Sort top to bottom: +/- DESC, wins DESC
+  return courtData.players
+    .map(pid => ({ pid, ...stats[pid] }))
+    .sort((a, b) => (b.pf - b.pa) - (a.pf - a.pa) || b.wins - a.wins)
+    .map(s => s.pid);
+}
+
+// Move players up/down between courts based on previous-week rankings.
+// rules:
+//   - All courts: top 2 move up, bottom 2 move down
+//   - 5-player court: 3rd place stays
+//   - 4-player court: nobody stays in middle (top 2 + bottom 2 = 4)
+//   - Top court: top 2 stay (no court above)
+//   - Bottom court: bottom 2 stay (no court below)
+// Returns array of new court groups (player IDs in each).
+function laddderRotate(prevWeekCourts, scoresMap, leagueId, weekNum, courtSizes) {
+  const numCourts = prevWeekCourts.length;
+  const ranked = prevWeekCourts.map(c => rankCourtPlayers(c, scoresMap, leagueId, weekNum));
+  // For each court, partition into: stayUp, stay, stayDown
+  // stayUp = top 2 (will move up unless top court)
+  // stayDown = bottom 2 (will move down unless bottom court)
+  // stay = middle (everyone else)
+  const partitions = ranked.map((players, ci) => {
+    const isTop = ci === 0;
+    const isBottom = ci === numCourts - 1;
+    const top2 = players.slice(0, 2);
+    const bottom2 = players.slice(-2);
+    const middle = players.slice(2, players.length - 2);
+    return {
+      stay:    [...(isTop ? top2 : []), ...middle, ...(isBottom ? bottom2 : [])],
+      moveUp:   isTop    ? [] : top2,
+      moveDown: isBottom ? [] : bottom2,
+    };
+  });
+
+  // Build new court compositions
+  const newCourts = partitions.map((p, ci) => {
+    const fromBelow = ci < numCourts - 1 ? partitions[ci + 1].moveUp   : [];
+    const fromAbove = ci > 0             ? partitions[ci - 1].moveDown : [];
+    return [...p.stay, ...fromBelow, ...fromAbove];
+  });
+
+  // Sanity: court sizes should match courtSizes (the configured target for this week)
+  // If not, fall back to flattening + redistributing
+  const sizesMatch = newCourts.every((c, i) => c.length === courtSizes[i]);
+  if (!sizesMatch) {
+    // Flatten in current order and assign by court size sequentially (shouldn't normally happen)
+    const flat = newCourts.flat();
+    const out = [];
+    let idx = 0;
+    for (const sz of courtSizes) { out.push(flat.slice(idx, idx + sz)); idx += sz; }
+    return out;
+  }
+  return newCourts;
+}
+
+// Build a single week object from court groups (used by ladder)
+function buildLadderWeek(courtGroups, weekNum, dateStr, format) {
+  const isDoubles = format === "Doubles" || format === "Mixed Doubles";
+  const courts = courtGroups.map((group, c) => {
+    let rawMatches;
+    if (isDoubles) rawMatches = doublesMatches(group, weekNum * 1009 + c * 7 + 13);
+    else            rawMatches = singlesMatches(group);
+    const matches = rawMatches.map((m, mi) => ({
+      id: `w${weekNum}_c${c}_m${mi}`,
+      ...m,
+      week: weekNum,
+      court: courtName(c),
+      date: dateStr,
+      format: isDoubles ? "doubles" : "singles",
+    }));
+    return { courtName: courtName(c), players: group, matches };
+  });
+  return { week: weekNum, date: dateStr, courts };
+}
+
 // ─── Color Themes ─────────────────────────────────────────────────────────────
 // CSC Pickleball brand palette — drawn from the club logo
 const CSC = {
@@ -522,7 +624,7 @@ const S = {
   section: { padding: "16px 20px" },
   tabBar: { display: "flex", gap: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 20px", background: "var(--color-background-primary)", overflowX: "auto" },
   tab: (active, color) => ({ padding: "10px 16px", cursor: "pointer", fontSize: 14, border: "none", background: "transparent", fontFamily: "inherit", color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: active ? `2px solid ${color || CSC.blue}` : "2px solid transparent", fontWeight: active ? 500 : 400, whiteSpace: "nowrap" }),
-  badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 600, display: "inline-block" }; },
+  badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"], purple: ["#EEEDFE","#534AB7"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 600, display: "inline-block" }; },
   modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 },
   modalBox: { background: "var(--color-background-primary)", borderRadius: 16, padding: "24px", maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto" },
 };
@@ -616,7 +718,7 @@ function PlayerForm({ onSubmit, onCancel, initial }) {
 }
 
 function LeagueForm({ initial, onSubmit, onCancel }) {
-  const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", gender: initial?.gender || "Mixed", numCourts: initial?.numCourts || 4, location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
+  const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", gender: initial?.gender || "Mixed", competitionType: initial?.competitionType || "mixer", numCourts: initial?.numCourts || 4, location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function handleSubmit() {
     if (!form.name.trim()) return alert("League name required");
@@ -651,6 +753,13 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
           </select>
         </div>
         <div><label style={S.label}>Location</label><input style={S.input} value={form.location} onChange={e => set("location", e.target.value)} placeholder="Community Center" /></div>
+      </div>
+      <div>
+        <label style={S.label}>Competition Type *</label>
+        <select style={S.input} value={form.competitionType} onChange={e => set("competitionType", e.target.value)}>
+          <option value="mixer">Mixer — full schedule generated upfront, courts rotate for variety</option>
+          <option value="ladder">Ladder — week-by-week, courts based on previous week's results</option>
+        </select>
       </div>
       <div><label style={S.label}>Description</label><textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} value={form.description} onChange={e => set("description", e.target.value)} placeholder="Optional…" /></div>
       <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
@@ -1137,6 +1246,9 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
           <div>
             <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
+              <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : "info"), marginLeft: 8, fontSize: 10 }}>
+                {league.competitionType === "ladder" ? "🪜 Ladder" : "🔀 Mixer"}
+              </span>
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
             </p>
@@ -1194,12 +1306,36 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
             </div>
 
             <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16 }}>
-              <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-secondary)" }}>{weeks.length} weeks · {totalMatches} total matches</p>
-              <button style={{ ...S.btn("primary"), background: c.bg, opacity: !capacityOk ? 0.5 : 1 }} onClick={onGenerate}>
-                {weeks.length ? "Regenerate" : "Generate Schedule"}
-              </button>
+              <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-secondary)" }}>
+                {weeks.length} of {league.weeks} weeks scheduled · {totalMatches} total matches
+              </p>
+              {(() => {
+                const isLadder = league.competitionType === "ladder";
+                const allDone = weeks.length >= league.weeks;
+                let label;
+                if (isLadder) {
+                  if (weeks.length === 0) label = "Generate Week 1";
+                  else if (allDone) label = "All Weeks Done";
+                  else label = `Generate Week ${weeks.length + 1}`;
+                } else {
+                  label = weeks.length ? "Regenerate" : "Generate Schedule";
+                }
+                return (
+                  <button
+                    style={{ ...S.btn("primary"), background: c.bg, opacity: (!capacityOk || allDone) ? 0.5 : 1 }}
+                    disabled={allDone}
+                    onClick={onGenerate}>
+                    {label}
+                  </button>
+                );
+              })()}
             </div>
-            {weeks.length === 0 && <EmptyState msg={capacityOk ? "Click Generate Schedule to create court assignments." : "Fix player count first (need 4–20 players)."} />}
+            {league.competitionType === "ladder" && weeks.length > 0 && weeks.length < league.weeks && !isWeekLocked(weeks[weeks.length - 1].week) && (
+              <div style={{ padding: "10px 14px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                🪜 Ladder leagues generate one week at a time. Lock Week {weeks[weeks.length - 1].week}'s scores before generating Week {weeks.length + 1}.
+              </div>
+            )}
+            {weeks.length === 0 && <EmptyState msg={capacityOk ? (league.competitionType === "ladder" ? "Click Generate Week 1 to randomly assign starting courts." : "Click Generate Schedule to create court assignments.") : "Fix player count first."} />}
             {weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={(pid) => db.players[pid]?.email} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />)}
           </div>
         )}
@@ -1443,12 +1579,73 @@ export default function App() {
   async function generateSchedule(leagueId) {
     const league = db.leagues[leagueId];
     const playerIds = getLeagueRegs(leagueId).map(r => r.playerId);
-    const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, league.numCourts || 4);
-    if (result.error) { showToast(result.error, "error"); return; }
-    await action(() => dbWriteSchedule(leagueId, result));
-    const numCourts = result.weeks[0]?.courts.length || 0;
-    const sz = result.weeks[0]?.courts.map(c => c.players.length) || [];
-    showToast(`Schedule generated! ${numCourts} courts (${sz.join(", ")} players) × ${league.weeks} weeks`);
+    const numCourts = league.numCourts || 4;
+    const sizes = distributePlayersToCourts(playerIds.length, numCourts);
+    if (!sizes) {
+      const maxAllowed = numCourts * MAX_PER_COURT;
+      showToast(`Cannot schedule ${playerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).`, "error");
+      return;
+    }
+
+    const isLadder = league.competitionType === "ladder";
+
+    if (!isLadder) {
+      // ─── Mixer: full schedule generated at once (existing behavior) ─────
+      const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, numCourts);
+      if (result.error) { showToast(result.error, "error"); return; }
+      await action(() => dbWriteSchedule(leagueId, result));
+      const courtsCount = result.weeks[0]?.courts.length || 0;
+      const sz = result.weeks[0]?.courts.map(c => c.players.length) || [];
+      showToast(`Schedule generated! ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks`);
+      return;
+    }
+
+    // ─── Ladder: generate one week at a time ────────────────────────────
+    const existingSched = db.schedules[leagueId] || { weeks: [] };
+    const existingWeeks = existingSched.weeks || [];
+    const nextWeekNum = existingWeeks.length + 1;
+
+    if (nextWeekNum > league.weeks) {
+      showToast(`All ${league.weeks} weeks already generated.`, "error");
+      return;
+    }
+
+    const weekDate = new Date(league.startDate);
+    weekDate.setDate(weekDate.getDate() + (nextWeekNum - 1) * 7);
+    const dateStr = weekDate.toISOString().split("T")[0];
+
+    let courtGroups;
+    if (existingWeeks.length === 0) {
+      // Week 1: random court assignment
+      const shuffled = seededShuffle(playerIds, Date.now() & 0xffffffff);
+      courtGroups = [];
+      let idx = 0;
+      for (const sz of sizes) {
+        courtGroups.push(shuffled.slice(idx, idx + sz));
+        idx += sz;
+      }
+    } else {
+      // Subsequent weeks: require previous week to be locked
+      const prevWeek = existingWeeks[existingWeeks.length - 1];
+      const prevLocked = isWeekLocked(leagueId, prevWeek.week);
+      if (!prevLocked) {
+        showToast(`Lock Week ${prevWeek.week} first, then generate Week ${nextWeekNum}.`, "error");
+        return;
+      }
+      // Sanity check: roster matches previous week's players
+      const prevPlayers = new Set(prevWeek.courts.flatMap(c => c.players));
+      const currentPlayers = new Set(playerIds);
+      if (prevPlayers.size !== currentPlayers.size || ![...prevPlayers].every(p => currentPlayers.has(p))) {
+        showToast("Roster has changed since last week. Ladder rotation requires the same players.", "error");
+        return;
+      }
+      courtGroups = laddderRotate(prevWeek.courts, db.scores, leagueId, prevWeek.week, sizes);
+    }
+
+    const newWeek = buildLadderWeek(courtGroups, nextWeekNum, dateStr, league.format);
+    const newSched = { weeks: [...existingWeeks, newWeek] };
+    await action(() => dbWriteSchedule(leagueId, newSched));
+    showToast(`Week ${nextWeekNum} generated! ${courtGroups.length} courts (${courtGroups.map(g => g.length).join(", ")} players)`);
   }
 
   async function removePlayer(leagueId, playerId) {
