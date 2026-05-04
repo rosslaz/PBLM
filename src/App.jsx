@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase Client ──────────────────────────────────────────────────────────
@@ -203,16 +203,15 @@ async function dbUpdateLeague(id, patch) {
 }
 
 async function dbDeleteLeague(id) {
-  // Cascade: delete league + its registrations + schedule + scores
-  const [{ error: e1 }, { error: e2 }, { error: e3 }] = await Promise.all([
+  // Cascade: delete league + its registrations + schedule + scores in parallel
+  const results = await Promise.all([
     supabase.from("pb_leagues").delete().eq("id", id),
     supabase.from("pb_schedules").delete().eq("league_id", id),
     supabase.from("pb_registrations").delete().like("key", `${id}_%`),
+    supabase.from("pb_scores").delete().like("key", `${id}_%`),
   ]);
-  if (e1 || e2 || e3) throw (e1 || e2 || e3);
-  // Scores keys start with "leagueId_..."
-  const { error: e4 } = await supabase.from("pb_scores").delete().like("key", `${id}_%`);
-  if (e4) throw e4;
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
 }
 
 async function dbRegisterForLeague(leagueId, playerId) {
@@ -1196,7 +1195,11 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
 function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePlayer, onClose }) {
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const available = players.filter(p => !existing.includes(p.id) && playerSearchString(p).includes(search.toLowerCase()));
+  const existingSet = useMemo(() => new Set(existing), [existing]);
+  const available = useMemo(() => {
+    const q = search.toLowerCase();
+    return players.filter(p => !existingSet.has(p.id) && playerSearchString(p).includes(q));
+  }, [players, existingSet, search]);
   if (showNew) return <PlayerForm onSubmit={async d => { const id = await onCreatePlayer(d); if (id) await onRegister(leagueId, id); onClose(); }} onCancel={() => setShowNew(false)} />;
   return (
     <div>
@@ -1225,7 +1228,7 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
 }
 
 // ─── League Detail (commissioner) ─────────────────────────────────────────────
-function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, standings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, getCheckIn }) {
+function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, getCheckIn }) {
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = schedule.weeks || [];
@@ -1336,7 +1339,12 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
               </div>
             )}
             {weeks.length === 0 && <EmptyState msg={capacityOk ? (league.competitionType === "ladder" ? "Click Generate Week 1 to randomly assign starting courts." : "Click Generate Schedule to create court assignments.") : "Fix player count first."} />}
-            {weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={(pid) => db.players[pid]?.email} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />)}
+            {(() => {
+              // Build these once per LeagueDetail render so all week cards
+              // share the same stable references (helps any future React.memo)
+              const getPlayerEmail = pid => db.players[pid]?.email;
+              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
+            })()}
           </div>
         )}
 
@@ -1377,6 +1385,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, sta
         )}
 
         {tab === "standings" && (() => {
+          const standings = getStandings();
           const pendingWeeks = weeks.filter(w => !isWeekLocked(w.week) && w.courts.some(ct => ct.matches.some(m => getScore(league.id, w.week, m.id)))).length;
           return <StandingsTable standings={standings} getPlayerName={getPlayerName} color={c} pendingWeeks={pendingWeeks} />;
         })()}
@@ -1445,8 +1454,7 @@ export default function App() {
     if (sess.playerId && db.players[sess.playerId]) {
       setCurrentPlayer(db.players[sess.playerId]);
       // If they were last in admin view and are still authorized, drop them there
-      const adminList = (db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase());
-      if (sess.adminEmail && adminList.includes(sess.adminEmail.toLowerCase())) {
+      if (sess.adminEmail && adminEmailSetLower.has(sess.adminEmail.toLowerCase())) {
         setAdminEmail(sess.adminEmail);
         setView(sess.view === "admin" ? "admin" : "player");
       } else {
@@ -1454,8 +1462,7 @@ export default function App() {
       }
     } else if (sess.adminEmail) {
       // Admin-only session (no player record) — verify they're still authorized
-      const adminList = (db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase());
-      if (adminList.includes(sess.adminEmail.toLowerCase())) {
+      if (adminEmailSetLower.has(sess.adminEmail.toLowerCase())) {
         setAdminEmail(sess.adminEmail);
         setView("admin");
       }
@@ -1477,16 +1484,22 @@ export default function App() {
     }
   }, [currentPlayer, adminEmail, view, sessionRestored]);
 
-  // Keep currentPlayer fresh: when db reloads (e.g. after profile edit), pick up changes
+  // Keep currentPlayer fresh: when db reloads (e.g. after profile edit), pick up changes.
+  // We only depend on `db.players` (not the whole db) and only compare the single
+  // player record we care about. This avoids running this effect on every action
+  // that changes scores/schedules/etc.
+  const dbPlayers = db?.players;
   useEffect(() => {
-    if (currentPlayer && db?.players[currentPlayer.id]) {
-      const fresh = db.players[currentPlayer.id];
-      // Only update if anything actually changed (avoid render loops)
+    if (!currentPlayer || !dbPlayers) return;
+    const fresh = dbPlayers[currentPlayer.id];
+    if (fresh && fresh !== currentPlayer) {
+      // db.players[id] is a new object reference after every reload, so we
+      // do a focused stringify here only when references differ.
       if (JSON.stringify(fresh) !== JSON.stringify(currentPlayer)) {
         setCurrentPlayer(fresh);
       }
     }
-  }, [db, currentPlayer]);
+  }, [dbPlayers, currentPlayer]);
 
   // Wrap every action: set saving, run write, reload from DB, clear saving
   async function action(fn, successMsg) {
@@ -1507,11 +1520,25 @@ export default function App() {
 
   const leagues = Object.values(db.leagues);
   const players = Object.values(db.players);
+  const sortedLeagues = sortLeagues(leagues);
 
-  const getLeagueRegs = lid => Object.values(db.registrations).filter(r => r.leagueId === lid);
+  // Pre-index registrations by leagueId so getLeagueRegs is O(1) lookup.
+  // Object.values + filter on every call was O(N) per call, multiplied across
+  // all the league cards rendered. This single pass replaces all of them.
+  const regsByLeague = (() => {
+    const idx = {};
+    Object.values(db.registrations).forEach(r => {
+      (idx[r.leagueId] || (idx[r.leagueId] = [])).push(r);
+    });
+    return idx;
+  })();
+
+  const getLeagueRegs = lid => regsByLeague[lid] || [];
   const getLeagueSchedule = lid => db.schedules[lid] || { weeks: [] };
   const getScore = (lid, week, mid) => db.scores[`${lid}_${week}_${mid}`] || null;
   const getPlayerName = id => formatPlayerName(db.players[id]);
+  // Lowercase admin email set, computed once per render (used for auth checks)
+  const adminEmailSetLower = new Set((db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase()));
 
   function getStandings(leagueId) {
     const regs = getLeagueRegs(leagueId);
@@ -1817,7 +1844,8 @@ export default function App() {
 
         {league ? (
           <LeagueDetail league={league} db={db} regs={getLeagueRegs(league.id)} schedule={getLeagueSchedule(league.id)}
-            getScore={getScore} getPlayerName={getPlayerName} standings={getStandings(league.id)}
+            getScore={getScore} getPlayerName={getPlayerName}
+            getStandings={() => getStandings(league.id)}
             getCheckIn={getCheckIn}
             onEdit={() => setModal({ type: "editLeague", league })}
             onDelete={() => setModal({ type: "confirmDelete", league })}
@@ -2076,7 +2104,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
         {leagues.length > 0 && (
           <div>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--color-text-secondary)" }}>Active Leagues</h3>
-            {sortLeagues(leagues.filter(l => l.status !== "archived")).map(l => {
+            {sortedLeagues.filter(l => l.status !== "archived").map(l => {
               const lc = COLORS[l.color] || COLORS.csc;
               const regs = Object.values(db.registrations).filter(r => r.leagueId === l.id);
               const archived = l.status === "archived";
