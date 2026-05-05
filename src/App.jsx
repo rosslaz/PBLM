@@ -6,6 +6,33 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPER_ADMIN = "ross.lazar@gmail.com";
 
+// Date/time display helpers — render in the device's local format.
+// Stored values are wall-clock at the venue, so we just reformat for display.
+function formatDate(iso) {
+  if (!iso) return "";
+  // Parse "2025-09-15" as local-noon to avoid the UTC-midnight-becomes-prev-day bug
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const date = new Date(y, m - 1, d, 12, 0, 0);
+  if (isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+function formatTime(hhmm) {
+  if (!hhmm) return "";
+  // Parse "18:00" as today at that local time, then format with locale conventions
+  const [h, m] = hhmm.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return hhmm;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+}
+function formatDateTime(iso, hhmm) {
+  const datePart = formatDate(iso);
+  const timePart = formatTime(hhmm);
+  if (datePart && timePart) return `${datePart} · ${timePart}`;
+  return datePart || timePart || "";
+}
+
 // Display name helper: "Jane S." from a player record.
 // Backward-compat: if a player only has the legacy single-field `name`, returns
 // it as-is. New players store firstName + lastName separately.
@@ -988,7 +1015,7 @@ function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, onClose
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <span style={{ ...S.badge("info"), marginBottom: 8, display: "inline-block" }}>{match.court} · Week {match.week} · {match.date}</span>
+        <span style={{ ...S.badge("info"), marginBottom: 8, display: "inline-block" }}>{match.court} · Week {match.week} · {formatDate(match.date)}</span>
         <p style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 600 }}>{labelA} vs {labelB}</p>
         <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Play to 11, win by 2</p>
       </div>
@@ -1209,7 +1236,7 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600, fontSize: 15 }}>Week {weekData.week}</span>
           <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
-            {weekData.date}{weekData.time ? ` · ${weekData.time}` : ""}
+            {formatDateTime(weekData.date, weekData.time)}
           </span>
           {weekData.placeholder && <span style={{ ...S.badge("info"), fontSize: 10 }}>Not generated</span>}
           {isLocked && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒 Locked</span>}
@@ -1258,7 +1285,7 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
             <CheckInSummary regs={regs} getCheckInForPlayer={getCheckInForPlayer}
               getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail}
               leagueId={leagueId} leagueName={leagueName}
-              week={weekData.week} weekDate={weekData.date} />
+              week={weekData.week} weekDate={formatDate(weekData.date)} />
           )}
           {weekData.courts.map((court, ci) => {
             const courtColor = COURT_COLORS[ci] || CSC.blue;
@@ -1452,7 +1479,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
             </p>
-            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {league.startDate}</p>
+            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {formatDate(league.startDate)}</p>
             {league.location && <p style={{ margin: 0, fontSize: 13, color: c.text }}>📍 {league.location}</p>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -2086,6 +2113,14 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span>
             <span style={{ fontSize: 12, opacity: 0.5 }}>{saving ? "Saving…" : "●"}</span>
+            {currentPlayer && (
+              <button
+                style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.2)", border: "0.5px solid rgba(255,255,255,0.5)", color: "#fff", fontSize: 11 }}
+                onClick={() => { setSelectedLeague(null); setView("player"); }}
+                title="Switch back to player view">
+                👤 Player Mode
+              </button>
+            )}
             <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={logout}>Log Out</button>
           </div>
         </div>
@@ -2148,7 +2183,7 @@ export default function App() {
                                 <div style={{ flex: 1 }}>
                                   <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 16 }}>{l.name}</p>
                                   <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>{regs.length} players · {l.weeks} weeks · {sched.weeks?.length > 0 ? `${sched.weeks.length} weeks scheduled` : "No schedule yet"}</p>
-                                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {l.startDate} · {l.gender || "Mixed"} · {l.format || "Singles"}</p>
+                                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {formatDate(l.startDate)} · {l.gender || "Mixed"} · {l.format || "Singles"}</p>
                                 </div>
                                 <span style={{ fontSize: 20, color: lc.bg }}>›</span>
                               </div>
@@ -2363,7 +2398,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
                   <div style={S.row}>
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 2px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
-                      <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {regs.length} players · {l.weeks} weeks · Starts {l.startDate}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {regs.length} players · {l.weeks} weeks · Starts {formatDate(l.startDate)}</p>
                     </div>
                     <span style={S.badge(l.status==="active"?"success":l.status==="archived"?"warning":"info")}>{l.status==="archived"?"📦 archived":l.status||"open"}</span>
                   </div>
