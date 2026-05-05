@@ -473,7 +473,7 @@ function doublesMatches(group, weekSeed) {
 }
 
 // ─── Master schedule generator ───────────────────────────────────────────────
-function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", numCourts = 4) {
+function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", numCourts = 4, playerGenders = {}) {
   const n = playerIds.length;
   const sizes = distributePlayersToCourts(n, numCourts);
   const minNeeded = MIN_PER_COURT;
@@ -481,6 +481,7 @@ function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", 
   if (!sizes) return { error: `Cannot schedule ${n} players. Need ${minNeeded}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).` };
 
   const isDoubles = format === "Doubles" || format === "Mixed Doubles";
+  const isMixedDoubles = format === "Mixed Doubles";
 
   // For singles, track opponent frequency to bias court assignments toward fairness.
   // For doubles, the within-court template already balances partners/opponents
@@ -502,11 +503,23 @@ function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", 
     });
     const shuffled = seededShuffle(sorted, week * 7919 + 31337);
 
+    // For Mixed Doubles, partition into men/women queues so each court gets
+    // a balanced mix. For other formats, fall back to the simple sequential split.
+    let courtGroups;
+    if (isMixedDoubles) {
+      courtGroups = assignBalancedCourts(shuffled, sizes, playerGenders);
+    } else {
+      courtGroups = [];
+      let idx = 0;
+      for (const sz of sizes) {
+        courtGroups.push(shuffled.slice(idx, idx + sz));
+        idx += sz;
+      }
+    }
+
     const courts = [];
-    let idx = 0;
     for (let c = 0; c < sizes.length; c++) {
-      const group = shuffled.slice(idx, idx + sizes[c]);
-      idx += sizes[c];
+      const group = courtGroups[c];
 
       let rawMatches;
       if (isDoubles) {
@@ -540,6 +553,80 @@ function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", 
     schedule.push({ week: week + 1, date: dateStr, courts });
   }
   return { weeks: schedule };
+}
+
+// Distribute players across courts with balanced gender mix.
+// Each court gets men:women proportional to the global ratio, ±1.
+// Players are pulled from the pre-shuffled queue in order, preserving the
+// fairness-by-exposure ordering within each gender.
+function assignBalancedCourts(shuffledPlayers, sizes, playerGenders) {
+  const men = shuffledPlayers.filter(id => playerGenders[id] === "Male");
+  const women = shuffledPlayers.filter(id => playerGenders[id] === "Female");
+  const other = shuffledPlayers.filter(id => playerGenders[id] !== "Male" && playerGenders[id] !== "Female");
+  const totalN = shuffledPlayers.length;
+  const totalMen = men.length;
+
+  // First, compute how many men each court "should" get based on its size and
+  // the global ratio. Use largest-remainder method so the sum across courts
+  // exactly equals totalMen — no leftovers, no overshoots.
+  const rawTargets = sizes.map(sz => sz * totalMen / totalN);
+  const flooredTargets = rawTargets.map(Math.floor);
+  const assigned = flooredTargets.reduce((a, b) => a + b, 0);
+  const leftover = totalMen - assigned;
+  // Award the +1s to courts with the largest fractional remainders
+  const remainders = rawTargets.map((r, i) => ({ i, frac: r - flooredTargets[i] }));
+  remainders.sort((a, b) => b.frac - a.frac);
+  const targetsMen = [...flooredTargets];
+  for (let k = 0; k < leftover; k++) targetsMen[remainders[k].i]++;
+  // Don't ever exceed court size
+  for (let i = 0; i < sizes.length; i++) {
+    if (targetsMen[i] > sizes[i]) targetsMen[i] = sizes[i];
+  }
+
+  const groups = [];
+  let menUsed = 0, womenUsed = 0;
+
+  for (let c = 0; c < sizes.length; c++) {
+    const courtSize = sizes[c];
+    let targetM = targetsMen[c];
+    let targetW = courtSize - targetM;
+
+    // Clamp to actually-available players (defensive)
+    const remainingMen = men.length - menUsed;
+    const remainingWomen = women.length - womenUsed;
+    if (targetM > remainingMen) { targetM = remainingMen; targetW = courtSize - targetM; }
+    if (targetW > remainingWomen) { targetW = remainingWomen; targetM = courtSize - targetW; }
+
+    const group = [
+      ...men.slice(menUsed, menUsed + targetM),
+      ...women.slice(womenUsed, womenUsed + targetW),
+    ];
+    menUsed += targetM;
+    womenUsed += targetW;
+    groups.push(group);
+  }
+
+  // Distribute any unassigned "other"-gender players into the smallest courts
+  let otherIdx = 0;
+  while (otherIdx < other.length) {
+    let smallest = 0;
+    for (let c = 1; c < groups.length; c++) {
+      if (groups[c].length < groups[smallest].length) smallest = c;
+    }
+    if (groups[smallest].length >= sizes[smallest]) break;
+    groups[smallest].push(other[otherIdx++]);
+  }
+
+  // Top off any short courts from leftover men/women queues (safety net)
+  for (let c = 0; c < groups.length; c++) {
+    while (groups[c].length < sizes[c]) {
+      if (menUsed < men.length) groups[c].push(men[menUsed++]);
+      else if (womenUsed < women.length) groups[c].push(women[womenUsed++]);
+      else break;
+    }
+  }
+
+  return groups;
 }
 
 // ─── Ladder Scheduling ───────────────────────────────────────────────────────
@@ -1733,7 +1820,10 @@ export default function App() {
 
     if (!isLadder) {
       // ─── Mixer: full schedule generated at once (existing behavior) ─────
-      const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, numCourts);
+      // Build a quick playerId → gender map so the scheduler can balance Mixed Doubles courts
+      const playerGenders = {};
+      playerIds.forEach(pid => { playerGenders[pid] = db.players[pid]?.gender; });
+      const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, numCourts, playerGenders);
       if (result.error) { showToast(result.error, "error"); return; }
       // Preserve any commissioner-edited date/time from the existing schedule
       const existingByWeek = {};
@@ -1781,13 +1871,19 @@ export default function App() {
 
     let courtGroups;
     if (realWeeks.length === 0) {
-      // Week 1: random court assignment
+      // Week 1: random court assignment, gender-balanced for Mixed Doubles
       const shuffled = seededShuffle(playerIds, Date.now() & 0xffffffff);
-      courtGroups = [];
-      let idx = 0;
-      for (const sz of sizes) {
-        courtGroups.push(shuffled.slice(idx, idx + sz));
-        idx += sz;
+      if (league.format === "Mixed Doubles") {
+        const playerGenders = {};
+        playerIds.forEach(pid => { playerGenders[pid] = db.players[pid]?.gender; });
+        courtGroups = assignBalancedCourts(shuffled, sizes, playerGenders);
+      } else {
+        courtGroups = [];
+        let idx = 0;
+        for (const sz of sizes) {
+          courtGroups.push(shuffled.slice(idx, idx + sz));
+          idx += sz;
+        }
       }
     } else {
       // Subsequent weeks: require previous week to be locked
