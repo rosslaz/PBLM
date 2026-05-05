@@ -8,6 +8,26 @@ const SUPER_ADMIN = "ross.lazar@gmail.com";
 
 // Date/time display helpers — render in the device's local format.
 // Stored values are wall-clock at the venue, so we just reformat for display.
+// Detect mobile viewport (< 640px). Updates live on resize/orientation change.
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.innerWidth < breakpoint
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, [breakpoint]);
+  return isMobile;
+}
+
 function formatDate(iso) {
   if (!iso) return "";
   // Parse "2025-09-15" as local-noon to avoid the UTC-midnight-becomes-prev-day bug
@@ -787,7 +807,7 @@ const COURT_COLORS = [CSC.blue, CSC.greenDark, "#D85A30", "#534AB7"];
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
   page: { minHeight: "100vh", background: "var(--color-background-tertiary)", fontFamily: "'Georgia','Times New Roman',serif" },
-  header: (color) => ({ background: color || CSC.blue, color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }),
+  header: (color) => ({ background: color || CSC.blue, color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100, flexWrap: "wrap", rowGap: 8 }),
   logo: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.5px", margin: 0 },
   card: { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "16px 20px", marginBottom: 12 },
   btn: (v = "primary", color) => ({ background: v === "primary" ? (color || CSC.blue) : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 500 }),
@@ -829,6 +849,7 @@ function EmptyState({ msg }) {
 
 // ─── Forms ────────────────────────────────────────────────────────────────────
 function PlayerForm({ onSubmit, onCancel, initial }) {
+  const isMobile = useIsMobile();
   // Backward-compat: if editing a legacy player with only `name`, split it
   const [legacyFirst, legacyLast] = (() => {
     if (!initial?.name || initial?.firstName) return ["", ""];
@@ -860,7 +881,7 @@ function PlayerForm({ onSubmit, onCancel, initial }) {
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <div><label style={S.label}>First Name *</label><input style={S.input} value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="Jane" /></div>
         <div><label style={S.label}>Last Name *</label><input style={S.input} value={form.lastName} onChange={e => set("lastName", e.target.value)} placeholder="Smith" /></div>
       </div>
@@ -892,6 +913,7 @@ function PlayerForm({ onSubmit, onCancel, initial }) {
 }
 
 function LeagueForm({ initial, onSubmit, onCancel }) {
+  const isMobile = useIsMobile();
   const [form, setForm] = useState({ name: initial?.name || "", weeks: initial?.weeks || 8, startDate: initial?.startDate || new Date().toISOString().split("T")[0], format: initial?.format || "Singles", gender: initial?.gender || "Mixed", competitionType: initial?.competitionType || "mixer", numCourts: initial?.numCourts || 4, location: initial?.location || "", description: initial?.description || "", status: initial?.status || "open" });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function handleSubmit() {
@@ -901,11 +923,11 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div><label style={S.label}>League Name *</label><input style={S.input} value={form.name} onChange={e => set("name", e.target.value)} placeholder="Summer Singles 2025" /></div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <div><label style={S.label}>Number of Weeks *</label><input style={S.input} type="number" min={1} max={52} value={form.weeks} onChange={e => set("weeks", +e.target.value)} /></div>
         <div><label style={S.label}>Start Date *</label><input style={S.input} type="date" value={form.startDate} onChange={e => set("startDate", e.target.value)} /></div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <div><label style={S.label}>Format</label><select style={S.input} value={form.format} onChange={e => set("format", e.target.value)}><option>Singles</option><option>Doubles</option><option>Mixed Doubles</option></select></div>
         <div>
           <label style={S.label}>Gender *</label>
@@ -916,7 +938,7 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
           </select>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option></select></div>
         <div>
           <label style={S.label}>Number of Courts *</label>
@@ -945,6 +967,7 @@ function LeagueForm({ initial, onSubmit, onCancel }) {
 }
 
 function EditWeekForm({ weekData, onSubmit, onCancel }) {
+  const isMobile = useIsMobile();
   const [date, setDate] = useState(weekData.date || "");
   const [time, setTime] = useState(weekData.time || "");
   function handleSubmit() {
@@ -956,7 +979,7 @@ function EditWeekForm({ weekData, onSubmit, onCancel }) {
       <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>
         Adjust the date or start time for this week. Players will see the updated time on their schedule.
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <div>
           <label style={S.label}>Date *</label>
           <input style={S.input} type="date" value={date} onChange={e => setDate(e.target.value)} />
@@ -995,6 +1018,7 @@ function matchSides(match) {
 }
 
 function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, onClose }) {
+  const isMobile = useIsMobile();
   const [home, setHome] = useState(existing?.homeScore ?? "");
   const [away, setAway] = useState(existing?.awayScore ?? "");
 
@@ -1022,12 +1046,12 @@ function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, onClose
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 12, alignItems: "end", marginBottom: 12 }}>
         <div style={{ textAlign: "center" }}>
           <label style={{ ...S.label, textAlign: "center", whiteSpace: "normal" }}>{labelA}</label>
-          <input style={{ ...S.input, textAlign: "center", fontSize: 32, padding: "14px 8px", border: `2px solid ${home !== "" && away !== "" ? (isValid ? "#3B6D11" : "#A32D2D") : "var(--color-border-secondary)"}` }} type="number" min={0} max={99} value={home} onChange={e => setHome(e.target.value)} />
+          <input style={{ ...S.input, textAlign: "center", fontSize: isMobile ? 24 : 32, padding: isMobile ? "10px 6px" : "14px 8px", border: `2px solid ${home !== "" && away !== "" ? (isValid ? "#3B6D11" : "#A32D2D") : "var(--color-border-secondary)"}` }} type="number" min={0} max={99} value={home} onChange={e => setHome(e.target.value)} />
         </div>
         <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 22, paddingBottom: 12 }}>–</div>
         <div style={{ textAlign: "center" }}>
           <label style={{ ...S.label, textAlign: "center", whiteSpace: "normal" }}>{labelB}</label>
-          <input style={{ ...S.input, textAlign: "center", fontSize: 32, padding: "14px 8px", border: `2px solid ${home !== "" && away !== "" ? (isValid ? "#3B6D11" : "#A32D2D") : "var(--color-border-secondary)"}` }} type="number" min={0} max={99} value={away} onChange={e => setAway(e.target.value)} />
+          <input style={{ ...S.input, textAlign: "center", fontSize: isMobile ? 24 : 32, padding: isMobile ? "10px 6px" : "14px 8px", border: `2px solid ${home !== "" && away !== "" ? (isValid ? "#3B6D11" : "#A32D2D") : "var(--color-border-secondary)"}` }} type="number" min={0} max={99} value={away} onChange={e => setAway(e.target.value)} />
         </div>
       </div>
       {errorMsg && <p style={{ textAlign: "center", color: "#A32D2D", fontSize: 13, margin: "0 0 12px", padding: "6px 12px", background: "#FCEBEB", borderRadius: 6 }}>{errorMsg}</p>}
@@ -1377,7 +1401,7 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
         </div>
       )}
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
+        <table style={{ width: "100%", minWidth: 360, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "var(--color-background-secondary)" }}>
               {[["Player","36%"],["+/-","16%"],["W","12%"],["L","12%"],["PF","12%"],["PA","12%"]].map(([h,w]) => (
@@ -1450,6 +1474,7 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
 
 // ─── League Detail (commissioner) ─────────────────────────────────────────────
 function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onEditWeekDateTime, getCheckIn }) {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = buildDisplayWeeks(league, schedule);
@@ -1469,7 +1494,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
     <div>
       {/* Banner */}
       <div style={{ ...S.card, margin: "16px 20px", borderLeft: `4px solid ${c.bg}`, background: c.light }}>
-        <div style={{ ...S.row, justifyContent: "space-between" }}>
+        <div style={{ ...S.row, justifyContent: "space-between", flexWrap: "wrap", rowGap: 12 }}>
           <div>
             <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
@@ -1507,7 +1532,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Court Assignments</span>
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{n} of {maxPlayers} players (ideal: {MAX_PER_COURT} per court)</span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(numCourts, 4)}, 1fr)`, gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(numCourts, isMobile ? 3 : 4)}, 1fr)`, gap: 8 }}>
                 {courtList.map((name, ci) => {
                   const sz = sizes ? sizes[ci] : 0;
                   const full = sz === MAX_PER_COURT;
@@ -1620,6 +1645,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const isMobile = useIsMobile();
   const [db, setDB] = useState(null);
   const [view, setView] = useState("home");
   const [adminTab, setAdminTab] = useState("leagues");
@@ -2414,6 +2440,7 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
 
 // ─── PLAYER VIEW ──────────────────────────────────────────────────────────────
 function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
+  const isMobile = useIsMobile();
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   const selectedLeague = selectedLeagueId ? db.leagues[selectedLeagueId] : null;
   const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.csc) : COLORS.teal;
@@ -2459,11 +2486,11 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
             <button
               style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.2)", border: "0.5px solid rgba(255,255,255,0.5)", color: "#fff", fontSize: 11 }}
               onClick={onSwitchToAdmin}>
-              ⚙ Commissioner Mode
+              {isMobile ? "⚙" : "⚙ Commissioner Mode"}
             </button>
           )}
-          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.15)", border: "0.5px solid rgba(255,255,255,0.4)", color: "#fff" }} onClick={() => setModal({ type: "joinLeague" })}>+ Join League</button>
-          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={onLogout} title="Log out">Log Out</button>
+          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.15)", border: "0.5px solid rgba(255,255,255,0.4)", color: "#fff" }} onClick={() => setModal({ type: "joinLeague" })}>{isMobile ? "+ Join" : "+ Join League"}</button>
+          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={onLogout} title="Log out">{isMobile ? "↪" : "Log Out"}</button>
         </div>
       </div>
 
