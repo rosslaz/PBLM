@@ -365,6 +365,31 @@ async function dbWriteSchedule(leagueId, scheduleData) {
   if (error) throw error;
 }
 
+async function dbRebalanceWeek(leagueId, weekNum, newCourts, scoresToRemoveKeys) {
+  // Atomic-ish rebalance: write the new courts for one week, drop scores for
+  // matches that no longer exist.
+  const { data, error: e1 } = await supabase
+    .from("pb_schedules").select("data").eq("league_id", leagueId).single();
+  if (e1) throw e1;
+  const sched = data?.data || { weeks: [] };
+  const weeks = (sched.weeks || []).map(w =>
+    w.week === weekNum ? { ...w, courts: newCourts, placeholder: false } : w
+  );
+  // If the week didn't exist (shouldn't happen for rebalance), append it
+  if (!weeks.find(w => w.week === weekNum)) {
+    weeks.push({ week: weekNum, date: "", time: null, courts: newCourts });
+  }
+  const updates = [
+    supabase.from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } }),
+  ];
+  if (scoresToRemoveKeys.length > 0) {
+    updates.push(supabase.from("pb_scores").delete().in("key", scoresToRemoveKeys));
+  }
+  const results = await Promise.all(updates);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
+}
+
 async function dbWriteScore(leagueId, week, matchId, homeScore, awayScore) {
   const key = `${leagueId}_${week}_${matchId}`;
   const data = { homeScore: +homeScore, awayScore: +awayScore, submittedAt: new Date().toISOString() };
@@ -1071,6 +1096,7 @@ function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, onClose
 const CHECKIN_OPTS = [
   { key: "in",    label: "In",    color: "#3B6D11", bg: "#EAF3DE", icon: "✓" },
   { key: "maybe", label: "Maybe", color: "#854F0B", bg: "#FAEEDA", icon: "?" },
+  { key: "sub",   label: "Sub",   color: "#534AB7", bg: "#EEEDFE", icon: "↔" },
   { key: "out",   label: "Out",   color: "#A32D2D", bg: "#FCEBEB", icon: "✗" },
 ];
 
@@ -1112,8 +1138,8 @@ function CheckInRow({ current, onSet, isLocked }) {
 // ─── Check-In Summary (commissioner view) ─────────────────────────────────────
 function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEmail, leagueId, leagueName, week, weekDate }) {
   const [expanded, setExpanded] = useState(false);
-  const counts = { in: 0, out: 0, maybe: 0, none: 0 };
-  const buckets = { in: [], maybe: [], out: [], none: [] };
+  const counts = { in: 0, out: 0, maybe: 0, sub: 0, none: 0 };
+  const buckets = { in: [], maybe: [], sub: [], out: [], none: [] };
   regs.forEach(r => {
     const ci = getCheckInForPlayer(r.playerId);
     const status = ci?.status || "none";
@@ -1130,6 +1156,9 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
       ``,
       `MAYBE (${counts.maybe}):`,
       ...buckets.maybe.map(id => `  - ${getPlayerName(id)}`),
+      ``,
+      `SUB — out but found a sub (${counts.sub}):`,
+      ...buckets.sub.map(id => `  - ${getPlayerName(id)}`),
       ``,
       `OUT (${counts.out}):`,
       ...buckets.out.map(id => `  - ${getPlayerName(id)}`),
@@ -1190,6 +1219,7 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
           <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 600 }}>Check-ins:</span>
           <span style={{ ...S.badge("success"), fontSize: 11 }}>✓ {counts.in} in</span>
           <span style={{ ...S.badge("warning"), fontSize: 11 }}>? {counts.maybe} maybe</span>
+          {counts.sub > 0 && <span style={{ ...S.badge("purple"), fontSize: 11 }}>↔ {counts.sub} sub</span>}
           <span style={{ ...S.badge("danger"), fontSize: 11 }}>✗ {counts.out} out</span>
           {counts.none > 0 && <span style={{ ...S.badge("info"), fontSize: 11 }}>• {counts.none} no reply</span>}
         </div>
@@ -1221,6 +1251,7 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
           {[
             ["in", "In", "#3B6D11"],
             ["maybe", "Maybe", "#854F0B"],
+            ["sub", "Sub (found a sub)", "#534AB7"],
             ["out", "Out", "#A32D2D"],
             ["none", "No response", "#78716c"],
           ].map(([k, label, color]) => (
@@ -1244,7 +1275,7 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
 // myCourtPlayers: set of player IDs on the same court as myId this week (for edit gating)
 // isLocked: commissioner has locked this week — players cannot edit, commissioner still can
 // isAdmin: full commissioner access
-function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
+function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
   const totalMatches = weekData.courts.reduce((s, c) => s + c.matches.length, 0);
   const scoredMatches = weekData.courts.reduce((s, c) => s + c.matches.filter(m => getScore(leagueId, m.week, m.id)).length, 0);
@@ -1280,6 +1311,14 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
               style={{ ...S.btnSm(isLocked ? "primary" : "secondary", isLocked ? "#854F0B" : undefined), padding: "3px 10px", fontSize: 11 }}
               onClick={e => { e.stopPropagation(); onToggleLock(weekData.week); }}>
               {isLocked ? "Unlock" : "Lock Week"}
+            </button>
+          )}
+          {isAdmin && onRebalance && !weekData.placeholder && !isLocked && (
+            <button
+              style={{ ...S.btnSm("secondary"), padding: "3px 10px", fontSize: 11, color: "#534AB7", borderColor: "#534AB7" }}
+              onClick={e => { e.stopPropagation(); onRebalance(weekData); }}
+              title="Rebalance courts based on RSVP status">
+              ⚖ Rebalance
             </button>
           )}
           {!weekData.placeholder && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{scoredMatches}/{totalMatches} scored</span>}
@@ -1473,7 +1512,7 @@ function AddPlayerToLeague({ players, leagueId, existing, onRegister, onCreatePl
 }
 
 // ─── League Detail (commissioner) ─────────────────────────────────────────────
-function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onEditWeekDateTime, getCheckIn }) {
+function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn }) {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
@@ -1592,7 +1631,7 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
               // Build these once per LeagueDetail render so all week cards
               // share the same stable references (helps any future React.memo)
               const getPlayerEmail = pid => db.players[pid]?.email;
-              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} onEditDateTime={onEditWeekDateTime} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
+              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} onEditDateTime={onEditWeekDateTime} onRebalance={onRebalanceWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
             })()}
           </div>
         )}
@@ -1853,6 +1892,83 @@ export default function App() {
     setSelectedLeague(null); setModal(null);
   }
 
+  async function rebalanceWeek(leagueId, weekNum) {
+    const league = db.leagues[leagueId];
+    const regs = getLeagueRegs(leagueId);
+    const sched = getLeagueSchedule(leagueId);
+    const week = sched.weeks?.find(w => w.week === weekNum);
+    if (!week) { showToast("Week not found.", "error"); return; }
+
+    // Filter players: IN or SUB or MAYBE or no-response (only OUT is excluded)
+    const activePlayerIds = regs
+      .map(r => r.playerId)
+      .filter(pid => {
+        const ci = getCheckIn(leagueId, weekNum, pid);
+        return ci?.status !== "out";
+      });
+
+    if (activePlayerIds.length < MIN_PER_COURT) {
+      showToast(`Only ${activePlayerIds.length} players available. Need at least ${MIN_PER_COURT}.`, "error");
+      return;
+    }
+
+    const numCourts = league.numCourts || 4;
+    const sizes = distributePlayersToCourts(activePlayerIds.length, numCourts);
+    if (!sizes) {
+      const maxAllowed = numCourts * MAX_PER_COURT;
+      showToast(`Cannot rebalance ${activePlayerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} (${MIN_PER_COURT}–${MAX_PER_COURT} per court).`, "error");
+      return;
+    }
+
+    // Random gender-balanced assignment for Mixed Doubles, plain shuffle otherwise
+    const shuffled = seededShuffle(activePlayerIds, Date.now() & 0xffffffff);
+    let courtGroups;
+    if (league.format === "Mixed Doubles") {
+      const playerGenders = {};
+      activePlayerIds.forEach(pid => { playerGenders[pid] = db.players[pid]?.gender; });
+      courtGroups = assignBalancedCourts(shuffled, sizes, playerGenders);
+    } else {
+      courtGroups = [];
+      let idx = 0;
+      for (const sz of sizes) {
+        courtGroups.push(shuffled.slice(idx, idx + sz));
+        idx += sz;
+      }
+    }
+
+    // Build the new courts with match templates
+    const isDoubles = league.format === "Doubles" || league.format === "Mixed Doubles";
+    const newCourts = courtGroups.map((group, c) => {
+      let rawMatches;
+      if (isDoubles) rawMatches = doublesMatches(group, weekNum * 1009 + c * 7 + 13);
+      else            rawMatches = singlesMatches(group);
+      const matches = rawMatches.map((m, mi) => ({
+        id: `w${weekNum}_c${c}_m${mi}`,
+        ...m,
+        week: weekNum,
+        court: courtName(c),
+        date: week.date,
+        format: isDoubles ? "doubles" : "singles",
+      }));
+      return { courtName: courtName(c), players: group, matches };
+    });
+
+    // Determine which existing scores reference matches that won't survive.
+    const newMatchIds = new Set(newCourts.flatMap(c => c.matches.map(m => m.id)));
+    const scoresToRemove = [];
+    (week.courts || []).forEach(ct => ct.matches.forEach(m => {
+      const key = `${leagueId}_${weekNum}_${m.id}`;
+      if (db.scores[key] && !newMatchIds.has(m.id)) {
+        scoresToRemove.push(key);
+      }
+    }));
+
+    await action(() => dbRebalanceWeek(leagueId, weekNum, newCourts, scoresToRemove));
+    const sz = courtGroups.map(g => g.length).join(", ");
+    showToast(`Week ${weekNum} rebalanced: ${courtGroups.length} courts (${sz} players)${scoresToRemove.length > 0 ? `, ${scoresToRemove.length} score${scoresToRemove.length!==1?"s":""} cleared` : ""}.`);
+    setModal(null);
+  }
+
   async function updateWeekDateTime(leagueId, weekNum, date, time) {
     await action(() => dbWriteWeekDateTime(leagueId, weekNum, date, time), `Week ${weekNum} updated.`);
     setModal(null);
@@ -2087,6 +2203,58 @@ export default function App() {
           </Modal>
         )}
         {modal?.type === "confirmDelete" && <Modal title="Delete League" onClose={() => setModal(null)}><p style={{ fontSize: 15, margin: "0 0 20px" }}>Delete <b>{modal.league.name}</b>? This cannot be undone.</p><div style={S.row}><button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => doDeleteLeague(modal.league.id)}>Delete</button><button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button></div></Modal>}
+        {modal?.type === "confirmRebalance" && (() => {
+          const w = modal.weekData;
+          const lid = modal.leagueId;
+          const regsForLeague = getLeagueRegs(lid);
+          // Count statuses
+          let inCount = 0, subCount = 0, maybeCount = 0, outCount = 0, noneCount = 0;
+          regsForLeague.forEach(r => {
+            const ci = getCheckIn(lid, w.week, r.playerId);
+            const s = ci?.status;
+            if (s === "in") inCount++;
+            else if (s === "sub") subCount++;
+            else if (s === "maybe") maybeCount++;
+            else if (s === "out") outCount++;
+            else noneCount++;
+          });
+          const activeCount = inCount + subCount + maybeCount + noneCount;
+          // Are there scores already entered for this week?
+          const existingScoresCount = (w.courts || [])
+            .flatMap(ct => ct.matches)
+            .filter(m => db.scores[`${lid}_${w.week}_${m.id}`])
+            .length;
+          return (
+            <Modal title={`Rebalance Week ${w.week}`} onClose={() => setModal(null)}>
+              <p style={{ fontSize: 14, margin: "0 0 14px", color: "var(--color-text-secondary)" }}>
+                Rebuild the court assignments for this week based on current RSVP status.
+                Players marked <b>OUT</b> are removed; everyone else (including no-response) stays in.
+              </p>
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px", marginBottom: 14, fontSize: 13 }}>
+                <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Headcount for Week {w.week}:</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <span style={{ ...S.badge("success"), fontSize: 11 }}>✓ {inCount} in</span>
+                  {subCount > 0 && <span style={{ ...S.badge("purple"), fontSize: 11 }}>↔ {subCount} sub</span>}
+                  <span style={{ ...S.badge("warning"), fontSize: 11 }}>? {maybeCount} maybe</span>
+                  <span style={{ ...S.badge("danger"), fontSize: 11 }}>✗ {outCount} out</span>
+                  {noneCount > 0 && <span style={{ ...S.badge("info"), fontSize: 11 }}>• {noneCount} no reply</span>}
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: 13, fontWeight: 600 }}>
+                  {activeCount} player{activeCount!==1?"s":""} will be assigned to courts.
+                </p>
+              </div>
+              {existingScoresCount > 0 && (
+                <div style={{ padding: "10px 12px", marginBottom: 14, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                  ⚠ This week has {existingScoresCount} score{existingScoresCount!==1?"s":""} already entered. Some or all may be cleared if the matches no longer exist after rebalancing.
+                </div>
+              )}
+              <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
+                <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+                <button style={{ ...S.btn("primary"), background: "#534AB7" }} onClick={() => rebalanceWeek(lid, w.week)}>Rebalance</button>
+              </div>
+            </Modal>
+          );
+        })()}
         {modal?.type === "editWeek" && (() => {
           const w = modal.weekData;
           return (
@@ -2166,7 +2334,8 @@ export default function App() {
             onToggleLockWeek={(week) => toggleLockWeek(league.id, week)}
             isWeekLocked={(week) => isWeekLocked(league.id, week)}
             onEnterScore={match => setModal({ type: "enterScore", match, leagueId: league.id })}
-            onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })} />
+            onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })}
+            onRebalanceWeek={weekData => setModal({ type: "confirmRebalance", leagueId: league.id, weekData })} />
         ) : (
           <>
             <div style={S.tabBar}>
