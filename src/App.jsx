@@ -365,9 +365,11 @@ async function dbWriteSchedule(leagueId, scheduleData) {
   if (error) throw error;
 }
 
-async function dbRebalanceWeek(leagueId, weekNum, newCourts, scoresToRemoveKeys) {
-  // Atomic-ish rebalance: write the new courts for one week, drop scores for
-  // matches that no longer exist.
+async function dbRebalanceWeek(leagueId, weekNum, newCourts) {
+  // Atomic-ish rebalance: write the new courts for one week, and delete ALL
+  // scores for that week (because match IDs are deterministic — w{N}_c{C}_m{M}
+  // — and would otherwise be silently re-attributed to different matches with
+  // the same ID after the rebuild).
   const { data, error: e1 } = await supabase
     .from("pb_schedules").select("data").eq("league_id", leagueId).single();
   if (e1) throw e1;
@@ -379,13 +381,10 @@ async function dbRebalanceWeek(leagueId, weekNum, newCourts, scoresToRemoveKeys)
   if (!weeks.find(w => w.week === weekNum)) {
     weeks.push({ week: weekNum, date: "", time: null, courts: newCourts });
   }
-  const updates = [
+  const results = await Promise.all([
     supabase.from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } }),
-  ];
-  if (scoresToRemoveKeys.length > 0) {
-    updates.push(supabase.from("pb_scores").delete().in("key", scoresToRemoveKeys));
-  }
-  const results = await Promise.all(updates);
+    supabase.from("pb_scores").delete().like("key", `${leagueId}_${weekNum}_%`),
+  ]);
   const firstError = results.find(r => r.error)?.error;
   if (firstError) throw firstError;
 }
@@ -1185,7 +1184,7 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
     const body =
       `Hi,\n\n` +
       `Just a quick reminder to mark your availability for Week ${week}${weekDate ? ` (${weekDate})` : ""} of ${leagueName || "the league"}.\n\n` +
-      `Please log in and select In, Maybe, or Out so we can plan the courts.\n\n` +
+      `Please log in and select In, Maybe, Sub (if you've arranged a sub), or Out so we can plan the courts.\n\n` +
       `Thanks!`;
     // BCC recipients to keep emails private — use a single self-addressed To if needed.
     // Most mail clients accept all recipients in BCC and an empty To.
@@ -1953,19 +1952,17 @@ export default function App() {
       return { courtName: courtName(c), players: group, matches };
     });
 
-    // Determine which existing scores reference matches that won't survive.
-    const newMatchIds = new Set(newCourts.flatMap(c => c.matches.map(m => m.id)));
-    const scoresToRemove = [];
+    // Count existing scores for this week so we can mention how many will be cleared.
+    // (All week-scoped scores are wiped because match IDs are deterministic and would
+    // collide with new matches if not removed.)
+    let scoresCleared = 0;
     (week.courts || []).forEach(ct => ct.matches.forEach(m => {
-      const key = `${leagueId}_${weekNum}_${m.id}`;
-      if (db.scores[key] && !newMatchIds.has(m.id)) {
-        scoresToRemove.push(key);
-      }
+      if (db.scores[`${leagueId}_${weekNum}_${m.id}`]) scoresCleared++;
     }));
 
-    await action(() => dbRebalanceWeek(leagueId, weekNum, newCourts, scoresToRemove));
+    await action(() => dbRebalanceWeek(leagueId, weekNum, newCourts));
     const sz = courtGroups.map(g => g.length).join(", ");
-    showToast(`Week ${weekNum} rebalanced: ${courtGroups.length} courts (${sz} players)${scoresToRemove.length > 0 ? `, ${scoresToRemove.length} score${scoresToRemove.length!==1?"s":""} cleared` : ""}.`);
+    showToast(`Week ${weekNum} rebalanced: ${courtGroups.length} courts (${sz} players)${scoresCleared > 0 ? `, ${scoresCleared} score${scoresCleared!==1?"s":""} cleared` : ""}.`);
     setModal(null);
   }
 
@@ -1989,6 +1986,15 @@ export default function App() {
 
     if (!isLadder) {
       // ─── Mixer: full schedule generated at once (existing behavior) ─────
+      // Block regeneration if any week is locked — locking means those scores
+      // count toward standings; regenerating would silently re-attribute them
+      // to new matches with the same deterministic ID.
+      const existingWeeks = db.schedules[leagueId]?.weeks || [];
+      const hasLockedWeek = existingWeeks.some(w => isWeekLocked(leagueId, w.week));
+      if (hasLockedWeek) {
+        showToast("Cannot regenerate: one or more weeks are locked. Unlock all weeks first.", "error");
+        return;
+      }
       // Build a quick playerId → gender map so the scheduler can balance Mixed Doubles courts
       const playerGenders = {};
       playerIds.forEach(pid => { playerGenders[pid] = db.players[pid]?.gender; });
@@ -1996,7 +2002,7 @@ export default function App() {
       if (result.error) { showToast(result.error, "error"); return; }
       // Preserve any commissioner-edited date/time from the existing schedule
       const existingByWeek = {};
-      (db.schedules[leagueId]?.weeks || []).forEach(w => { existingByWeek[w.week] = w; });
+      existingWeeks.forEach(w => { existingByWeek[w.week] = w; });
       result.weeks = result.weeks.map(w => {
         const prev = existingByWeek[w.week];
         if (prev && (prev.date !== w.date || prev.time)) {
@@ -2004,10 +2010,20 @@ export default function App() {
         }
         return w;
       });
-      await action(() => dbWriteSchedule(leagueId, result));
+      // Count scores being wiped so we can mention it
+      const scoresWiped = Object.keys(db.scores).filter(k => k.startsWith(`${leagueId}_`)).length;
+      // Write schedule + wipe all old scores (match IDs are deterministic and would
+      // otherwise be silently re-attributed to new matches)
+      await action(async () => {
+        await dbWriteSchedule(leagueId, result);
+        if (scoresWiped > 0) {
+          const { error } = await supabase.from("pb_scores").delete().like("key", `${leagueId}_%`);
+          if (error) throw error;
+        }
+      });
       const courtsCount = result.weeks[0]?.courts.length || 0;
       const sz = result.weeks[0]?.courts.map(c => c.players.length) || [];
-      showToast(`Schedule generated! ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks`);
+      showToast(`Schedule generated! ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks${scoresWiped > 0 ? `, ${scoresWiped} previous score${scoresWiped!==1?"s":""} cleared` : ""}`);
       return;
     }
 
@@ -2062,14 +2078,37 @@ export default function App() {
         showToast(`Lock Week ${prevWeek.week} first, then generate Week ${nextWeekNum}.`, "error");
         return;
       }
-      // Sanity check: roster matches previous week's players
+      // The current roster (playerIds) must include everyone who played last week
+      // — players who got dropped from the league entirely break the ladder.
+      // But it's OK for the current roster to include MORE players than last week
+      // (e.g. someone was OUT and is now back, or rebalance removed someone).
+      // We'll slot those returning players into the bottom court.
       const prevPlayers = new Set(prevWeek.courts.flatMap(c => c.players));
       const currentPlayers = new Set(playerIds);
-      if (prevPlayers.size !== currentPlayers.size || ![...prevPlayers].every(p => currentPlayers.has(p))) {
-        showToast("Roster has changed since last week. Ladder rotation requires the same players.", "error");
+      const missing = [...prevPlayers].filter(p => !currentPlayers.has(p));
+      if (missing.length > 0) {
+        showToast(`Cannot continue ladder: ${missing.length} player${missing.length!==1?"s":""} from last week ${missing.length!==1?"are":"is"} no longer registered. Re-register or remove them first.`, "error");
         return;
       }
-      courtGroups = laddderRotate(prevWeek.courts, db.scores, leagueId, prevWeek.week, sizes);
+      const returning = [...currentPlayers].filter(p => !prevPlayers.has(p));
+
+      // Rotate using the previous week's courts (which may have fewer players
+      // than the current roster). After rotation, append the returning players
+      // to the bottom court(s) up to the configured sizes.
+      // First rotate with prev-week sizes; then we'll re-shape to current sizes.
+      const prevSizes = prevWeek.courts.map(c => c.players.length);
+      const rotated = laddderRotate(prevWeek.courts, db.scores, leagueId, prevWeek.week, prevSizes);
+      // Flatten rotated → ordered list (top court first, top players first within)
+      const ordered = rotated.flat();
+      // Append returning players to the bottom
+      const fullOrder = [...ordered, ...returning];
+      // Re-shape into the courts using the new sizes
+      courtGroups = [];
+      let idx = 0;
+      for (const sz of sizes) {
+        courtGroups.push(fullOrder.slice(idx, idx + sz));
+        idx += sz;
+      }
     }
 
     const newWeek = buildLadderWeek(courtGroups, nextWeekNum, dateStr, league.format);
@@ -2245,7 +2284,7 @@ export default function App() {
               </div>
               {existingScoresCount > 0 && (
                 <div style={{ padding: "10px 12px", marginBottom: 14, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
-                  ⚠ This week has {existingScoresCount} score{existingScoresCount!==1?"s":""} already entered. Some or all may be cleared if the matches no longer exist after rebalancing.
+                  ⚠ This week has {existingScoresCount} score{existingScoresCount!==1?"s":""} already entered. All will be cleared because the matches will be different after rebalancing.
                 </div>
               )}
               <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
