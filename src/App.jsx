@@ -412,9 +412,13 @@ async function dbToggleLockWeek(leagueId, week) {
   }
 }
 
-async function dbSetCheckIn(leagueId, week, playerId, status) {
+async function dbSetCheckIn(leagueId, week, playerId, status, subName) {
   const key = `${leagueId}_w${week}_${playerId}`;
-  const data = { leagueId, week, playerId, status, updatedAt: new Date().toISOString() };
+  const data = {
+    leagueId, week, playerId, status,
+    subName: status === "sub" ? (subName || "").trim() || null : null,
+    updatedAt: new Date().toISOString(),
+  };
   if (status === null) {
     const { error } = await supabase.from("pb_checkins").delete().eq("key", key);
     if (error) throw error;
@@ -1099,19 +1103,46 @@ const CHECKIN_OPTS = [
   { key: "out",   label: "Out",   color: "#A32D2D", bg: "#FCEBEB", icon: "✗" },
 ];
 
-function CheckInRow({ current, onSet, isLocked }) {
+function CheckInRow({ current, currentSubName, onSet, isLocked }) {
+  const [subName, setSubName] = useState(currentSubName || "");
+  // Keep local input in sync when the parent value changes (e.g. after reload)
+  useEffect(() => { setSubName(currentSubName || ""); }, [currentSubName]);
+
+  function handleClick(opt) {
+    const active = current === opt.key;
+    if (active) {
+      // Clicking the active option clears it
+      onSet(null);
+      if (opt.key === "sub") setSubName("");
+      return;
+    }
+    if (opt.key === "sub") {
+      // Persist immediately with whatever name they've typed (can be empty)
+      onSet("sub", subName);
+    } else {
+      onSet(opt.key);
+    }
+  }
+
+  function handleSubNameBlur() {
+    // Save the typed name when the field loses focus, but only if Sub is the active status
+    if (current === "sub" && subName !== (currentSubName || "")) {
+      onSet("sub", subName);
+    }
+  }
+
   return (
     <div style={{ margin: "12px 16px 0", padding: "8px 10px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 600 }}>Your availability:</span>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {CHECKIN_OPTS.map(opt => {
             const active = current === opt.key;
             return (
               <button
                 key={opt.key}
                 disabled={isLocked}
-                onClick={() => onSet(active ? null : opt.key)}
+                onClick={() => handleClick(opt)}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
                   padding: "4px 10px", fontSize: 12, fontWeight: 600,
@@ -1130,6 +1161,23 @@ function CheckInRow({ current, onSet, isLocked }) {
           })}
         </div>
       </div>
+      {current === "sub" && (
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>
+            Sub's name:
+          </label>
+          <input
+            type="text"
+            value={subName}
+            onChange={e => setSubName(e.target.value)}
+            onBlur={handleSubNameBlur}
+            onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            disabled={isLocked}
+            placeholder="e.g. John Smith"
+            style={{ ...S.input, flex: 1, fontSize: 13, padding: "4px 8px" }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1139,11 +1187,14 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
   const [expanded, setExpanded] = useState(false);
   const counts = { in: 0, out: 0, maybe: 0, sub: 0, none: 0 };
   const buckets = { in: [], maybe: [], sub: [], out: [], none: [] };
+  // Track playerId + subName so we can render "Bob → sub: John Smith" in summary
+  const subNames = {};
   regs.forEach(r => {
     const ci = getCheckInForPlayer(r.playerId);
     const status = ci?.status || "none";
     counts[status]++;
     buckets[status].push(r.playerId);
+    if (status === "sub" && ci?.subName) subNames[r.playerId] = ci.subName;
   });
 
   function copyReport() {
@@ -1157,7 +1208,7 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
       ...buckets.maybe.map(id => `  - ${getPlayerName(id)}`),
       ``,
       `SUB — out but found a sub (${counts.sub}):`,
-      ...buckets.sub.map(id => `  - ${getPlayerName(id)}`),
+      ...buckets.sub.map(id => `  - ${getPlayerName(id)}${subNames[id] ? ` (sub: ${subNames[id]})` : " (sub: not specified)"}`),
       ``,
       `OUT (${counts.out}):`,
       ...buckets.out.map(id => `  - ${getPlayerName(id)}`),
@@ -1258,7 +1309,14 @@ function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEma
               <div key={k} style={{ marginTop: 8 }}>
                 <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 600, color }}>{label} ({buckets[k].length})</p>
                 <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-primary)", lineHeight: 1.5 }}>
-                  {buckets[k].map(id => getPlayerName(id)).join(", ")}
+                  {buckets[k].map(id => {
+                    const name = getPlayerName(id);
+                    if (k === "sub") {
+                      const sn = subNames[id];
+                      return sn ? `${name} → ${sn}` : `${name} → (sub not named)`;
+                    }
+                    return name;
+                  }).join(", ")}
                 </p>
               </div>
             )
@@ -1339,8 +1397,11 @@ function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName
           )}
           {/* Player's own check-in */}
           {myId && onSetCheckIn && (
-            <CheckInRow current={myCheckIn?.status} isLocked={isLocked}
-              onSet={status => onSetCheckIn(weekData.week, status)} />
+            <CheckInRow
+              current={myCheckIn?.status}
+              currentSubName={myCheckIn?.subName}
+              isLocked={isLocked}
+              onSet={(status, subName) => onSetCheckIn(weekData.week, status, subName)} />
           )}
           {/* Commissioner check-in summary */}
           {isAdmin && regs && getCheckInForPlayer && (
@@ -1439,10 +1500,10 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
         </div>
       )}
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", minWidth: 360, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
+        <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "var(--color-background-secondary)" }}>
-              {[["Player","36%"],["+/-","16%"],["W","12%"],["L","12%"],["PF","12%"],["PA","12%"]].map(([h,w]) => (
+              {[["Player","32%"],["Win%","14%"],["+/-","14%"],["W","10%"],["L","10%"],["PF","10%"],["PA","10%"]].map(([h,w]) => (
                 <th key={h} style={{ padding: h==="Player"?"8px 12px":"8px", textAlign: h==="Player"?"left":"center", fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", width: w }}>{h}</th>
               ))}
             </tr>
@@ -1458,6 +1519,9 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
                     {getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
                   </td>
+                  <td style={{ padding:"10px 8px",textAlign:"center",fontWeight:700,fontSize:14,color:isMe?c.bg:"var(--color-text-primary)" }}>
+                    {s.matches > 0 ? `${Math.round(s.winPct * 100)}%` : "—"}
+                  </td>
                   <td style={{ padding:"10px 8px",textAlign:"center",color:diff>=0?CSC.blue:"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
                   <td style={{ padding:"10px 8px",textAlign:"center",fontWeight:600,color:CSC.blue }}>{s.wins}</td>
                   <td style={{ padding:"10px 8px",textAlign:"center",color:"#A32D2D" }}>{s.losses}</td>
@@ -1469,7 +1533,7 @@ function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 
           </tbody>
         </table>
       </div>
-      <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 8 }}>Only locked weeks count. Ranked by +/- (points for minus points against). Wins are the tiebreaker. PF=Points For · PA=Points Against</p>
+      <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 8 }}>Only locked weeks count. Ranked by Win% (accounts for sit-outs), then +/- (points for minus points against), then wins. PF=Points For · PA=Points Against</p>
     </div>
   );
 }
@@ -1564,6 +1628,29 @@ function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, get
       <div style={S.section}>
         {tab === "schedule" && (
           <div>
+            {/* Reminder: weeks with all scores entered but not yet locked */}
+            {(() => {
+              const fullyScoredUnlocked = realWeeks.filter(w => {
+                if (isWeekLocked(w.week)) return false;
+                let total = 0, scored = 0;
+                w.courts.forEach(ct => ct.matches.forEach(m => {
+                  total++;
+                  if (getScore(league.id, w.week, m.id)) scored++;
+                }));
+                return total > 0 && scored === total;
+              });
+              if (fullyScoredUnlocked.length === 0) return null;
+              return (
+                <div style={{ padding: "10px 14px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>🔓</span>
+                  <span>
+                    <b>{fullyScoredUnlocked.length} week{fullyScoredUnlocked.length!==1?"s":""}</b> with all scores entered but not yet locked
+                    ({fullyScoredUnlocked.map(w => `Week ${w.week}`).join(", ")}).
+                    Lock {fullyScoredUnlocked.length!==1?"them":"it"} to count toward standings.
+                  </span>
+                </div>
+              );
+            })()}
             {/* Court capacity visualizer */}
             <div style={{ ...S.card, marginBottom: 16, padding: "14px 16px", background: "var(--color-background-secondary)" }}>
               <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 10 }}>
@@ -1859,15 +1946,27 @@ export default function App() {
         });
       }));
     });
-    return Object.entries(stats).map(([id, s]) => ({ id, ...s })).sort((a, b) => { const da = a.pointsFor - a.pointsAgainst, dbb = b.pointsFor - b.pointsAgainst; return dbb - da || b.wins - a.wins; });
+    return Object.entries(stats).map(([id, s]) => {
+      const matches = s.wins + s.losses;
+      const winPct = matches > 0 ? s.wins / matches : 0;
+      return { id, ...s, matches, winPct };
+    }).sort((a, b) => {
+      // Primary: win% DESC (fairer when players have unequal matches played due to sit-outs)
+      // Secondary: +/- DESC
+      // Tertiary: wins DESC (raw)
+      if (b.winPct !== a.winPct) return b.winPct - a.winPct;
+      const da = a.pointsFor - a.pointsAgainst, dbb = b.pointsFor - b.pointsAgainst;
+      if (dbb !== da) return dbb - da;
+      return b.wins - a.wins;
+    });
   }
 
   const getCheckIn = (leagueId, week, playerId) =>
     db.checkIns?.[`${leagueId}_w${week}_${playerId}`] || null;
 
-  // status = "in" | "out" | "maybe" | null (clears)
-  async function setCheckIn(leagueId, week, playerId, status) {
-    await action(() => dbSetCheckIn(leagueId, week, playerId, status));
+  // status = "in" | "out" | "maybe" | "sub" | null (clears)
+  async function setCheckIn(leagueId, week, playerId, status, subName) {
+    await action(() => dbSetCheckIn(leagueId, week, playerId, status, subName));
   }
 
   // ─── Action wrappers — each writes to DB then reloads ─────────────────────
@@ -2647,6 +2746,66 @@ function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, 
 }
 
 // ─── PLAYER VIEW ──────────────────────────────────────────────────────────────
+// Find the player's next or most recent match in a league's schedule.
+// "Next" = the earliest unlocked week >= today where they have a match.
+// If none, fall back to the most recent locked week with a match.
+function findHighlightMatch(player, sched, isWeekLocked, leagueId) {
+  const weeks = (sched?.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
+  if (weeks.length === 0) return null;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const parseDate = iso => {
+    if (!iso) return null;
+    const [y,m,d] = iso.split("-").map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m-1, d);
+  };
+
+  // Find weeks with no scores yet (or any unlocked) — preference order:
+  // 1. Future or today, unlocked, and player hasn't played yet (no scores in their court)
+  // 2. Most recent past week
+  const withDates = weeks.map(w => ({ w, date: parseDate(w.date) }));
+  // Sort ascending by date
+  withDates.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
+
+  // Find first upcoming unlocked week
+  const upcoming = withDates.find(({ w, date }) => {
+    if (!date) return false;
+    if (date < today) return false;
+    return !isWeekLocked(leagueId, w.week);
+  });
+  if (upcoming) return { ...upcoming, kind: "upcoming" };
+
+  // Otherwise: most recent past week (locked or not)
+  const past = [...withDates].reverse().find(({ w, date }) => date && date <= today);
+  if (past) return { ...past, kind: "past" };
+
+  // No dates? Just the first available week
+  return { ...withDates[0], kind: "upcoming" };
+}
+
+// Get the specific match (and its court) on a given week that the player is in
+function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore) {
+  const court = week.courts.find(ct => ct.players.includes(playerId));
+  if (!court) return null;
+  // Among matches in their court, prefer one without a score
+  let target = court.matches.find(m => {
+    const inMatch = (m.format === "doubles"
+      ? [...(m.team1||[]), ...(m.team2||[])].includes(playerId)
+      : (m.home === playerId || m.away === playerId));
+    if (!inMatch) return false;
+    const score = getScore(leagueId, m.week, m.id);
+    return !score;
+  });
+  if (!target) {
+    // Fall back to any match they're in
+    target = court.matches.find(m => (m.format === "doubles"
+      ? [...(m.team1||[]), ...(m.team2||[])].includes(playerId)
+      : (m.home === playerId || m.away === playerId)));
+  }
+  return { court, match: target };
+}
+
 function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
   const isMobile = useIsMobile();
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
@@ -2719,6 +2878,48 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
         </div>
       )}
 
+      {selectedLeague && (() => {
+        const highlight = findHighlightMatch(player, sched, isWeekLocked, selectedLeagueId);
+        if (!highlight || selectedLeague.status === "archived") return null;
+        const { w: hw, kind } = highlight;
+        const found = findPlayerMatchInWeek(hw, player.id, isWeekLocked, selectedLeagueId, getScore);
+        if (!found?.court) return null;
+        const isUpcoming = kind === "upcoming";
+        const partners = found.court.players.filter(p => p !== player.id);
+        const dateLabel = formatDate(hw.date);
+        const timeLabel = hw.time ? formatTime(hw.time) : null;
+        return (
+          <div style={{ margin: "12px 16px 0" }}>
+            <div style={{
+              background: isUpcoming ? c.bg : "var(--color-background-primary)",
+              color: isUpcoming ? "#fff" : "var(--color-text-primary)",
+              borderRadius: 12, padding: "14px 16px",
+              border: isUpcoming ? "none" : `0.5px solid ${c.bg}40`,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: "0.6px",
+                  textTransform: "uppercase",
+                  background: isUpcoming ? "rgba(255,255,255,0.25)" : c.bg,
+                  color: isUpcoming ? "#fff" : "#fff",
+                  padding: "2px 8px", borderRadius: 999,
+                }}>
+                  {isUpcoming ? "Your next match" : "Most recent match"}
+                </span>
+                <span style={{ fontSize: 12, opacity: 0.85 }}>Week {hw.week} · {found.court.courtName}</span>
+              </div>
+              <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, letterSpacing: "-0.2px" }}>
+                {dateLabel}{timeLabel ? ` · ${timeLabel}` : ""}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, opacity: 0.92 }}>
+                {partners.length > 0
+                  ? `${selectedLeague.format === "Singles" ? "Court with" : "On court with"}: ${partners.map(p => getPlayerName(p)).join(" · ")}`
+                  : "Court roster TBD"}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
       {selectedLeague && (
         <>
           <div style={S.tabBar}>
@@ -2734,7 +2935,7 @@ function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerT
                   </div>
                 )}
                 {myWeeks.length === 0 && <EmptyState msg="No schedule yet. Check back after the commissioner generates this season's schedule." />}
-                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status) => setCheckIn(selectedLeagueId, week, player.id, status)} />)}
+                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />)}
               </div>
             )}
             {playerTab === "standings" && (() => {
