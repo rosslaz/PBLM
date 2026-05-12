@@ -160,10 +160,10 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
             <div style={{
               background: isUpcoming ? c.bg : "var(--color-background-primary)",
               color: isUpcoming ? "#fff" : "var(--color-text-primary)",
-              borderRadius: 12, padding: "14px 16px",
+              borderRadius: 12, padding: "12px 16px",
               border: isUpcoming ? "none" : `0.5px solid ${c.bg}40`,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{
                   fontSize: 10, fontWeight: 700, letterSpacing: "0.6px",
                   textTransform: "uppercase",
@@ -197,7 +197,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
               <div>
                 <p style={{ margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)" }}>Your matches in <b>{selectedLeague.name}</b></p>
                 {selectedLeague.status === "archived" && (
-                  <div style={{ padding: "10px 14px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                  <div style={{ padding: "12px 16px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
                     📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
                   </div>
                 )}

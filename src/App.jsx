@@ -702,8 +702,8 @@ export default function App() {
             <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: "0 0 16px" }}>
               This will add up to 20 test players (Test1–Test20) with emails test1@test.com through test20@test.com. Any that already exist will be skipped.
             </p>
-            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 13 }}>
-              <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Players to be added:</p>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 12px", marginBottom: 16, fontSize: 13 }}>
+              <p style={{ margin: "0 0 8px", fontWeight: 600 }}>Players to be added:</p>
               {Array.from({length: 20}, (_, i) => i + 1).map(i => (
                 <span key={i} style={{ display: "inline-block", margin: "2px 4px 2px 0", ...S.badge("info"), fontSize: 10 }}>Test{i}</span>
               ))}
@@ -752,25 +752,25 @@ export default function App() {
             .length;
           return (
             <Modal title={`Rebalance Week ${w.week}`} onClose={() => setModal(null)}>
-              <p style={{ fontSize: 14, margin: "0 0 14px", color: "var(--color-text-secondary)" }}>
+              <p style={{ fontSize: 14, margin: "0 0 12px", color: "var(--color-text-secondary)" }}>
                 Rebuild the court assignments for this week based on current RSVP status.
                 Players marked <b>OUT</b> are removed; everyone else (including no-response) stays in.
               </p>
-              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px", marginBottom: 14, fontSize: 13 }}>
-                <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Headcount for Week {w.week}:</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 12px", marginBottom: 12, fontSize: 13 }}>
+                <p style={{ margin: "0 0 8px", fontWeight: 600 }}>Headcount for Week {w.week}:</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <span style={{ ...S.badge("success"), fontSize: 11 }}>✓ {inCount} in</span>
                   {subCount > 0 && <span style={{ ...S.badge("purple"), fontSize: 11 }}>↔ {subCount} sub</span>}
                   <span style={{ ...S.badge("warning"), fontSize: 11 }}>? {maybeCount} maybe</span>
                   <span style={{ ...S.badge("danger"), fontSize: 11 }}>✗ {outCount} out</span>
                   {noneCount > 0 && <span style={{ ...S.badge("info"), fontSize: 11 }}>• {noneCount} no reply</span>}
                 </div>
-                <p style={{ margin: "10px 0 0", fontSize: 13, fontWeight: 600 }}>
+                <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 600 }}>
                   {activeCount} player{activeCount!==1?"s":""} will be assigned to courts.
                 </p>
               </div>
               {existingScoresCount > 0 && (
-                <div style={{ padding: "10px 12px", marginBottom: 14, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                <div style={{ padding: "12px 12px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
                   ⚠ This week has {existingScoresCount} score{existingScoresCount!==1?"s":""} already entered. All will be cleared because the matches will be different after rebalancing.
                 </div>
               )}
@@ -814,10 +814,10 @@ export default function App() {
                 Move <b>{formatPlayerName(p)}</b> ({p.email}) to the trash?
               </p>
               {playerLeagues.length > 0 && (
-                <div style={{ padding: "10px 12px", marginBottom: 16, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                <div style={{ padding: "12px 12px", marginBottom: 16, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
                   Registered in {playerLeagues.length} league{playerLeagues.length!==1?"s":""}:
-                  <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
-                    {playerLeagues.map(l => <li key={l.id} style={{ marginBottom: 2 }}>{l.name}</li>)}
+                  <ul style={{ margin: "8px 0 0 16px", padding: 0 }}>
+                    {playerLeagues.map(l => <li key={l.id} style={{ marginBottom: 4 }}>{l.name}</li>)}
                   </ul>
                   <p style={{ margin: "8px 0 0", fontSize: 12 }}>
                     Their registrations stay intact — if you restore them within 30 days, they'll snap back into these leagues automatically.
@@ -883,7 +883,7 @@ export default function App() {
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
             <h1 style={S.logo}>{league ? league.name : "Commissioner Panel"}</h1>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span>
             <span style={{ fontSize: 12, opacity: 0.5 }}>{saving ? "Saving…" : "●"}</span>
             {currentPlayer && (
@@ -924,7 +924,7 @@ export default function App() {
                   <button key={k} style={S.tab(adminTab===k)} onClick={() => setAdminTab(k)}>
                     {label}
                     {showCount && (
-                      <span style={{ marginLeft: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, borderRadius: 999, background: "#A32D2D", color: "#fff" }}>
+                      <span style={{ marginLeft: 8, padding: "1px 7px", fontSize: 10, fontWeight: 700, borderRadius: 999, background: "#A32D2D", color: "#fff" }}>
                         {trashedLeagues.length + trashedPlayers.length}
                       </span>
                     )}
@@ -950,7 +950,7 @@ export default function App() {
                     const inGroup = sortLeagues(leagues.filter(l => (l.status || "open") === group.key));
                     if (inGroup.length === 0) return null;
                     return (
-                      <div key={group.key} style={{ marginBottom: 18 }}>
+                      <div key={group.key} style={{ marginBottom: 16 }}>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, padding: "0 2px" }}>
                           <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                             {group.label}
@@ -993,10 +993,10 @@ export default function App() {
                 {players.length === 0 && <EmptyState msg="No players registered yet." />}
                 {players.map(p => (
                   <div key={p.id} style={S.card}>
-                    <div style={{ ...S.row, marginBottom: 10 }}>
+                    <div style={{ ...S.row, marginBottom: 12 }}>
                       <div style={{ width: 40, height: 40, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 16, flexShrink: 0 }}>{playerInitial(p)}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 2 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 4 }}>
                           <p style={{ margin: 0, fontWeight: 600 }}>{formatPlayerName(p)}</p>
                           {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                           {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC Member</span>}

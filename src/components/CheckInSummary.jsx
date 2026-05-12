@@ -81,7 +81,7 @@ export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPl
       <div
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", cursor: "pointer" }}
         onClick={() => setExpanded(!expanded)}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 600 }}>Check-ins:</span>
           <span style={{ ...S.badge("success"), fontSize: 11 }}>✓ {counts.in} in</span>
           <span style={{ ...S.badge("warning"), fontSize: 11 }}>? {counts.maybe} maybe</span>
@@ -89,23 +89,23 @@ export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPl
           <span style={{ ...S.badge("danger"), fontSize: 11 }}>✗ {counts.out} out</span>
           {counts.none > 0 && <span style={{ ...S.badge("info"), fontSize: 11 }}>• {counts.none} no reply</span>}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           {counts.none > 0 && (
             <button
-              style={{ ...S.btnSm("primary", "#185FA5"), padding: "3px 10px", fontSize: 11 }}
+              style={{ ...S.btnSm("primary", "#185FA5"), fontSize: 11 }}
               onClick={e => { e.stopPropagation(); emailNoResponse(); }}
               title={`Email the ${counts.none} player${counts.none!==1?"s":""} who haven't responded`}>
               ✉ Remind ({counts.none})
             </button>
           )}
           <button
-            style={{ ...S.btnSm("secondary"), padding: "3px 10px", fontSize: 11 }}
+            style={{ ...S.btnSm("secondary"), fontSize: 11 }}
             onClick={e => { e.stopPropagation(); emailEveryone(); }}
             title="Email all players in this league">
             ✉ All
           </button>
           <button
-            style={{ ...S.btnSm("secondary"), padding: "3px 10px", fontSize: 11 }}
+            style={{ ...S.btnSm("secondary"), fontSize: 11 }}
             onClick={e => { e.stopPropagation(); copyReport(); }}>
             Copy Report
           </button>

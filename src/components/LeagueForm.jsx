@@ -12,7 +12,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
     onSubmit(form);
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div><label style={S.label}>League Name *</label><input style={S.input} value={form.name} onChange={e => set("name", e.target.value)} placeholder="Summer Singles 2025" /></div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <div><label style={S.label}>Number of Weeks *</label><input style={S.input} type="number" min={1} max={52} value={form.weeks} onChange={e => set("weeks", +e.target.value)} /></div>

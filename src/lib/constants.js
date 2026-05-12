@@ -62,3 +62,32 @@ export const SESSION_KEY = "pickleball_session_v1";
 // Records carrying `data.deletedAt` older than this are hard-deleted (with
 // full cascade) on the next loadDB.
 export const TRASH_RETENTION_DAYS = 30;
+
+// ─── Spacing scale ──────────────────────────────────────────────────────────
+// Canonical spacing values used throughout the app. Built on a 4px grid with
+// 8px as the dominant step. All paddings, margins, and gaps should snap to
+// one of these — ad-hoc values like 6, 10, 14 sneak in and create visual
+// inconsistency that becomes especially noticeable with system fonts.
+//
+// Usage: import { SPACE } from "./lib/constants.js"
+//        padding: `${SPACE.lg}px ${SPACE.xl}px`
+//        gap: SPACE.sm
+//        marginBottom: SPACE.md
+//
+// Rounding rules when migrating off-scale values:
+//   - 4 → xs, 6 → sm, 8 → sm
+//   - 10 → md, 12 → md, 14 → md or lg (pick lg if it's edge padding)
+//   - 16 → lg, 18 → lg, 20 → xl
+//   - 24 → xxl, 28 → xxl, 32 → xxxl
+// When the original value has a specific visual reason (e.g. the score
+// input field's "14px 6px"), leave it alone — the scale is a default,
+// not a straitjacket.
+export const SPACE = {
+  xs:   4,   // tight gaps inside pills/badges
+  sm:   8,   // small gaps, tight padding
+  md:   12,  // standard form gaps, between related items
+  lg:   16,  // card padding, between cards
+  xl:   20,  // page side padding, between major sections
+  xxl:  24,  // section breaks, modal padding
+  xxxl: 32,  // hero-level spacing
+};

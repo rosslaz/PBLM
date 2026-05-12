@@ -18,7 +18,7 @@ export function Modal({ title, onClose, children }) {
 
 export function Toast({ toast }) {
   if (!toast) return null;
-  return <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "error" ? "#A32D2D" : CSC.blue, color: "#fff", borderRadius: 999, padding: "10px 20px", fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>{toast.msg}</div>;
+  return <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: toast.type === "error" ? "#A32D2D" : CSC.blue, color: "#fff", borderRadius: 999, padding: "12px 20px", fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>{toast.msg}</div>;
 }
 
 export function EmptyState({ msg }) {

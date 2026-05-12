@@ -32,7 +32,7 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
           <h2 style={{ margin: "0 0 16px", fontSize: 17 }}>Player Login</h2>
           <label style={S.label}>Email address</label>
           <input style={S.input} type="email" placeholder="you@email.com" value={loginEmail} onChange={e => { setLoginEmail(e.target.value); setLoginError(""); }} onKeyDown={e => e.key === "Enter" && handlePlayerLogin()} />
-          {loginError && <p style={{ color: "#A32D2D", fontSize: 13, margin: "6px 0 0" }}>{loginError}</p>}
+          {loginError && <p style={{ color: "#A32D2D", fontSize: 13, margin: "8px 0 0" }}>{loginError}</p>}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button style={{ ...S.btn("primary"), flex: 1 }} onClick={handlePlayerLogin}>Log In as Player</button>
             <button style={S.btn("secondary")} onClick={() => setModal({ type: "newPlayer" })}>New Account</button>
@@ -62,7 +62,7 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
                 <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, marginBottom: 8, opacity: archived ? 0.6 : 1 }}>
                   <div style={S.row}>
                     <div style={{ flex: 1 }}>
-                      <p style={{ margin: "0 0 2px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
+                      <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
                       <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {regs.length} players · {l.weeks} weeks · Starts {formatDate(l.startDate)}</p>
                     </div>
                     <span style={S.badge(l.status==="active"?"success":l.status==="archived"?"warning":"info")}>{l.status==="archived"?"📦 archived":l.status||"open"}</span>

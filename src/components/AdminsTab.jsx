@@ -14,7 +14,7 @@ export function AdminsTab({ adminEmails, currentAdminEmail, isSuperAdmin, onAdd,
       </p>
 
       {isSuperAdmin && (
-        <div style={{ ...S.card, marginBottom: 16, padding: "14px 16px" }}>
+        <div style={{ ...S.card, marginBottom: 16, padding: "12px 16px" }}>
           <label style={S.label}>Add commissioner email</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -39,7 +39,7 @@ export function AdminsTab({ adminEmails, currentAdminEmail, isSuperAdmin, onAdd,
                 {email[0].toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: 14, wordBreak: "break-all" }}>{email}</p>
                   {isPrimary && <span style={{ ...S.badge("info"), fontSize: 10 }}>Primary Commissioner</span>}
                   {isMe && <span style={{ ...S.badge("success"), fontSize: 10 }}>You</span>}

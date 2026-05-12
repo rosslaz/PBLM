@@ -11,7 +11,7 @@ export function EditWeekForm({ weekData, onSubmit, onCancel }) {
     onSubmit(date, time || null);
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>
         Adjust the date or start time for this week. Players will see the updated time on their schedule.
       </p>

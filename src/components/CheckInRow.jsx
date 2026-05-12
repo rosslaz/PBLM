@@ -34,7 +34,7 @@ export function CheckInRow({ current, currentSubName, onSet, isLocked }) {
   }
 
   return (
-    <div style={{ margin: "12px 16px 0", padding: "10px 12px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8 }}>
+    <div style={{ margin: "12px 16px 0", padding: "12px 12px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8 }}>
       <div style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 600, marginBottom: 8 }}>
         Your availability
       </div>
@@ -91,7 +91,7 @@ export function CheckInRow({ current, currentSubName, onSet, isLocked }) {
         })}
       </div>
       {current === "sub" && (
-        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
           <label style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>
             Sub's name:
           </label>

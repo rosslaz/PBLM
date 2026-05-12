@@ -27,19 +27,19 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
               const diff = s.pointsFor - s.pointsAgainst;
               return (
                 <tr key={s.id} style={{ background: isMe ? c.light : i%2===0 ? "transparent" : "var(--color-background-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                  <td style={{ padding: "10px 12px", fontWeight: isMe?700:400, color: isMe?c.bg:"var(--color-text-primary)" }}>
+                  <td style={{ padding: "12px 12px", fontWeight: isMe?700:400, color: isMe?c.bg:"var(--color-text-primary)" }}>
                     <span style={{ marginRight: 8, color: "var(--color-text-tertiary)", fontSize: 12 }}>#{i+1}</span>
                     {getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
                   </td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",fontWeight:700,fontSize:14,color:isMe?c.bg:"var(--color-text-primary)" }}>
+                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:700,fontSize:14,color:isMe?c.bg:"var(--color-text-primary)" }}>
                     {s.matches > 0 ? `${Math.round(s.winPct * 100)}%` : "—"}
                   </td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",color:diff>=0?CSC.blue:"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",fontWeight:600,color:CSC.blue }}>{s.wins}</td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",color:"#A32D2D" }}>{s.losses}</td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsFor}</td>
-                  <td style={{ padding:"10px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsAgainst}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",color:diff>=0?CSC.blue:"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:600,color:CSC.blue }}>{s.wins}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",color:"#A32D2D" }}>{s.losses}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsFor}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsAgainst}</td>
                 </tr>
               );
             })}

@@ -48,7 +48,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
       {total === 0 && <EmptyState msg="Trash is empty." />}
 
       {trashedLeagues.length > 0 && (
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, padding: "0 2px" }}>
             <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Leagues
@@ -62,20 +62,20 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
               <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, opacity: 0.85 }}>
                 <div style={S.row}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: "0 0 2px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
+                    <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
                     <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>
                       {l.gender || "Mixed"} · {l.format || "Singles"} · {l.weeks} weeks
                     </p>
-                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
                       Deleted {deletedAgo(l.deletedAt)}
                       {eta && (
-                        <span style={{ marginLeft: 6, color: eta.urgent ? "#A32D2D" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
+                        <span style={{ marginLeft: 8, color: eta.urgent ? "#A32D2D" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
                           · {eta.label}
                         </span>
                       )}
                     </p>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button style={{ ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onRestoreLeague(l)}>
                       Restore
                     </button>
@@ -108,17 +108,17 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{formatPlayerName(p)}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}</p>
-                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
                       Deleted {deletedAgo(p.deletedAt)}
                       {eta && (
-                        <span style={{ marginLeft: 6, color: eta.urgent ? "#A32D2D" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
+                        <span style={{ marginLeft: 8, color: eta.urgent ? "#A32D2D" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
                           · {eta.label}
                         </span>
                       )}
                     </p>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button style={{ ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onRestorePlayer(p)}>
                       Restore
                     </button>

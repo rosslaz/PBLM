@@ -31,7 +31,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
       <div style={{ ...S.card, margin: "16px 20px", borderLeft: `4px solid ${c.bg}`, background: c.light }}>
         <div style={{ ...S.row, justifyContent: "space-between", flexWrap: "wrap", rowGap: 12 }}>
           <div>
-            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text, fontWeight: 600 }}>
+            <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text, fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
               <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : "info"), marginLeft: 8, fontSize: 10 }}>
                 {league.competitionType === "ladder" ? "🪜 Ladder" : "🔀 Mixer"}
@@ -39,7 +39,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
             </p>
-            <p style={{ margin: "0 0 2px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {formatDate(league.startDate)}</p>
+            <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {formatDate(league.startDate)}</p>
             {league.location && <p style={{ margin: 0, fontSize: 13, color: c.text }}>📍 {league.location}</p>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -74,7 +74,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               });
               if (fullyScoredUnlocked.length === 0) return null;
               return (
-                <div style={{ padding: "10px 14px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ padding: "12px 16px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B", display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <span style={{ fontSize: 16, lineHeight: 1 }}>🔓</span>
                   <span>
                     <b>{fullyScoredUnlocked.length} week{fullyScoredUnlocked.length!==1?"s":""}</b> with all scores entered but not yet locked
@@ -85,8 +85,8 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               );
             })()}
             {/* Court capacity visualizer */}
-            <div style={{ ...S.card, marginBottom: 16, padding: "14px 16px", background: "var(--color-background-secondary)" }}>
-              <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ ...S.card, marginBottom: 16, padding: "12px 16px", background: "var(--color-background-secondary)" }}>
+              <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Court Assignments</span>
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{n} of {maxPlayers} players (ideal: {MAX_PER_COURT} per court)</span>
               </div>
@@ -105,14 +105,14 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                           </div>
                         ) : <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>–</span>}
                       </div>
-                      <p style={{ margin: "5px 0 0", fontSize: 11, color: sz ? color : "var(--color-text-tertiary)", fontWeight: sz ? 600 : 400 }}>{name}</p>
+                      <p style={{ margin: "8px 0 0", fontSize: 11, color: sz ? color : "var(--color-text-tertiary)", fontWeight: sz ? 600 : 400 }}>{name}</p>
                     </div>
                   );
                 })}
               </div>
-              {!capacityOk && n > 0 && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#A32D2D" }}>⚠ {n} players can't be evenly split into {numCourts} court{numCourts!==1?"s":""}. Need {MIN_PER_COURT}–{maxPlayers} players.</p>}
-              {capacityOk && n < maxPlayers && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#854F0B" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
-              {capacityOk && n === maxPlayers && <p style={{ margin: "10px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
+              {!capacityOk && n > 0 && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#A32D2D" }}>⚠ {n} players can't be evenly split into {numCourts} court{numCourts!==1?"s":""}. Need {MIN_PER_COURT}–{maxPlayers} players.</p>}
+              {capacityOk && n < maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#854F0B" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
+              {capacityOk && n === maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
             </div>
 
             <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16 }}>
@@ -141,7 +141,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               })()}
             </div>
             {league.competitionType === "ladder" && realWeeksCount > 0 && realWeeksCount < league.weeks && lastRealWeek && !isWeekLocked(lastRealWeek.week) && (
-              <div style={{ padding: "10px 14px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+              <div style={{ padding: "12px 16px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
                 🪜 Ladder leagues generate one week at a time. Lock Week {lastRealWeek.week}'s scores before generating Week {lastRealWeek.week + 1}.
               </div>
             )}
@@ -170,13 +170,13 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                   <div style={{ ...S.row, marginBottom: 8 }}>
                     <div style={{ width: 38, height: 38, borderRadius: "50%", background: c.light, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: c.bg, fontSize: 15, flexShrink: 0 }}>{playerInitial(p)}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                         <p style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>{formatPlayerName(p)}</p>
                         {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                         {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC</span>}
                         {r.paid ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid</span> : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Unpaid</span>}
                       </div>
-                      <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${p.phone}` : ""}</p>
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${p.phone}` : ""}</p>
                     </div>
                   </div>
                   <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>

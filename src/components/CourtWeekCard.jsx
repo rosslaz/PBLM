@@ -35,7 +35,7 @@ export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPla
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {isAdmin && onEditDateTime && (
             <button
-              style={{ ...S.btnSm("secondary"), padding: "3px 10px", fontSize: 11 }}
+              style={{ ...S.btnSm("secondary"), fontSize: 11 }}
               onClick={e => { e.stopPropagation(); onEditDateTime(weekData); }}
               title="Edit date and time">
               ✏ Edit
@@ -43,14 +43,14 @@ export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPla
           )}
           {isAdmin && onToggleLock && !weekData.placeholder && (
             <button
-              style={{ ...S.btnSm(isLocked ? "primary" : "secondary", isLocked ? "#854F0B" : undefined), padding: "3px 10px", fontSize: 11 }}
+              style={{ ...S.btnSm(isLocked ? "primary" : "secondary", isLocked ? "#854F0B" : undefined), fontSize: 11 }}
               onClick={e => { e.stopPropagation(); onToggleLock(weekData.week); }}>
               {isLocked ? "Unlock" : "Lock Week"}
             </button>
           )}
           {isAdmin && onRebalance && !weekData.placeholder && !isLocked && (
             <button
-              style={{ ...S.btnSm("secondary"), padding: "3px 10px", fontSize: 11, color: "#534AB7", borderColor: "#534AB7" }}
+              style={{ ...S.btnSm("secondary"), fontSize: 11, color: "#534AB7", borderColor: "#534AB7" }}
               onClick={e => { e.stopPropagation(); onRebalance(weekData); }}
               title="Rebalance courts based on RSVP status">
               ⚖ Rebalance
@@ -64,7 +64,7 @@ export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPla
       {expanded && (
         <div style={{ paddingBottom: 12 }}>
           {weekData.placeholder && (
-            <div style={{ margin: "12px 16px 0", padding: "10px 14px", background: CSC.blueLight, border: `0.5px solid ${CSC.blue}40`, borderRadius: 8, fontSize: 13, color: CSC.blueDark }}>
+            <div style={{ margin: "12px 16px 0", padding: "12px 16px", background: CSC.blueLight, border: `0.5px solid ${CSC.blue}40`, borderRadius: 8, fontSize: 13, color: CSC.blueDark }}>
               📅 This week's schedule has not been generated yet. Use the Generate button at the top of the schedule to create it.
             </div>
           )}
@@ -146,7 +146,7 @@ export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPla
                         {myInMatch && hasScore && <span style={S.badge(myWon ? "success" : "danger")}>{myWon ? "W" : "L"}</span>}
                         {isLocked && hasScore && isAdmin && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒</span>}
                         {canEdit ? (
-                          <button style={{ ...S.btnSm(hasScore ? "secondary" : "primary", hasScore ? undefined : courtColor), padding: "3px 10px", fontSize: 11 }}
+                          <button style={{ ...S.btnSm(hasScore ? "secondary" : "primary", hasScore ? undefined : courtColor), fontSize: 11 }}
                             onClick={() => onEnterScore(match)}>
                             {hasScore ? "Edit" : "Score"}
                           </button>

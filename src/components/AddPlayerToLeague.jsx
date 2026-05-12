@@ -22,12 +22,12 @@ export function AddPlayerToLeague({ players, leagueId, existing, onRegister, onC
             <div style={S.row}>
               <div style={{ width: 36, height: 36, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 14, flexShrink: 0 }}>{playerInitial(p)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{formatPlayerName(p)}</p>
                   {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                   {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC</span>}
                 </div>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}</p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}</p>
               </div>
             </div>
           </div>

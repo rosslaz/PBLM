@@ -10,7 +10,7 @@ import { Spinner, useIsActionPending } from "./Spinner.jsx";
 // Single week of preview — collapsed list of courts and their players.
 function PreviewWeek({ week }) {
   return (
-    <div style={{ marginBottom: 14, border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: "10px 12px", background: "var(--color-background-secondary)" }}>
+    <div style={{ marginBottom: 12, border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: "12px 12px", background: "var(--color-background-secondary)" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
         <span style={{ fontWeight: 600, fontSize: 13 }}>Week {week.week}</span>
         <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -50,14 +50,14 @@ export function SchedulePreview({ preview, onAccept, onRetry, onCancel }) {
   if (!preview) return null;
   return (
     <div>
-      <div style={{ marginBottom: 14, padding: "10px 12px", background: CSC.blueLight, borderRadius: 8, border: `0.5px solid ${CSC.blue}30` }}>
-        <p style={{ margin: "0 0 2px", fontSize: 12, fontWeight: 700, color: CSC.blueDark, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+      <div style={{ marginBottom: 12, padding: "12px 12px", background: CSC.blueLight, borderRadius: 8, border: `0.5px solid ${CSC.blue}30` }}>
+        <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700, color: CSC.blueDark, textTransform: "uppercase", letterSpacing: "0.5px" }}>
           Preview · not yet saved
         </p>
         <p style={{ margin: 0, fontSize: 13, color: CSC.blueDark }}>{preview.summary}</p>
       </div>
 
-      <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4, marginBottom: 14 }}>
+      <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4, marginBottom: 12 }}>
         {preview.weeks.map(w => <PreviewWeek key={w.week} week={w} />)}
       </div>
 
