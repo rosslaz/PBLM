@@ -1076,7 +1076,7 @@ export default function App() {
           getCheckIn={getCheckIn} setCheckIn={setCheckIn}
           adminEmails={db.adminEmails || [SUPER_ADMIN]}
           onSwitchToAdmin={() => { setAdminEmail(currentPlayer.email.toLowerCase()); setView("admin"); }}
-          onBack={() => setView("home")} onLogout={logout} scoreModal={scoreModal} />
+          onLogout={logout} scoreModal={scoreModal} />
       </ActionPendingProvider>
     );
   }

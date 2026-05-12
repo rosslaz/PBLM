@@ -69,7 +69,7 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
-export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
+export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onLogout, scoreModal }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   // Even if the commissioner soft-deletes a league while the player is
   // looking at it, don't render the stale data — treat it as null.
@@ -106,12 +106,9 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
       )}
 
       <div style={S.header(c.bg)} className="pwa-safe-top pwa-safe-x">
-        <div style={S.row}>
-          <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={onBack}>←</button>
-          <div>
-            <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>Playing as</p>
-            <h1 style={{ ...S.logo, fontSize: 16 }}>{playerFullName(player)}</h1>
-          </div>
+        <div>
+          <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>Playing as</p>
+          <h1 style={{ ...S.logo, fontSize: 16 }}>{playerFullName(player)}</h1>
         </div>
         <AvatarMenu
           initial={playerInitial(player)}
