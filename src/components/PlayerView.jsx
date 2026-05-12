@@ -73,7 +73,10 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
   const isMobile = useIsMobile();
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
-  const selectedLeague = selectedLeagueId ? db.leagues[selectedLeagueId] : null;
+  // Even if the commissioner soft-deletes a league while the player is
+  // looking at it, don't render the stale data — treat it as null.
+  const rawLeague = selectedLeagueId ? db.leagues[selectedLeagueId] : null;
+  const selectedLeague = rawLeague && !rawLeague.deletedAt ? rawLeague : null;
   const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.csc) : COLORS.teal;
   const sched = selectedLeagueId ? getLeagueSchedule(selectedLeagueId) : { weeks: [] };
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));

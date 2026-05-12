@@ -3,7 +3,7 @@
 // Supabase first (awaited). The caller is responsible for re-fetching state
 // after a successful write so React never shows data that isn't in the DB.
 import { createClient } from "@supabase/supabase-js";
-import { SUPER_ADMIN, LEAGUE_COLORS } from "./constants.js";
+import { SUPER_ADMIN, LEAGUE_COLORS, TRASH_RETENTION_DAYS } from "./constants.js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -17,7 +17,61 @@ export const supabase = createClient(SUPABASE_URL || "", SUPABASE_ANON_KEY || ""
 });
 
 // ─── Full snapshot loader ───────────────────────────────────────────────────
+// Also runs the 30-day trash auto-purge: any league or player whose
+// `data.deletedAt` is older than TRASH_RETENTION_DAYS gets hard-deleted (with
+// full cascade) before the snapshot is built. This makes purge opportunistic —
+// it happens on the next loadDB after the retention window passes, with no
+// background job needed.
 export async function loadDB() {
+  await purgeExpiredTrash();
+  return loadDBSnapshot();
+}
+
+// Find every league/player in the trash whose retention window has passed,
+// hard-delete them (cascading their dependent rows). Returns true if anything
+// was purged. Tolerant of errors per row — one failure doesn't block others.
+async function purgeExpiredTrash() {
+  const cutoffMs = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const expired = (record) => {
+    const d = record.data?.deletedAt;
+    if (!d) return false;
+    const t = Date.parse(d);
+    return Number.isFinite(t) && t < cutoffMs;
+  };
+
+  const [leagues, players] = await Promise.all([
+    supabase.from("pb_leagues").select("id, data"),
+    supabase.from("pb_players").select("id, data"),
+  ]);
+  if (leagues.error || players.error) {
+    console.error("[purgeExpiredTrash] skipped:", leagues.error || players.error);
+    return false;
+  }
+
+  const expiredLeagues = (leagues.data || []).filter(expired);
+  const expiredPlayers = (players.data || []).filter(expired);
+  if (expiredLeagues.length === 0 && expiredPlayers.length === 0) return false;
+
+  console.log(
+    `[purgeExpiredTrash] purging ${expiredLeagues.length} leagues, ${expiredPlayers.length} players`
+  );
+
+  // Cascade each one (intentionally not wrapped in Promise.all so a single
+  // failure doesn't block the rest). Errors are logged but swallowed; whatever
+  // didn't purge today will try again tomorrow.
+  for (const row of expiredLeagues) {
+    try { await dbHardDeleteLeague(row.id); }
+    catch (e) { console.error(`[purgeExpiredTrash] league ${row.id}:`, e); }
+  }
+  for (const row of expiredPlayers) {
+    try { await dbHardDeletePlayer(row.id); }
+    catch (e) { console.error(`[purgeExpiredTrash] player ${row.id}:`, e); }
+  }
+  return true;
+}
+
+// Original snapshot builder, extracted so loadDB can re-run it after purge.
+async function loadDBSnapshot() {
   const tables = await Promise.all([
     supabase.from("pb_leagues").select("*"),
     supabase.from("pb_players").select("*"),
@@ -142,12 +196,38 @@ export async function dbUpdateLeague(id, patch) {
   if (error) throw error;
 }
 
-export async function dbDeleteLeague(id) {
+// Soft-delete: stamps `deletedAt` on the league JSON. Registrations, schedules,
+// and scores are left intact, so a restore brings the full league back. After
+// TRASH_RETENTION_DAYS, the league + its dependent rows are hard-deleted by the
+// auto-purge on next loadDB.
+export async function dbSoftDeleteLeague(id) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_leagues").select("data").eq("id", id).single();
+  if (e1) throw e1;
+  const updated = { ...existing.data, deletedAt: new Date().toISOString() };
+  const { error } = await supabase.from("pb_leagues").upsert({ id, data: updated });
+  if (error) throw error;
+}
+
+export async function dbRestoreLeague(id) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_leagues").select("data").eq("id", id).single();
+  if (e1) throw e1;
+  const { deletedAt, ...rest } = existing.data;
+  const { error } = await supabase.from("pb_leagues").upsert({ id, data: rest });
+  if (error) throw error;
+}
+
+// Hard-delete cascade: the original `dbDeleteLeague`. Used by the trash UI's
+// "Delete Forever" button and the 30-day auto-purge.
+export async function dbHardDeleteLeague(id) {
   const results = await Promise.all([
     supabase.from("pb_leagues").delete().eq("id", id),
     supabase.from("pb_schedules").delete().eq("league_id", id),
     supabase.from("pb_registrations").delete().like("key", `${id}_%`),
     supabase.from("pb_scores").delete().like("key", `${id}_%`),
+    supabase.from("pb_locked_weeks").delete().like("key", `${id}_%`),
+    supabase.from("pb_checkins").delete().like("key", `${id}_%`),
   ]);
   const firstError = results.find(r => r.error)?.error;
   if (firstError) throw firstError;
@@ -280,7 +360,31 @@ export async function dbSetCheckIn(leagueId, week, playerId, status, subName) {
   }
 }
 
-export async function dbDeletePlayer(playerId) {
+// Soft-delete: stamps `deletedAt` on the player JSON. Registrations and
+// check-ins are preserved, so a restore returns the player to all their
+// leagues. After TRASH_RETENTION_DAYS, the player + dependent rows are
+// hard-deleted by the auto-purge on next loadDB.
+export async function dbSoftDeletePlayer(playerId) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_players").select("data").eq("id", playerId).single();
+  if (e1) throw e1;
+  const updated = { ...existing.data, deletedAt: new Date().toISOString() };
+  const { error } = await supabase.from("pb_players").upsert({ id: playerId, data: updated });
+  if (error) throw error;
+}
+
+export async function dbRestorePlayer(playerId) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_players").select("data").eq("id", playerId).single();
+  if (e1) throw e1;
+  const { deletedAt, ...rest } = existing.data;
+  const { error } = await supabase.from("pb_players").upsert({ id: playerId, data: rest });
+  if (error) throw error;
+}
+
+// Hard-delete cascade: the original `dbDeletePlayer`. Used by the trash UI's
+// "Delete Forever" button and the 30-day auto-purge.
+export async function dbHardDeletePlayer(playerId) {
   // Cascade: delete the player + all their registrations + check-ins
   const [{ error: e1 }, { error: e2 }, { error: e3 }] = await Promise.all([
     supabase.from("pb_players").delete().eq("id", playerId),

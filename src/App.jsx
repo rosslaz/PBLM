@@ -5,8 +5,10 @@ import { formatDate, formatPlayerName, playerInitial } from "./lib/format.js";
 import { useIsMobile, sortLeagues, loadSession, saveSession } from "./lib/session.js";
 import {
   supabase, loadDB, defaultDB,
-  dbCreateLeague, dbUpdateLeague, dbDeleteLeague,
-  dbCreatePlayer, dbUpdatePlayer, dbTogglePlayerPaid, dbDeletePlayer,
+  dbCreateLeague, dbUpdateLeague,
+  dbSoftDeleteLeague, dbRestoreLeague, dbHardDeleteLeague,
+  dbCreatePlayer, dbUpdatePlayer, dbTogglePlayerPaid,
+  dbSoftDeletePlayer, dbRestorePlayer, dbHardDeletePlayer,
   dbRegisterForLeague, dbRemovePlayerFromLeague, dbToggleRegPaid,
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
   dbToggleLockWeek, dbSetCheckIn,
@@ -26,6 +28,8 @@ import { ScoreForm } from "./components/ScoreForm.jsx";
 import { AddPlayerToLeague } from "./components/AddPlayerToLeague.jsx";
 import { LeagueDetail } from "./components/LeagueDetail.jsx";
 import { AdminsTab } from "./components/AdminsTab.jsx";
+import { TrashTab } from "./components/TrashTab.jsx";
+import { SchedulePreview } from "./components/SchedulePreview.jsx";
 import { HomeView } from "./components/HomeView.jsx";
 import { PlayerView } from "./components/PlayerView.jsx";
 
@@ -85,8 +89,12 @@ export default function App() {
     if (!db || sessionRestored) return;
     const adminEmailSetLowerLocal = new Set((db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase()));
     const sess = loadSession();
-    if (sess.playerId && db.players[sess.playerId]) {
-      setCurrentPlayer(db.players[sess.playerId]);
+    // Block session restore for trashed players — they shouldn't log back in
+    // just because a saved session is still in localStorage.
+    const savedPlayer = sess.playerId ? db.players[sess.playerId] : null;
+    const playerIsLive = savedPlayer && !savedPlayer.deletedAt;
+    if (sess.playerId && playerIsLive) {
+      setCurrentPlayer(savedPlayer);
       if (sess.adminEmail && adminEmailSetLowerLocal.has(sess.adminEmail.toLowerCase())) {
         setAdminEmail(sess.adminEmail);
         setView(sess.view === "admin" ? "admin" : "player");
@@ -142,8 +150,18 @@ export default function App() {
 
   if (!db) return <div style={{ display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,color:"var(--color-text-secondary)",fontFamily:"Georgia,serif",fontSize:18 }}>Loading…</div>;
 
-  const leagues = Object.values(db.leagues);
-  const players = Object.values(db.players);
+  // Split records by whether they've been soft-deleted. `leagues`/`players`
+  // are the live ones every existing view reads from; trashed records are only
+  // surfaced in the Trash tab. By-ID lookups (`db.leagues[id]`, `db.players[id]`)
+  // still work for both — important so the Trash UI can read them and so any
+  // stale references resolve.
+  const isTrashed = r => !!r?.deletedAt;
+  const allLeagues = Object.values(db.leagues);
+  const allPlayers = Object.values(db.players);
+  const leagues = allLeagues.filter(l => !isTrashed(l));
+  const players = allPlayers.filter(p => !isTrashed(p));
+  const trashedLeagues = allLeagues.filter(isTrashed);
+  const trashedPlayers = allPlayers.filter(isTrashed);
   const sortedLeagues = sortLeagues(leagues);
 
   // Pre-index registrations by leagueId so getLeagueRegs is O(1) lookup.
@@ -223,8 +241,18 @@ export default function App() {
     await action(() => dbUpdateLeague(id, { status: newStatus }),
       newStatus === "archived" ? "League archived." : "League unarchived.");
   }
+  // "Delete" from the league detail page → soft-delete (moves to trash).
+  // The toast tells the commissioner it's recoverable.
   async function doDeleteLeague(id) {
-    await action(() => dbDeleteLeague(id), "League deleted.");
+    await action(() => dbSoftDeleteLeague(id), "League moved to trash. Restore from the Trash tab within 30 days.");
+    setSelectedLeague(null); setModal(null);
+  }
+  async function restoreLeague(id) {
+    await action(() => dbRestoreLeague(id), "League restored.");
+    setModal(null);
+  }
+  async function hardDeleteLeague(id) {
+    await action(() => dbHardDeleteLeague(id), "League permanently deleted.");
     setSelectedLeague(null); setModal(null);
   }
 
@@ -302,30 +330,47 @@ export default function App() {
     setModal(null);
   }
 
-  async function generateSchedule(leagueId) {
+  // ─── Schedule generation: compute → preview → accept ────────────────────
+  // Splits the old monolithic flow so the commissioner can review the
+  // generated courts before they're written to the DB.
+  //
+  // `computeScheduleProposal` does no DB writes — it returns either:
+  //   { error: "..." }  for validation failures (existing toast behavior), or
+  //   { proposal: {...} }  for the SchedulePreview modal to render and the
+  //                        commit step to consume.
+
+  function computeScheduleProposal(leagueId, seedOverride) {
     const league = db.leagues[leagueId];
     const playerIds = getLeagueRegs(leagueId).map(r => r.playerId);
     const numCourts = league.numCourts || 4;
     const sizes = distributePlayersToCourts(playerIds.length, numCourts);
     if (!sizes) {
       const maxAllowed = numCourts * MAX_PER_COURT;
-      showToast(`Cannot schedule ${playerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).`, "error");
-      return;
+      return { error: `Cannot schedule ${playerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).` };
     }
 
     const isLadder = league.competitionType === "ladder";
 
+    // Convenience: enrich each court with resolved playerNames for display.
+    const withNames = (weeks) => weeks.map(w => ({
+      ...w,
+      courts: w.courts.map(c => ({
+        ...c,
+        playerNames: c.players.map(pid => getPlayerName(pid)),
+      })),
+    }));
+
     if (!isLadder) {
+      // ─── Mixer: full season at once ───────────────────────────────────
       const existingWeeks = db.schedules[leagueId]?.weeks || [];
       const hasLockedWeek = existingWeeks.some(w => isWeekLocked(leagueId, w.week));
       if (hasLockedWeek) {
-        showToast("Cannot regenerate: one or more weeks are locked. Unlock all weeks first.", "error");
-        return;
+        return { error: "Cannot regenerate: one or more weeks are locked. Unlock all weeks first." };
       }
       const playerGenders = {};
       playerIds.forEach(pid => { playerGenders[pid] = db.players[pid]?.gender; });
       const result = generateCourtSchedule(playerIds, league.weeks, league.startDate, league.format, numCourts, playerGenders);
-      if (result.error) { showToast(result.error, "error"); return; }
+      if (result.error) return { error: result.error };
       const existingByWeek = {};
       existingWeeks.forEach(w => { existingByWeek[w.week] = w; });
       result.weeks = result.weeks.map(w => {
@@ -336,20 +381,28 @@ export default function App() {
         return w;
       });
       const scoresWiped = Object.keys(db.scores).filter(k => k.startsWith(`${leagueId}_`)).length;
-      await action(async () => {
-        await dbWriteSchedule(leagueId, result);
-        if (scoresWiped > 0) {
-          const { error } = await supabase.from("pb_scores").delete().like("key", `${leagueId}_%`);
-          if (error) throw error;
-        }
-      });
       const courtsCount = result.weeks[0]?.courts.length || 0;
       const sz = result.weeks[0]?.courts.map(c => c.players.length) || [];
-      showToast(`Schedule generated! ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks${scoresWiped > 0 ? `, ${scoresWiped} previous score${scoresWiped!==1?"s":""} cleared` : ""}`);
-      return;
+      return {
+        proposal: {
+          kind: "mixer",
+          leagueId,
+          leagueName: league.name,
+          schedule: result,
+          scoresWiped,
+          weeks: withNames(result.weeks),
+          summary: `Mixer schedule: ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks`,
+          warning: scoresWiped > 0 ? `Accepting will clear ${scoresWiped} existing score${scoresWiped!==1?"s":""} from this league.` : null,
+          // Mixer generation is deterministic with the current seeding (the
+          // week-index folds into a fixed seed, not a random one). Retrying
+          // would produce identical output, so don't offer it.
+          canRetry: false,
+          successToast: `Schedule generated! ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks${scoresWiped > 0 ? `, ${scoresWiped} previous score${scoresWiped!==1?"s":""} cleared` : ""}`,
+        },
+      };
     }
 
-    // ─── Ladder: generate one week at a time ────────────────────────────
+    // ─── Ladder: one week at a time ────────────────────────────────────
     const existingSched = db.schedules[leagueId] || { weeks: [] };
     const existingWeeks = existingSched.weeks || [];
 
@@ -357,8 +410,7 @@ export default function App() {
     const nextWeekNum = realWeeks.length + 1;
 
     if (nextWeekNum > league.weeks) {
-      showToast(`All ${league.weeks} weeks already generated.`, "error");
-      return;
+      return { error: `All ${league.weeks} weeks already generated.` };
     }
 
     const placeholder = existingWeeks.find(w => w.week === nextWeekNum && w.placeholder);
@@ -373,8 +425,11 @@ export default function App() {
     }
 
     let courtGroups;
-    if (realWeeks.length === 0) {
-      const shuffled = seededShuffle(playerIds, Date.now() & 0xffffffff);
+    const isFirstWeek = realWeeks.length === 0;
+    if (isFirstWeek) {
+      // Week 1 is random; a retry generates a fresh seed and reshuffles.
+      const seed = (seedOverride ?? (Date.now() & 0xffffffff));
+      const shuffled = seededShuffle(playerIds, seed);
       if (league.format === "Mixed Doubles") {
         const playerGenders = {};
         playerIds.forEach(pid => { playerGenders[pid] = db.players[pid]?.gender; });
@@ -391,15 +446,13 @@ export default function App() {
       const prevWeek = realWeeks[realWeeks.length - 1];
       const prevLocked = isWeekLocked(leagueId, prevWeek.week);
       if (!prevLocked) {
-        showToast(`Lock Week ${prevWeek.week} first, then generate Week ${nextWeekNum}.`, "error");
-        return;
+        return { error: `Lock Week ${prevWeek.week} first, then generate Week ${nextWeekNum}.` };
       }
       const prevPlayers = new Set(prevWeek.courts.flatMap(c => c.players));
       const currentPlayers = new Set(playerIds);
       const missing = [...prevPlayers].filter(p => !currentPlayers.has(p));
       if (missing.length > 0) {
-        showToast(`Cannot continue ladder: ${missing.length} player${missing.length!==1?"s":""} from last week ${missing.length!==1?"are":"is"} no longer registered. Re-register or remove them first.`, "error");
-        return;
+        return { error: `Cannot continue ladder: ${missing.length} player${missing.length!==1?"s":""} from last week ${missing.length!==1?"are":"is"} no longer registered. Re-register or remove them first.` };
       }
       const returning = [...currentPlayers].filter(p => !prevPlayers.has(p));
 
@@ -419,8 +472,56 @@ export default function App() {
     if (timeStr) newWeek.time = timeStr;
     const otherWeeks = existingWeeks.filter(w => w.week !== nextWeekNum);
     const newSched = { weeks: [...otherWeeks, newWeek].sort((a, b) => a.week - b.week) };
-    await action(() => dbWriteSchedule(leagueId, newSched));
-    showToast(`Week ${nextWeekNum} generated! ${courtGroups.length} courts (${courtGroups.map(g => g.length).join(", ")} players)`);
+
+    return {
+      proposal: {
+        kind: "ladder",
+        leagueId,
+        leagueName: league.name,
+        schedule: newSched,
+        scoresWiped: 0, // ladder writes only the new week; no scores affected
+        weeks: withNames([newWeek]),
+        summary: isFirstWeek
+          ? `Ladder Week 1 (random starting courts): ${courtGroups.length} courts (${courtGroups.map(g => g.length).join(", ")} players)`
+          : `Ladder Week ${nextWeekNum} (rotated from Week ${nextWeekNum - 1}'s results): ${courtGroups.length} courts (${courtGroups.map(g => g.length).join(", ")} players)`,
+        warning: null,
+        // Only Week 1 ladder generation is non-deterministic; rotation is
+        // fully derived from previous results, so retrying is meaningless.
+        canRetry: isFirstWeek,
+        successToast: `Week ${nextWeekNum} generated! ${courtGroups.length} courts (${courtGroups.map(g => g.length).join(", ")} players)`,
+      },
+    };
+  }
+
+  async function commitScheduleProposal(proposal) {
+    if (!proposal) return;
+    const { leagueId, schedule, scoresWiped, successToast } = proposal;
+    await action(async () => {
+      await dbWriteSchedule(leagueId, schedule);
+      if (scoresWiped > 0) {
+        const { error } = await supabase.from("pb_scores").delete().like("key", `${leagueId}_%`);
+        if (error) throw error;
+      }
+    });
+    showToast(successToast);
+    setModal(null);
+  }
+
+  // Entry point: opens the preview modal (or surfaces a validation error).
+  function generateSchedule(leagueId) {
+    const { error, proposal } = computeScheduleProposal(leagueId);
+    if (error) { showToast(error, "error"); return; }
+    setModal({ type: "schedulePreview", proposal });
+  }
+
+  // Re-run the proposal generator for the same league. Only meaningful when
+  // the underlying generator is non-deterministic (ladder Week 1 today).
+  function retryScheduleProposal() {
+    const cur = modal?.proposal;
+    if (!cur) return;
+    const { error, proposal } = computeScheduleProposal(cur.leagueId);
+    if (error) { showToast(error, "error"); return; }
+    setModal({ type: "schedulePreview", proposal });
   }
 
   async function removePlayer(leagueId, playerId) {
@@ -447,9 +548,21 @@ export default function App() {
     await action(() => dbTogglePlayerPaid(playerId), !p.paid ? "Marked as paid!" : "Payment removed.");
   }
 
+  // "Delete" from the players list → soft-delete (moves to trash). The
+  // commissioner can restore within 30 days, or hard-delete from the trash UI.
   async function deletePlayer(playerId) {
     const p = db.players[playerId]; if (!p) return;
-    await action(() => dbDeletePlayer(playerId), `Player "${formatPlayerName(p)}" deleted.`);
+    await action(() => dbSoftDeletePlayer(playerId), `${formatPlayerName(p)} moved to trash. Restore from the Trash tab within 30 days.`);
+    setModal(null);
+  }
+  async function restorePlayer(playerId) {
+    const p = db.players[playerId]; if (!p) return;
+    await action(() => dbRestorePlayer(playerId), `${formatPlayerName(p)} restored.`);
+    setModal(null);
+  }
+  async function hardDeletePlayer(playerId) {
+    const p = db.players[playerId]; if (!p) return;
+    await action(() => dbHardDeletePlayer(playerId), `${formatPlayerName(p)} permanently deleted.`);
     setModal(null);
   }
 
@@ -547,7 +660,10 @@ export default function App() {
 
   // ─── COMMISSIONER ─────────────────────────────────────────────────────────
   if (view === "admin") {
-    const league = selectedLeague ? db.leagues[selectedLeague] : null;
+    // If the active league was soft-deleted (own action or another tab),
+    // treat it as null so the admin falls back to the leagues list.
+    const rawLeague = selectedLeague ? db.leagues[selectedLeague] : null;
+    const league = rawLeague && !rawLeague.deletedAt ? rawLeague : null;
     const c = league ? (COLORS[league.color] || COLORS.csc) : COLORS.teal;
     return (
       <div style={S.page}>
@@ -575,7 +691,7 @@ export default function App() {
             </div>
           </Modal>
         )}
-        {modal?.type === "confirmDelete" && <Modal title="Delete League" onClose={() => setModal(null)}><p style={{ fontSize: 15, margin: "0 0 20px" }}>Delete <b>{modal.league.name}</b>? This cannot be undone.</p><div style={S.row}><button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => doDeleteLeague(modal.league.id)}>Delete</button><button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button></div></Modal>}
+        {modal?.type === "confirmDelete" && <Modal title="Move League to Trash" onClose={() => setModal(null)}><p style={{ fontSize: 15, margin: "0 0 12px" }}>Move <b>{modal.league.name}</b> to the trash?</p><p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 20px" }}>The league will be hidden from players immediately. You can restore it from the Trash tab within 30 days. After that, it will be permanently deleted along with its registrations, schedule, and scores.</p><div style={S.row}><button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => doDeleteLeague(modal.league.id)}>Move to Trash</button><button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button></div></Modal>}
         {modal?.type === "confirmRebalance" && (() => {
           const w = modal.weekData;
           const lid = modal.leagueId;
@@ -637,38 +753,76 @@ export default function App() {
             </Modal>
           );
         })()}
+        {modal?.type === "schedulePreview" && (
+          <Modal title={`Review Schedule · ${modal.proposal.leagueName}`} onClose={() => setModal(null)}>
+            <SchedulePreview
+              preview={modal.proposal}
+              onAccept={() => commitScheduleProposal(modal.proposal)}
+              onRetry={retryScheduleProposal}
+              onCancel={() => setModal(null)} />
+          </Modal>
+        )}
         {modal?.type === "confirmDeletePlayer" && (() => {
           const p = modal.player;
+          // Live leagues only — trashed leagues don't matter for the warning.
           const playerLeagues = Object.values(db.registrations)
             .filter(r => r.playerId === p.id)
             .map(r => db.leagues[r.leagueId])
-            .filter(Boolean);
+            .filter(l => l && !l.deletedAt);
           return (
-            <Modal title="Delete Player" onClose={() => setModal(null)}>
+            <Modal title="Move Player to Trash" onClose={() => setModal(null)}>
               <p style={{ fontSize: 15, margin: "0 0 12px" }}>
-                Delete <b>{formatPlayerName(p)}</b> ({p.email})?
+                Move <b>{formatPlayerName(p)}</b> ({p.email}) to the trash?
               </p>
               {playerLeagues.length > 0 && (
-                <div style={{ padding: "10px 12px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
-                  ⚠ This player is registered in {playerLeagues.length} league{playerLeagues.length!==1?"s":""}:
+                <div style={{ padding: "10px 12px", marginBottom: 16, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                  Registered in {playerLeagues.length} league{playerLeagues.length!==1?"s":""}:
                   <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
                     {playerLeagues.map(l => <li key={l.id} style={{ marginBottom: 2 }}>{l.name}</li>)}
                   </ul>
                   <p style={{ margin: "8px 0 0", fontSize: 12 }}>
-                    They will be removed from all of them. Existing schedules will still show their name on past matches; regenerate the schedule for each active league afterward.
+                    Their registrations stay intact — if you restore them within 30 days, they'll snap back into these leagues automatically.
                   </p>
                 </div>
               )}
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "0 0 16px" }}>
-                This permanently deletes the player and all their registrations and check-ins. Past scores remain in the database.
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 16px" }}>
+                The player will be hidden from rosters and unable to log in. You can restore from the Trash tab within 30 days; after that they'll be permanently deleted along with their registrations and check-ins.
               </p>
               <div style={S.row}>
-                <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => deletePlayer(p.id)}>Delete Player</button>
+                <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => deletePlayer(p.id)}>Move to Trash</button>
                 <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
               </div>
             </Modal>
           );
         })()}
+        {modal?.type === "confirmHardDeleteLeague" && (
+          <Modal title="Delete League Forever" onClose={() => setModal(null)}>
+            <p style={{ fontSize: 15, margin: "0 0 12px" }}>
+              Permanently delete <b>{modal.league.name}</b>?
+            </p>
+            <p style={{ fontSize: 13, color: "#A32D2D", margin: "0 0 20px" }}>
+              This removes the league plus all its registrations, schedule, scores, locked weeks, and check-ins. This action cannot be undone.
+            </p>
+            <div style={S.row}>
+              <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => hardDeleteLeague(modal.league.id)}>Delete Forever</button>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+            </div>
+          </Modal>
+        )}
+        {modal?.type === "confirmHardDeletePlayer" && (
+          <Modal title="Delete Player Forever" onClose={() => setModal(null)}>
+            <p style={{ fontSize: 15, margin: "0 0 12px" }}>
+              Permanently delete <b>{formatPlayerName(modal.player)}</b>?
+            </p>
+            <p style={{ fontSize: 13, color: "#A32D2D", margin: "0 0 20px" }}>
+              This removes the player plus all their registrations and check-ins. This action cannot be undone.
+            </p>
+            <div style={S.row}>
+              <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => hardDeletePlayer(modal.player.id)}>Delete Forever</button>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+            </div>
+          </Modal>
+        )}
 
         <div style={S.header(league ? c.bg : undefined)}>
           <div style={S.row}>
@@ -710,7 +864,19 @@ export default function App() {
         ) : (
           <>
             <div style={S.tabBar}>
-              {[["leagues","Leagues"],["players","Players"],["admins","Commissioners"]].map(([k,label]) => <button key={k} style={S.tab(adminTab===k)} onClick={() => setAdminTab(k)}>{label}</button>)}
+              {[["leagues","Leagues"],["players","Players"],["admins","Commissioners"],["trash","Trash"]].map(([k,label]) => {
+                const showCount = k === "trash" && (trashedLeagues.length + trashedPlayers.length) > 0;
+                return (
+                  <button key={k} style={S.tab(adminTab===k)} onClick={() => setAdminTab(k)}>
+                    {label}
+                    {showCount && (
+                      <span style={{ marginLeft: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, borderRadius: 999, background: "#A32D2D", color: "#fff" }}>
+                        {trashedLeagues.length + trashedPlayers.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
             {adminTab === "leagues" && (
               <div style={S.section}>
@@ -811,6 +977,16 @@ export default function App() {
                 onRemove={removeAdminEmail}
               />
             )}
+            {adminTab === "trash" && (
+              <TrashTab
+                trashedLeagues={trashedLeagues}
+                trashedPlayers={trashedPlayers}
+                onRestoreLeague={l => restoreLeague(l.id)}
+                onRestorePlayer={p => restorePlayer(p.id)}
+                onHardDeleteLeague={l => setModal({ type: "confirmHardDeleteLeague", league: l })}
+                onHardDeletePlayer={p => setModal({ type: "confirmHardDeletePlayer", player: p })}
+              />
+            )}
           </>
         )}
       </div>
@@ -820,7 +996,11 @@ export default function App() {
   // ─── PLAYER ───────────────────────────────────────────────────────────────
   if (view === "player") {
     const myRegs = Object.values(db.registrations).filter(r => r.playerId === currentPlayer.id);
-    const myLeagues = sortLeagues(myRegs.map(r => db.leagues[r.leagueId]).filter(Boolean));
+    // Hide trashed leagues from the player view entirely — if a commissioner
+    // accidentally deleted a league, players shouldn't see it half-broken.
+    const myLeagues = sortLeagues(
+      myRegs.map(r => db.leagues[r.leagueId]).filter(l => l && !isTrashed(l))
+    );
     const playerGender = currentPlayer.gender;
     const unregistered = leagues.filter(l => {
       if (myRegs.find(r => r.leagueId === l.id)) return false;

@@ -57,3 +57,8 @@ export const STATUS_ORDER = { active: 0, open: 1, completed: 2, archived: 3 };
 
 // Localstorage key for session persistence
 export const SESSION_KEY = "pickleball_session_v1";
+
+// How long soft-deleted leagues/players stay in the trash before auto-purge.
+// Records carrying `data.deletedAt` older than this are hard-deleted (with
+// full cascade) on the next loadDB.
+export const TRASH_RETENTION_DAYS = 30;
