@@ -25,6 +25,104 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
   const paidCount = regs.filter(r => r.paid).length;
   const courtList = courtNames(numCourts);
 
+  // ─── Schedule state widget data ─────────────────────────────────────────
+  // Consolidates the "what's the system waiting on?" question into one
+  // widget. The state machine: first matching state wins.
+  // Returns { tone, title, hint, action }:
+  //   tone   "ready" | "blocked" | "done" | "info"  → drives the color
+  //   title  short status sentence shown in bold
+  //   hint   optional secondary line
+  //   action  { label, disabled? } or null when no action is available
+  const scheduleState = (() => {
+    const isLadder = league.competitionType === "ladder";
+    const allDone = realWeeksCount >= league.weeks;
+    const hasLockedWeeks = realWeeks.some(w => isWeekLocked(w.week));
+
+    if (allDone) {
+      return {
+        tone: "done",
+        title: `All ${league.weeks} weeks generated.`,
+        hint: hasLockedWeeks ? null : "Lock weeks as their scores come in to update standings.",
+        action: null,
+      };
+    }
+    if (n < MIN_PER_COURT) {
+      return {
+        tone: "blocked",
+        title: n === 0 ? "No players registered yet." : `Need at least ${MIN_PER_COURT} players to schedule.`,
+        hint: "Add players in the Players tab.",
+        action: null,
+      };
+    }
+    if (!capacityOk) {
+      return {
+        tone: "blocked",
+        title: `${n} players can't be split evenly across ${numCourts} court${numCourts!==1?"s":""}.`,
+        hint: `Need ${MIN_PER_COURT}–${maxPlayers} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court).`,
+        action: null,
+      };
+    }
+    if (!isLadder) {
+      // Mixer
+      if (realWeeksCount === 0) {
+        return {
+          tone: "ready",
+          title: "Ready to generate the season schedule.",
+          hint: `${n} player${n!==1?"s":""} · ${numCourts} court${numCourts!==1?"s":""} · ${league.weeks} weeks`,
+          action: { label: "Generate Schedule" },
+        };
+      }
+      if (hasLockedWeeks) {
+        return {
+          tone: "info",
+          title: `Schedule generated · ${realWeeksCount} of ${league.weeks} weeks · ${totalMatches} matches.`,
+          hint: "One or more weeks are locked. Unlock all weeks before regenerating.",
+          action: null,
+        };
+      }
+      return {
+        tone: "info",
+        title: `Schedule generated · ${realWeeksCount} of ${league.weeks} weeks · ${totalMatches} matches.`,
+        hint: "Regenerating will reshuffle court assignments and clear any entered scores.",
+        action: { label: "Regenerate" },
+      };
+    }
+    // Ladder
+    if (realWeeksCount === 0) {
+      return {
+        tone: "ready",
+        title: "Ready to generate Week 1.",
+        hint: "Ladder Week 1 randomly assigns starting courts. Subsequent weeks rotate based on results.",
+        action: { label: "Generate Week 1" },
+      };
+    }
+    const lastLocked = lastRealWeek && isWeekLocked(lastRealWeek.week);
+    if (!lastLocked) {
+      return {
+        tone: "blocked",
+        title: `Lock Week ${lastRealWeek.week} to generate Week ${lastRealWeek.week + 1}.`,
+        hint: "Ladder rotation needs the previous week's results locked in.",
+        action: null,
+      };
+    }
+    return {
+      tone: "ready",
+      title: `Ready to generate Week ${lastRealWeek.week + 1}.`,
+      hint: `Court assignments will rotate based on Week ${lastRealWeek.week} results.`,
+      action: { label: `Generate Week ${lastRealWeek.week + 1}` },
+    };
+  })();
+
+  // Visual treatment per tone. CSC blue for ready (the main "go" action),
+  // amber for blocked/info, green for done.
+  const SCHEDULE_TONE = {
+    ready:   { bg: "#E6F1FB", border: "#185FA5", text: "#0E3A6B" },
+    blocked: { bg: "#FAEEDA", border: "#ECC580", text: "#854F0B" },
+    info:    { bg: "var(--color-background-secondary)", border: "var(--color-border-tertiary)", text: "var(--color-text-primary)" },
+    done:    { bg: "#EAF3DE", border: "#A5D070", text: "#3B6D11" },
+  };
+  const stateStyle = SCHEDULE_TONE[scheduleState.tone];
+
   return (
     <div>
       {/* Banner */}
@@ -110,42 +208,43 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                   );
                 })}
               </div>
-              {!capacityOk && n > 0 && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#A32D2D" }}>⚠ {n} players can't be evenly split into {numCourts} court{numCourts!==1?"s":""}. Need {MIN_PER_COURT}–{maxPlayers} players.</p>}
               {capacityOk && n < maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#854F0B" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
               {capacityOk && n === maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
             </div>
 
-            <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16 }}>
-              <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-secondary)" }}>
-                {realWeeksCount} of {league.weeks} weeks scheduled · {totalMatches} total matches
-              </p>
-              {(() => {
-                const isLadder = league.competitionType === "ladder";
-                const allDone = realWeeksCount >= league.weeks;
-                let label;
-                if (isLadder) {
-                  if (realWeeksCount === 0) label = "Generate Week 1";
-                  else if (allDone) label = "All Weeks Done";
-                  else label = `Generate Week ${realWeeksCount + 1}`;
-                } else {
-                  label = realWeeksCount ? "Regenerate" : "Generate Schedule";
-                }
-                return (
-                  <button
-                    style={{ ...S.btn("primary"), background: c.bg, opacity: (!capacityOk || allDone) ? 0.5 : 1 }}
-                    disabled={allDone}
-                    onClick={onGenerate}>
-                    {label}
-                  </button>
-                );
-              })()}
-            </div>
-            {league.competitionType === "ladder" && realWeeksCount > 0 && realWeeksCount < league.weeks && lastRealWeek && !isWeekLocked(lastRealWeek.week) && (
-              <div style={{ padding: "12px 16px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
-                🪜 Ladder leagues generate one week at a time. Lock Week {lastRealWeek.week}'s scores before generating Week {lastRealWeek.week + 1}.
+            {/* Consolidated schedule state widget — replaces the previous mix of
+                summary text + standalone Generate button + ladder banner +
+                empty-state placeholder. One status sentence + one action. */}
+            <div style={{
+              padding: "14px 16px",
+              marginBottom: 16,
+              background: stateStyle.bg,
+              border: `0.5px solid ${stateStyle.border}`,
+              borderRadius: 10,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: stateStyle.text }}>
+                  {scheduleState.title}
+                </p>
+                {scheduleState.hint && (
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: stateStyle.text, opacity: 0.85 }}>
+                    {scheduleState.hint}
+                  </p>
+                )}
               </div>
-            )}
-            {realWeeksCount === 0 && <EmptyState msg={capacityOk ? (league.competitionType === "ladder" ? "Click Generate Week 1 to randomly assign starting courts." : "Click Generate Schedule to create court assignments.") : "Fix player count first."} />}
+              {scheduleState.action && (
+                <button
+                  style={{ ...S.btn("primary"), background: c.bg }}
+                  onClick={onGenerate}>
+                  {scheduleState.action.label}
+                </button>
+              )}
+            </div>
             {(() => {
               // Build these once per LeagueDetail render so all week cards
               // share the same stable references (helps any future React.memo)

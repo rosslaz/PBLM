@@ -2,6 +2,7 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
 import { formatDate, formatDateTime } from "../lib/format.js";
+import { useIsMobile } from "../lib/session.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
 import { matchSides } from "./ScoreForm.jsx";
@@ -12,6 +13,7 @@ import { matchSides } from "./ScoreForm.jsx";
 // isAdmin: full commissioner access
 export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
+  const isMobile = useIsMobile();
   const totalMatches = weekData.courts.reduce((s, c) => s + c.matches.length, 0);
   const scoredMatches = weekData.courts.reduce((s, c) => s + c.matches.filter(m => getScore(leagueId, m.week, m.id)).length, 0);
   const allScored = scoredMatches === totalMatches && totalMatches > 0;
@@ -44,8 +46,14 @@ export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPla
           {isAdmin && onToggleLock && !weekData.placeholder && (
             <button
               style={{ ...S.btnSm(isLocked ? "primary" : "secondary", isLocked ? "#854F0B" : undefined), fontSize: 11 }}
-              onClick={e => { e.stopPropagation(); onToggleLock(weekData.week); }}>
-              {isLocked ? "Unlock" : "Lock Week"}
+              onClick={e => { e.stopPropagation(); onToggleLock(weekData.week); }}
+              // Long label tells the new commissioner what locking actually
+              // does (counts the week toward standings). Compressed on phones
+              // so it fits next to Edit / Rebalance without wrapping.
+              title={isLocked ? "Unlock this week — scores won't count toward standings" : "Lock this week and count its scores toward standings"}>
+              {isLocked
+                ? (isMobile ? "🔒 Unlock" : "Unlock Week")
+                : (isMobile ? "🔒 Lock" : "Lock & Update Standings")}
             </button>
           )}
           {isAdmin && onRebalance && !weekData.placeholder && !isLocked && (
