@@ -20,7 +20,7 @@ import {
 } from "./lib/scheduling.js";
 import { S } from "./styles.js";
 
-import { Modal, Toast, EmptyState } from "./components/ui.jsx";
+import { Modal, Toast, EmptyState, VersionFooter } from "./components/ui.jsx";
 import { PlayerForm } from "./components/PlayerForm.jsx";
 import { LeagueForm } from "./components/LeagueForm.jsx";
 import { EditWeekForm } from "./components/EditWeekForm.jsx";
@@ -1076,6 +1076,7 @@ export default function App() {
             )}
           </>
         )}
+        <VersionFooter />
         </div>
       </ActionPendingProvider>
     );

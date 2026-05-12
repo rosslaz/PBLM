@@ -2,7 +2,7 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS } from "../lib/constants.js";
 import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime } from "../lib/format.js";
-import { Toast, Modal, EmptyState, AvatarMenu } from "./ui.jsx";
+import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
@@ -214,6 +214,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
           </div>
         </>
       )}
+      <VersionFooter />
     </div>
   );
 }

@@ -3,6 +3,19 @@
 // hardcoded primary commissioner email. These are pure data with no React
 // dependencies — safe to import anywhere.
 
+// ─── App metadata ──────────────────────────────────────────────────────────
+// Surfaced in the About modal (accessible from the avatar menu). Update on
+// every release. Versioning follows semver:
+//   - Patch (0.9.x): UX tweaks, bug fixes, single-feature polish
+//   - Minor (0.x.0): new features affecting workflow
+//   - Major (x.0.0): reserved for the 1.0 milestone (per Ross's direction)
+// Keep this in sync with `version` in package.json.
+export const APP_INFO = {
+  version: "0.9.0",
+  createdBy: "Ross Lazar",
+  description: "League Manager for CSC Pickleball — schedules, scoring, standings.",
+};
+
 export const SUPER_ADMIN = "ross.lazar@gmail.com";
 
 // Court sizing rules

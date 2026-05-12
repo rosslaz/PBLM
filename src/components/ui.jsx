@@ -1,7 +1,7 @@
 // ─── Shared UI primitives ───────────────────────────────────────────────────
 import { useState, useEffect, useRef } from "react";
 import { S } from "../styles.js";
-import { CSC, SPACE } from "../lib/constants.js";
+import { CSC, SPACE, APP_INFO } from "../lib/constants.js";
 
 // Modal renders an overlay + sheet. On desktop it centers; on mobile (≤640px)
 // it pins to the bottom and slides up — the bottom-sheet pattern, defined in
@@ -169,5 +169,108 @@ export function AvatarMenu({ initial, items, ariaLabel = "Account menu" }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── About content ─────────────────────────────────────────────────────────
+// Body content of the About modal. Wrap with <Modal title="About"> at the
+// call site. Reads APP_INFO from constants so updating the version touches
+// only one place.
+export function AboutContent({ onClose }) {
+  return (
+    <div>
+      <div style={{ textAlign: "center", marginBottom: SPACE.lg }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 16,
+          background: CSC.blue, color: "#fff",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          fontSize: 36, marginBottom: SPACE.md,
+        }}>
+          🏓
+        </div>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+          CSC Pickleball League Manager
+        </h3>
+        <p style={{
+          margin: `${SPACE.xs}px 0 0`,
+          fontSize: 13,
+          color: "var(--color-text-secondary)",
+        }}>
+          Version {APP_INFO.version}
+        </p>
+      </div>
+
+      <p style={{
+        margin: `0 0 ${SPACE.md}px`,
+        fontSize: 14,
+        color: "var(--color-text-secondary)",
+        textAlign: "center",
+        lineHeight: 1.5,
+      }}>
+        {APP_INFO.description}
+      </p>
+
+      <div style={{
+        padding: `${SPACE.md}px ${SPACE.md}px`,
+        background: "var(--color-background-secondary)",
+        borderRadius: 8,
+        border: "0.5px solid var(--color-border-tertiary)",
+        textAlign: "center",
+        marginBottom: SPACE.md,
+      }}>
+        <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-tertiary)" }}>
+          Created by
+        </p>
+        <p style={{
+          margin: `${SPACE.xs}px 0 0`,
+          fontSize: 15,
+          fontWeight: 600,
+          color: "var(--color-text-primary)",
+        }}>
+          {APP_INFO.createdBy}
+        </p>
+      </div>
+
+      <div style={{ ...S.row, justifyContent: "flex-end" }}>
+        <button style={S.btn("primary")} onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── VersionFooter ─────────────────────────────────────────────────────────
+// Tiny, low-contrast version badge at the bottom of any screen. Tapping it
+// opens the About modal. The footer pads itself with the iOS safe-area inset
+// at the bottom so it clears the home indicator on PWA installs.
+//
+// Use at the bottom of each top-level view (HomeView, PlayerView, the admin
+// panel root) so it's discoverable from anywhere without crowding the headers
+// or avatar menu.
+export function VersionFooter() {
+  const [showAbout, setShowAbout] = useState(false);
+  return (
+    <>
+      <div style={{
+        padding: `${SPACE.lg}px ${SPACE.lg}px calc(${SPACE.lg}px + env(safe-area-inset-bottom, 0px))`,
+        textAlign: "center",
+      }}>
+        <button
+          type="button"
+          onClick={() => setShowAbout(true)}
+          style={{
+            background: "none", border: "none", padding: 0,
+            fontFamily: "inherit", fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            cursor: "pointer",
+          }}>
+          v{APP_INFO.version} · About
+        </button>
+      </div>
+      {showAbout && (
+        <Modal title="About" onClose={() => setShowAbout(false)}>
+          <AboutContent onClose={() => setShowAbout(false)} />
+        </Modal>
+      )}
+    </>
   );
 }

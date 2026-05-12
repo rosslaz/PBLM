@@ -3,7 +3,7 @@ import { S } from "../styles.js";
 import { CSC, COLORS, COURT_NAMES, COURT_COLORS, SPACE } from "../lib/constants.js";
 import { formatDate, playerFullName, playerInitial } from "../lib/format.js";
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
-import { Toast, Modal } from "./ui.jsx";
+import { Toast, Modal, VersionFooter } from "./ui.jsx";
 import { PlayerForm } from "./PlayerForm.jsx";
 
 export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, modal, setModal, registerForLeague }) {
@@ -216,6 +216,7 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
           </div>
         )}
       </div>
+      <VersionFooter />
     </div>
   );
 }
