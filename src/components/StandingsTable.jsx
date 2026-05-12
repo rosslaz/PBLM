@@ -13,7 +13,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
         </div>
       )}
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
+        <table className="tabular-nums" style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "var(--color-background-secondary)" }}>
               {[["Player","32%"],["Win%","14%"],["+/-","14%"],["W","10%"],["L","10%"],["PF","10%"],["PA","10%"]].map(([h,w]) => (

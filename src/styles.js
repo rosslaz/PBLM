@@ -2,10 +2,21 @@
 // Shared style snippets used by virtually every component. Imported as S.
 import { CSC } from "./lib/constants.js";
 
+// System font stack. `system-ui` picks up the OS UI face on every modern
+// platform (SF on Apple, Segoe UI on Windows, Roboto on Android, Cantarell
+// on GNOME). The explicit fallbacks cover older browsers and the rare
+// system where system-ui resolves oddly. `-apple-system` ahead of
+// system-ui on Safari renders crisper for Apple platforms specifically.
+//
+// Switched from Georgia/Times in 2026: serifs read fine for prose but
+// look dated and slightly off for app UI, especially for numerals in
+// the standings table and scoring inputs.
+export const FONT_STACK = `-apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
+
 export const S = {
-  page: { minHeight: "100vh", background: "var(--color-background-tertiary)", fontFamily: "'Georgia','Times New Roman',serif" },
+  page: { minHeight: "100vh", background: "var(--color-background-tertiary)", fontFamily: FONT_STACK },
   header: (color) => ({ background: color || CSC.blue, color: "#fff", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100, flexWrap: "wrap", rowGap: 8 }),
-  logo: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.5px", margin: 0 },
+  logo: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.3px", margin: 0 },
   card: { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, padding: "16px 20px", marginBottom: 12 },
   btn: (v = "primary", color) => ({ background: v === "primary" ? (color || CSC.blue) : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 500 }),
   btnSm: (v = "primary", color) => ({ background: v === "primary" ? (color || CSC.blue) : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 500 }),

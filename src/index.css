@@ -25,10 +25,11 @@
 }
 
 body {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background: var(--color-background-tertiary);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 input, select, textarea, button {
@@ -40,11 +41,34 @@ input[type="number"]::-webkit-outer-spin-button {
   opacity: 1;
 }
 
-/* iOS Safari: prevent input zoom on focus by ensuring inputs are at least 16px */
+/* Tabular figures: lock numerals to equal width so columns line up.
+   Used by the standings table, score displays, and anywhere else where
+   numbers stack vertically and we want their digits aligned.
+   System fonts (SF, Roboto, Segoe) all support this OpenType feature. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* iOS Safari zooms into inputs when the focused input has font-size < 16px.
+   We force the baseline to 16px on small viewports so forms don't zoom.
+   Inputs that need a larger display size (e.g. score entry) should use
+   the .score-input class below, which has !important to win over this. */
 @media (max-width: 640px) {
   input, select, textarea {
     font-size: 16px !important;
   }
+  /* Score entry needs to be big-bold-typed. We can't use inline styles to
+     beat !important from a media query, so we put the score-input size in
+     a dedicated class with !important of its own. The .score-input class
+     is applied by ScoreForm; design tweaks live here. */
+  .score-input {
+    font-size: 28px !important;
+  }
+}
+/* Desktop / wide-viewport size for score input (no media query needed) */
+.score-input {
+  font-size: 36px;
 }
 
 /* ─── PWA safe-area handling ───────────────────────────────────────

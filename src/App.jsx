@@ -148,7 +148,7 @@ export default function App() {
     }
   }
 
-  if (!db) return <div style={{ display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,color:"var(--color-text-secondary)",fontFamily:"Georgia,serif",fontSize:18 }}>Loading…</div>;
+  if (!db) return <div style={{ display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,color:"var(--color-text-secondary)",fontSize:18 }}>Loading…</div>;
 
   // Split records by whether they've been soft-deleted. `leagues`/`players`
   // are the live ones every existing view reads from; trashed records are only
