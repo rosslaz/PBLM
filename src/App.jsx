@@ -824,7 +824,7 @@ export default function App() {
           </Modal>
         )}
 
-        <div style={S.header(league ? c.bg : undefined)}>
+        <div style={S.header(league ? c.bg : undefined)} className="pwa-safe-top pwa-safe-x">
           <div style={S.row}>
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
             <h1 style={S.logo}>{league ? league.name : "Commissioner Panel"}</h1>

@@ -107,7 +107,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
         </Modal>
       )}
 
-      <div style={S.header(c.bg)}>
+      <div style={S.header(c.bg)} className="pwa-safe-top pwa-safe-x">
         <div style={S.row}>
           <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={onBack}>←</button>
           <div>

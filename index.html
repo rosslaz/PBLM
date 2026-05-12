@@ -2,11 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pickleball League Manager</title>
+    <!-- viewport-fit=cover lets the app draw into iOS notch / home-indicator
+         areas when launched from home screen. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>CSC Pickleball League Manager</title>
+
+    <!-- ─── PWA: web app manifest ───────────────────────────────────── -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Theme color: colors the Android browser chrome / titlebar. -->
+    <meta name="theme-color" content="#1B6CC1" />
+
+    <!-- ─── PWA: iOS (Apple ignores the manifest; reads these instead) ── -->
+    <!-- Tells iOS to launch in standalone mode when added to home screen. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- Status bar style. "black-translucent" lets our blue header show
+         through the status bar area for a seamless look. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CSC Pickleball" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- Favicon (browser tab) -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- ─── PWA: service worker registration ──────────────────────────
+         Done outside the React bundle on purpose — it's not part of the
+         app's logic, so there's no reason to make it wait for React.
+         Registration is best-effort: if it fails (e.g. file:// dev,
+         http://, browser without SW support), the app still works as
+         a regular web page. -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch((err) => {
+            console.warn("[sw] registration failed:", err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

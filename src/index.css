@@ -46,3 +46,29 @@ input[type="number"]::-webkit-outer-spin-button {
     font-size: 16px !important;
   }
 }
+
+/* ─── PWA safe-area handling ───────────────────────────────────────
+   When launched standalone on iOS, the app draws under the status bar
+   (because we set apple-mobile-web-app-status-bar-style: black-translucent).
+   Elements that touch the top of the viewport need extra padding so
+   their content clears the notch / Dynamic Island.
+
+   env(safe-area-inset-top) is the iOS-supplied value — falls back to 0
+   on platforms without notches, which keeps the design intact in
+   regular-browser and Android contexts.
+
+   Two classes for different base paddings:
+     .pwa-safe-top       — sticky headers (base 16px)
+     .pwa-safe-top-lg    — large hero banners (base 32px) */
+.pwa-safe-top {
+  padding-top: calc(16px + env(safe-area-inset-top, 0px)) !important;
+}
+.pwa-safe-top-lg {
+  padding-top: calc(32px + env(safe-area-inset-top, 0px)) !important;
+}
+/* Left/right safe areas: avoid content getting clipped by landscape
+   notches. Inset is 0 in portrait; only matters in landscape. */
+.pwa-safe-x {
+  padding-left: calc(20px + env(safe-area-inset-left, 0px)) !important;
+  padding-right: calc(20px + env(safe-area-inset-right, 0px)) !important;
+}

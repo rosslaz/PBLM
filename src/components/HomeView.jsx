@@ -19,7 +19,7 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
     <div style={S.page}>
       <Toast toast={toast} />
       {modal?.type === "newPlayer" && <Modal title="Create Player Account" onClose={() => setModal(null)}><PlayerForm onSubmit={async d => { await onCreatePlayer(d); setModal(null); }} onCancel={() => setModal(null)} /></Modal>}
-      <div style={{ background: CSC.blue, color: "#fff", padding: "32px 24px 28px", textAlign: "center" }}>
+      <div className="pwa-safe-top-lg" style={{ background: CSC.blue, color: "#fff", padding: "32px 24px 28px", textAlign: "center" }}>
         <img
           src="/csc-pickleball.png"
           alt="CSC Pickleball"

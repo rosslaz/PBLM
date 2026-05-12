@@ -132,3 +132,39 @@ If you ever want to inspect or back up your data:
 | Data not saving | Check Supabase → Table Editor to confirm the row exists; re-run the SQL setup |
 | "Failed to fetch" errors | Confirm your Supabase URL has no trailing slash and the anon key is correct |
 | Changes not showing after deploy | Vercel auto-deploys on every git push to `main` |
+
+---
+
+## Installing as an app (PWA)
+
+The app is installable on phones and desktops — it gets a home-screen / desktop icon and launches fullscreen without browser chrome.
+
+**On iPhone (Safari):** Open the deployed URL → tap the Share button → "Add to Home Screen" → Add.
+
+**On Android (Chrome):** Open the deployed URL → tap the menu (⋮) → "Install app" (or "Add to Home Screen"). On some Android setups Chrome will prompt automatically after a couple of visits.
+
+**On desktop Chrome / Edge:** Visit the deployed URL → look for the install icon (⊕ or computer-with-down-arrow) on the right side of the address bar → Install.
+
+The PWA needs HTTPS, which Vercel provides automatically. Installation does NOT work from `http://localhost` (browsers require HTTPS for service workers, with localhost as the only exception — but iOS Safari requires real HTTPS even for testing).
+
+### What's included
+
+- Installable on iOS, Android, desktop
+- CSC logo as the home-screen icon (with Android maskable variant so it crops cleanly into circles/squircles)
+- Launches in standalone mode (no browser chrome)
+- Theme color matches the brand
+
+### What's NOT included
+
+- **Offline support.** The app needs an active internet connection. We don't cache the JS bundle, so refreshing while offline shows a network error (same as a regular website). Adding real offline support requires caching the app shell + queueing writes for when connectivity returns — meaningful work, not included.
+- **Push notifications.** Would require server-side keys and permission flows.
+
+### After a deploy: forcing PWA to update
+
+Service workers can cache an old version even after you deploy new code. If players install the PWA and then you ship an update they don't see:
+
+- They can pull-to-refresh inside the installed app
+- Or close + relaunch the app
+- As a last resort: uninstall and reinstall from the home screen
+
+Our service worker doesn't actually cache anything yet, so this is rarely an issue today — but worth knowing if we add caching later.
