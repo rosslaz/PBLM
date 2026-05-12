@@ -96,3 +96,87 @@ input[type="number"]::-webkit-outer-spin-button {
   padding-left: calc(20px + env(safe-area-inset-left, 0px)) !important;
   padding-right: calc(20px + env(safe-area-inset-right, 0px)) !important;
 }
+
+/* ─── Modal / bottom-sheet styles ─────────────────────────────────────────
+   The Modal component applies these classes to its outer overlay (.modal-overlay)
+   and inner content box (.modal-sheet). On desktop, the sheet centers; on
+   mobile (<= 640px) it pins to the bottom and animates up.
+
+   We don't drag-to-dismiss — the grab handle is visual only. Backdrop tap
+   and the corner × button both still dismiss. */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  display: flex;
+  /* Desktop: center the sheet on screen */
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* The overlay itself fades in. Subtle, fast. */
+  animation: modal-overlay-in 160ms ease;
+}
+
+.modal-sheet {
+  background: var(--color-background-primary);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  /* iOS momentum scrolling inside the sheet */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Visual grab handle. Hidden on desktop. Shown on mobile as a centered pill
+   above the title. Pure decoration — drag-to-dismiss is not implemented; the
+   handle just signals "this is a sheet, you can dismiss it." */
+.modal-handle {
+  display: none;
+  width: 36px;
+  height: 4px;
+  background: var(--color-border-secondary);
+  border-radius: 999px;
+  margin: 0 auto 12px;
+}
+
+@media (max-width: 640px) {
+  .modal-overlay {
+    /* Pin sheet to the bottom of the viewport. */
+    align-items: flex-end;
+    /* No outer padding — sheet reaches screen edges. */
+    padding: 0;
+  }
+  .modal-sheet {
+    /* Bottom sheet: full-width, top-rounded only, square at bottom. */
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    /* Add safe-area inset to the bottom padding so content clears the iOS
+       home indicator. The original 24px stays as the visual baseline. */
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    /* Slightly tighter horizontal padding on narrow viewports. */
+    padding-left: 20px;
+    padding-right: 20px;
+    /* Slide-up animation on open. Plays once per mount. */
+    animation: modal-sheet-up 220ms cubic-bezier(0.32, 0.72, 0, 1);
+    /* On very tall content (long forms), the sheet may want more height —
+       allow up to 95vh on mobile since there's no surrounding margin. */
+    max-height: 95vh;
+  }
+  .modal-handle {
+    display: block;
+  }
+}
+
+@keyframes modal-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modal-sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}

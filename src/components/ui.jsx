@@ -3,13 +3,42 @@ import { useState, useEffect, useRef } from "react";
 import { S } from "../styles.js";
 import { CSC, SPACE } from "../lib/constants.js";
 
+// Modal renders an overlay + sheet. On desktop it centers; on mobile (≤640px)
+// it pins to the bottom and slides up — the bottom-sheet pattern, defined in
+// index.css. The grab handle above the title shows on mobile only and is
+// purely visual (drag-to-dismiss not implemented). Backdrop tap and the ×
+// button both still dismiss.
 export function Modal({ title, onClose, children }) {
+  // Close on Escape key — universally expected behavior.
+  useEffect(() => {
+    function onKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Lock body scroll while open. Without this, the page underneath can be
+  // scrolled which feels wrong — especially with the bottom-sheet pattern
+  // where the sheet itself is the scrollable surface. Restore on unmount.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   return (
-    <div style={S.modal} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={S.modalBox}>
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-sheet" role="dialog" aria-modal="true" aria-label={title}>
+        {/* Grab handle — visible on mobile only via .modal-handle CSS */}
+        <div className="modal-handle" aria-hidden="true" />
         <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 20 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>{title}</h2>
-          <button style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: "var(--color-text-secondary)", padding: 0, lineHeight: 1 }} onClick={onClose}>×</button>
+          <button
+            type="button"
+            aria-label="Close"
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: "var(--color-text-secondary)", padding: 0, lineHeight: 1 }}
+            onClick={onClose}>
+            ×
+          </button>
         </div>
         {children}
       </div>

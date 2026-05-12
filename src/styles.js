@@ -52,6 +52,7 @@ export const S = {
     transition: "background-color 120ms ease, color 120ms ease",
   }),
   badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"], purple: ["#EEEDFE","#534AB7"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: `2px ${SPACE.sm}px`, fontSize: 11, fontWeight: 600, display: "inline-block" }; },
-  modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: SPACE.xl },
-  modalBox: { background: "var(--color-background-primary)", borderRadius: 16, padding: SPACE.xxl, maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto" },
+  // Modal styles moved to index.css (.modal-overlay, .modal-sheet, .modal-handle).
+  // The Modal component in ui.jsx applies those classes so the bottom-sheet
+  // behavior on mobile comes from media queries rather than JS branching.
 };
