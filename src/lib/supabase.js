@@ -1,0 +1,328 @@
+// ─── Supabase client and storage helpers ────────────────────────────────────
+// All `dbXxx` functions follow a write-first pattern: every write hits
+// Supabase first (awaited). The caller is responsible for re-fetching state
+// after a successful write so React never shows data that isn't in the DB.
+import { createClient } from "@supabase/supabase-js";
+import { SUPER_ADMIN, LEAGUE_COLORS } from "./constants.js";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env.local");
+}
+
+export const supabase = createClient(SUPABASE_URL || "", SUPABASE_ANON_KEY || "", {
+  auth: { persistSession: false }, // app handles its own auth
+});
+
+// ─── Full snapshot loader ───────────────────────────────────────────────────
+export async function loadDB() {
+  const tables = await Promise.all([
+    supabase.from("pb_leagues").select("*"),
+    supabase.from("pb_players").select("*"),
+    supabase.from("pb_registrations").select("*"),
+    supabase.from("pb_schedules").select("*"),
+    supabase.from("pb_scores").select("*"),
+    supabase.from("pb_locked_weeks").select("*"),
+    supabase.from("pb_config").select("*").eq("id", 1),
+    supabase.from("pb_checkins").select("*"),
+  ]);
+
+  const [leaguesRes, playersRes, regsRes, schedRes, scoresRes, locksRes, configRes, checkinsRes] = tables;
+
+  // Fail loud if any table errors — better than silently returning empty data
+  for (const r of tables) {
+    if (r.error) {
+      console.error("[loadDB] Supabase error:", r.error);
+      throw r.error;
+    }
+  }
+
+  const cfg = configRes.data?.[0] || {};
+  const nextId = cfg.next_id || { league: 1, player: 1 };
+  const adminEmails = (Array.isArray(cfg.admin_emails) && cfg.admin_emails.length)
+    ? cfg.admin_emails
+    : [SUPER_ADMIN];
+
+  const leagueMap = {}, playerMap = {}, regMap = {}, scheduleMap = {}, scoreMap = {}, lockedMap = {}, checkInMap = {};
+  leaguesRes.data.forEach(r => { leagueMap[r.id] = r.data; });
+  playersRes.data.forEach(r => { playerMap[r.id] = r.data; });
+  regsRes.data.forEach(r => { regMap[r.key] = r.data; });
+  schedRes.data.forEach(r => { scheduleMap[r.league_id] = r.data; });
+  scoresRes.data.forEach(r => { scoreMap[r.key] = r.data; });
+  locksRes.data.forEach(r => { lockedMap[r.key] = true; });
+  (checkinsRes.data || []).forEach(r => { checkInMap[r.key] = r.data; });
+
+  console.log(
+    `[loadDB] players=${playersRes.data.length} leagues=${leaguesRes.data.length}`,
+    `regs=${regsRes.data.length} checkins=${checkinsRes.data?.length || 0} nextId=`, nextId
+  );
+
+  return {
+    leagues: leagueMap, players: playerMap, registrations: regMap,
+    schedules: scheduleMap, scores: scoreMap, lockedWeeks: lockedMap,
+    checkIns: checkInMap,
+    adminEmails, nextId,
+  };
+}
+
+// ─── Atomic action helpers ──────────────────────────────────────────────────
+async function getCurrentNextId() {
+  const { data, error } = await supabase
+    .from("pb_config").select("next_id").eq("id", 1).single();
+  if (error) throw error;
+  return data.next_id || { league: 1, player: 1 };
+}
+
+export async function dbCreatePlayer(playerData) {
+  // Read current nextId from DB (avoids stale closure issues)
+  const nextId = await getCurrentNextId();
+  const id = `player_${nextId.player}`;
+  const player = { ...playerData, id, createdAt: new Date().toISOString() };
+  const newNextId = { ...nextId, player: nextId.player + 1 };
+
+  console.log("[dbCreatePlayer] writing", id, player);
+
+  const { error: pErr } = await supabase
+    .from("pb_players").upsert({ id, data: player });
+  if (pErr) { console.error("[dbCreatePlayer] player error:", pErr); throw pErr; }
+
+  const { error: cErr } = await supabase
+    .from("pb_config").update({ next_id: newNextId }).eq("id", 1);
+  if (cErr) { console.error("[dbCreatePlayer] config error:", cErr); throw cErr; }
+
+  console.log("[dbCreatePlayer] success");
+  return id;
+}
+
+export async function dbUpdatePlayer(id, patch) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_players").select("data").eq("id", id).single();
+  if (e1) throw e1;
+  const updated = { ...existing.data, ...patch };
+  const { error } = await supabase.from("pb_players").upsert({ id, data: updated });
+  if (error) throw error;
+}
+
+export async function dbTogglePlayerPaid(id) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_players").select("data").eq("id", id).single();
+  if (e1) throw e1;
+  const updated = { ...existing.data, paid: !existing.data.paid };
+  const { error } = await supabase.from("pb_players").upsert({ id, data: updated });
+  if (error) throw error;
+}
+
+export async function dbCreateLeague(leagueData, colorIndex) {
+  const nextId = await getCurrentNextId();
+  const id = `league_${nextId.league}`;
+  const league = {
+    ...leagueData, id,
+    color: LEAGUE_COLORS[colorIndex % LEAGUE_COLORS.length],
+    createdAt: new Date().toISOString(),
+  };
+  const newNextId = { ...nextId, league: nextId.league + 1 };
+
+  const { error: lErr } = await supabase
+    .from("pb_leagues").upsert({ id, data: league });
+  if (lErr) throw lErr;
+  const { error: cErr } = await supabase
+    .from("pb_config").update({ next_id: newNextId }).eq("id", 1);
+  if (cErr) throw cErr;
+  return id;
+}
+
+export async function dbUpdateLeague(id, patch) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_leagues").select("data").eq("id", id).single();
+  if (e1) throw e1;
+  const updated = { ...existing.data, ...patch };
+  const { error } = await supabase.from("pb_leagues").upsert({ id, data: updated });
+  if (error) throw error;
+}
+
+export async function dbDeleteLeague(id) {
+  const results = await Promise.all([
+    supabase.from("pb_leagues").delete().eq("id", id),
+    supabase.from("pb_schedules").delete().eq("league_id", id),
+    supabase.from("pb_registrations").delete().like("key", `${id}_%`),
+    supabase.from("pb_scores").delete().like("key", `${id}_%`),
+  ]);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
+}
+
+export async function dbRegisterForLeague(leagueId, playerId) {
+  const key = `${leagueId}_${playerId}`;
+  const reg = { leagueId, playerId, key, paid: false, registeredAt: new Date().toISOString() };
+  const { error: rErr } = await supabase
+    .from("pb_registrations").upsert({ key, data: reg });
+  if (rErr) throw rErr;
+  // Reset schedule for that league since the roster changed
+  const { error: sErr } = await supabase
+    .from("pb_schedules").upsert({ league_id: leagueId, data: { weeks: [] } });
+  if (sErr) throw sErr;
+}
+
+export async function dbRemovePlayerFromLeague(leagueId, playerId) {
+  const key = `${leagueId}_${playerId}`;
+  const { error: rErr } = await supabase
+    .from("pb_registrations").delete().eq("key", key);
+  if (rErr) throw rErr;
+  const { error: sErr } = await supabase
+    .from("pb_schedules").upsert({ league_id: leagueId, data: { weeks: [] } });
+  if (sErr) throw sErr;
+}
+
+export async function dbToggleRegPaid(leagueId, playerId) {
+  const key = `${leagueId}_${playerId}`;
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_registrations").select("data").eq("key", key).single();
+  if (e1) throw e1;
+  const updated = {
+    ...existing.data,
+    paid: !existing.data.paid,
+    paidAt: !existing.data.paid ? new Date().toISOString() : null,
+  };
+  const { error } = await supabase
+    .from("pb_registrations").upsert({ key, data: updated });
+  if (error) throw error;
+}
+
+export async function dbWriteWeekDateTime(leagueId, weekNum, date, time) {
+  // Read the current schedule, mutate just the week's date/time, write back.
+  // If the week doesn't exist yet (e.g. ladder placeholder), append a stub.
+  const { data, error: e1 } = await supabase
+    .from("pb_schedules").select("data").eq("league_id", leagueId).single();
+  if (e1 && e1.code !== "PGRST116") throw e1; // PGRST116 = no rows
+  const sched = data?.data || { weeks: [] };
+  const existing = sched.weeks || [];
+  const found = existing.find(w => w.week === weekNum);
+  let weeks;
+  if (found) {
+    weeks = existing.map(w =>
+      w.week === weekNum ? { ...w, date, time: time || null } : w
+    );
+  } else {
+    weeks = [...existing, { week: weekNum, date, time: time || null, courts: [], placeholder: true }]
+      .sort((a, b) => a.week - b.week);
+  }
+  const { error: e2 } = await supabase
+    .from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } });
+  if (e2) throw e2;
+}
+
+export async function dbWriteSchedule(leagueId, scheduleData) {
+  const { error } = await supabase
+    .from("pb_schedules").upsert({ league_id: leagueId, data: scheduleData });
+  if (error) throw error;
+}
+
+export async function dbRebalanceWeek(leagueId, weekNum, newCourts) {
+  // Atomic-ish rebalance: write the new courts for one week, and delete ALL
+  // scores for that week (because match IDs are deterministic — w{N}_c{C}_m{M}
+  // — and would otherwise be silently re-attributed to different matches with
+  // the same ID after the rebuild).
+  const { data, error: e1 } = await supabase
+    .from("pb_schedules").select("data").eq("league_id", leagueId).single();
+  if (e1) throw e1;
+  const sched = data?.data || { weeks: [] };
+  const weeks = (sched.weeks || []).map(w =>
+    w.week === weekNum ? { ...w, courts: newCourts, placeholder: false } : w
+  );
+  if (!weeks.find(w => w.week === weekNum)) {
+    weeks.push({ week: weekNum, date: "", time: null, courts: newCourts });
+  }
+  const results = await Promise.all([
+    supabase.from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } }),
+    supabase.from("pb_scores").delete().like("key", `${leagueId}_${weekNum}_%`),
+  ]);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
+}
+
+export async function dbWriteScore(leagueId, week, matchId, homeScore, awayScore) {
+  const key = `${leagueId}_${week}_${matchId}`;
+  const data = { homeScore: +homeScore, awayScore: +awayScore, submittedAt: new Date().toISOString() };
+  const { error } = await supabase.from("pb_scores").upsert({ key, data });
+  if (error) throw error;
+}
+
+export async function dbToggleLockWeek(leagueId, week) {
+  const key = `${leagueId}_w${week}`;
+  const { data: existing } = await supabase
+    .from("pb_locked_weeks").select("key").eq("key", key);
+  if (existing && existing.length > 0) {
+    const { error } = await supabase.from("pb_locked_weeks").delete().eq("key", key);
+    if (error) throw error;
+    return false; // unlocked
+  } else {
+    const { error } = await supabase.from("pb_locked_weeks").upsert({ key });
+    if (error) throw error;
+    return true; // locked
+  }
+}
+
+export async function dbSetCheckIn(leagueId, week, playerId, status, subName) {
+  const key = `${leagueId}_w${week}_${playerId}`;
+  const data = {
+    leagueId, week, playerId, status,
+    subName: status === "sub" ? (subName || "").trim() || null : null,
+    updatedAt: new Date().toISOString(),
+  };
+  if (status === null) {
+    const { error } = await supabase.from("pb_checkins").delete().eq("key", key);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from("pb_checkins").upsert({ key, data });
+    if (error) throw error;
+  }
+}
+
+export async function dbDeletePlayer(playerId) {
+  // Cascade: delete the player + all their registrations + check-ins
+  const [{ error: e1 }, { error: e2 }, { error: e3 }] = await Promise.all([
+    supabase.from("pb_players").delete().eq("id", playerId),
+    supabase.from("pb_registrations").delete().like("key", `%_${playerId}`),
+    supabase.from("pb_checkins").delete().like("key", `%_${playerId}`),
+  ]);
+  if (e1 || e2 || e3) throw (e1 || e2 || e3);
+}
+
+export async function dbAddAdmin(email) {
+  const { data: cfg, error: e1 } = await supabase
+    .from("pb_config").select("admin_emails").eq("id", 1).single();
+  if (e1) throw e1;
+  const list = cfg.admin_emails || [SUPER_ADMIN];
+  const lower = email.trim().toLowerCase();
+  if (list.map(x => x.toLowerCase()).includes(lower)) {
+    return { ok: false, reason: "already_admin" };
+  }
+  const { error } = await supabase
+    .from("pb_config").update({ admin_emails: [...list, lower] }).eq("id", 1);
+  if (error) throw error;
+  return { ok: true };
+}
+
+export async function dbRemoveAdmin(email) {
+  if (email.toLowerCase() === SUPER_ADMIN.toLowerCase()) {
+    return { ok: false, reason: "super_admin" };
+  }
+  const { data: cfg, error: e1 } = await supabase
+    .from("pb_config").select("admin_emails").eq("id", 1).single();
+  if (e1) throw e1;
+  const list = (cfg.admin_emails || [SUPER_ADMIN]).filter(
+    e => e.toLowerCase() !== email.toLowerCase()
+  );
+  const { error } = await supabase
+    .from("pb_config").update({ admin_emails: list }).eq("id", 1);
+  if (error) throw error;
+  return { ok: true };
+}
+
+export const defaultDB = () => ({
+  leagues: {}, players: {}, registrations: {}, schedules: {},
+  scores: {}, lockedWeeks: {}, checkIns: {}, adminEmails: [SUPER_ADMIN],
+  nextId: { league: 1, player: 1 },
+});
