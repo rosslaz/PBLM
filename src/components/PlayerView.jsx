@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS } from "../lib/constants.js";
-import { formatDate, formatTime, playerFullName } from "../lib/format.js";
-import { useIsMobile } from "../lib/session.js";
-import { Toast, Modal, EmptyState } from "./ui.jsx";
+import { formatDate, formatTime, playerFullName, playerInitial } from "../lib/format.js";
+import { Toast, Modal, EmptyState, AvatarMenu } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
@@ -71,7 +70,6 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
 export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onBack, onLogout, scoreModal }) {
-  const isMobile = useIsMobile();
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   // Even if the commissioner soft-deletes a league while the player is
   // looking at it, don't render the stale data — treat it as null.
@@ -115,17 +113,18 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
             <h1 style={{ ...S.logo, fontSize: 16 }}>{playerFullName(player)}</h1>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {adminEmails.map(e => e.toLowerCase()).includes(player.email.toLowerCase()) && (
-            <button
-              style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.2)", border: "0.5px solid rgba(255,255,255,0.5)", color: "#fff", fontSize: 11 }}
-              onClick={onSwitchToAdmin}>
-              {isMobile ? "⚙" : "⚙ Commissioner Mode"}
-            </button>
-          )}
-          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.15)", border: "0.5px solid rgba(255,255,255,0.4)", color: "#fff" }} onClick={() => setModal({ type: "joinLeague" })}>{isMobile ? "+ Join" : "+ Join League"}</button>
-          <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={onLogout} title="Log out">{isMobile ? "↪" : "Log Out"}</button>
-        </div>
+        <AvatarMenu
+          initial={playerInitial(player)}
+          ariaLabel={`Menu for ${playerFullName(player)}`}
+          items={[
+            // Commissioner Mode — only for users in the admin allowlist
+            ...(adminEmails.map(e => e.toLowerCase()).includes(player.email.toLowerCase())
+              ? [{ label: "Commissioner Mode", icon: "⚙", onClick: onSwitchToAdmin }]
+              : []),
+            { label: "Join a League", icon: "＋", onClick: () => setModal({ type: "joinLeague" }) },
+            { label: "Log Out", icon: "↪", onClick: onLogout, danger: true },
+          ]}
+        />
       </div>
 
       {myLeagues.length > 1 && (
