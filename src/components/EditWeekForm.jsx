@@ -6,17 +6,17 @@ import { useIsMobile } from "../lib/session.js";
 // Edit Week: week-level date/time PLUS optional per-court name + time overrides.
 //
 // The common use case: a league has 4 courts but only 2 physical surfaces, so
-// two groups play at 8:00 and two at 9:30. The commissioner edits Week 1's
-// court overrides and clicks "Apply to all weeks" so they don't have to
-// repeat it for every week of the season.
+// two groups play at 8:00 and two at 9:30. With league-level court defaults
+// set, this modal lets the commissioner *override* those defaults just for
+// this week (e.g. a holiday rescheduling).
 //
 // onSubmit receives (date, time, courtOverrides, applyTo)
 //   date           "YYYY-MM-DD"
 //   time           "HH:MM" or null  — week-level default time
 //   courtOverrides array indexed by court position, each { name, time }
-//                  (both strings; empty = "no override / fall back to week")
+//                  (both strings; empty = "no override / fall back to league/week")
 //   applyTo        "this" | "all"
-export function EditWeekForm({ weekData, onSubmit, onCancel }) {
+export function EditWeekForm({ weekData, league, onSubmit, onCancel }) {
   const isMobile = useIsMobile();
   const [date, setDate] = useState(weekData.date || "");
   const [time, setTime] = useState(weekData.time || "");
@@ -76,11 +76,17 @@ export function EditWeekForm({ weekData, onSubmit, onCancel }) {
             </span>
           </div>
           <p style={{ margin: `0 0 ${SPACE.sm}px`, fontSize: 12, color: "var(--color-text-secondary)" }}>
-            Leave a field blank to use the week defaults. Useful when courts run at different times — e.g. Courts 1 &amp; 2 at 8:00, Courts 3 &amp; 4 at 9:30.
+            Override the league's court defaults just for this week. Leave a field blank to use whatever the league is configured for. To change defaults for every week, edit the league's court settings.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: SPACE.sm }}>
             {courts.map((ct, i) => {
               const color = COURT_COLORS[i % COURT_COLORS.length];
+              // What name + time would this court display if there was no
+              // per-week override? That's what we put in the placeholder so
+              // the commissioner knows what an "empty" field means.
+              const leagueCfg = league?.courtConfig?.[i];
+              const defaultName = leagueCfg?.name || ct.courtName || `Court ${i + 1}`;
+              const defaultTime = leagueCfg?.time || ""; // empty means "use week time"
               return (
                 <div key={i} style={{
                   display: "grid",
@@ -103,14 +109,14 @@ export function EditWeekForm({ weekData, onSubmit, onCancel }) {
                   <input
                     style={{ ...S.input, fontSize: 13 }}
                     type="text"
-                    placeholder={`Custom name (default: ${ct.courtName || `Court ${i + 1}`})`}
+                    placeholder={`default: ${defaultName}`}
                     value={overrides[i]?.name || ""}
                     onChange={e => setCourtOverride(i, "name", e.target.value)}
                   />
                   <input
                     style={{ ...S.input, fontSize: 13 }}
                     type="time"
-                    placeholder="time"
+                    placeholder={defaultTime || "week time"}
                     value={overrides[i]?.time || ""}
                     onChange={e => setCourtOverride(i, "time", e.target.value)}
                   />

@@ -57,6 +57,11 @@ export const STATUS_ORDER = { active: 0, open: 1, completed: 2, archived: 3 };
 
 // Localstorage key for session persistence
 export const SESSION_KEY = "pickleball_session_v1";
+// Stores the email of the last player to log in on this device. Persists
+// across logout so the login screen can pre-fill it / offer one-tap re-entry.
+// Cleared only when explicitly cleared via the "Use a different email" link
+// or when the browser clears localStorage entirely.
+export const LAST_EMAIL_KEY = "pickleball_last_email_v1";
 
 // How long soft-deleted leagues/players stay in the trash before auto-purge.
 // Records carrying `data.deletedAt` older than this are hard-deleted (with

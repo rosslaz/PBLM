@@ -1,6 +1,6 @@
 // ─── Session, sorting helpers, and the mobile-detection hook ────────────────
 import { useState, useEffect } from "react";
-import { SESSION_KEY, STATUS_ORDER } from "./constants.js";
+import { SESSION_KEY, LAST_EMAIL_KEY, STATUS_ORDER } from "./constants.js";
 
 // ─── Session persistence (browser localStorage) ─────────────────────────────
 export function loadSession() {
@@ -15,6 +15,25 @@ export function saveSession(s) {
   try {
     if (!s || (!s.playerId && !s.adminEmail)) localStorage.removeItem(SESSION_KEY);
     else localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  } catch (_) {}
+}
+
+// ─── Remembered email (separate from session) ───────────────────────────────
+// We track the last successful login email separately so that logging out
+// clears the active session but the next login attempt can be pre-filled or
+// done with a single tap. Keeps "stay signed in everywhere" working even
+// across explicit logouts, browser-restart edge cases, and quick switches
+// between admin and player modes.
+export function loadLastEmail() {
+  try {
+    return localStorage.getItem(LAST_EMAIL_KEY) || "";
+  } catch (_) { return ""; }
+}
+
+export function saveLastEmail(email) {
+  try {
+    if (!email) localStorage.removeItem(LAST_EMAIL_KEY);
+    else localStorage.setItem(LAST_EMAIL_KEY, email.toLowerCase().trim());
   } catch (_) {}
 }
 

@@ -61,7 +61,9 @@ export function PlayerForm({ onSubmit, onCancel, initial }) {
       </div>
       <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
         <button style={S.btn("secondary")} onClick={onCancel}>Cancel</button>
-        <button style={S.btn("primary")} onClick={handleSubmit}>{initial ? "Save Changes" : "Create Account"}</button>
+        {/* "Save Changes" only when editing an existing player (presence of an
+            id). Pre-filling email on a new account still shows "Create Account". */}
+        <button style={S.btn("primary")} onClick={handleSubmit}>{initial?.id ? "Save Changes" : "Create Account"}</button>
       </div>
     </div>
   );

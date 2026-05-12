@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS } from "../lib/constants.js";
-import { formatDate, formatTime, playerFullName, playerInitial } from "../lib/format.js";
+import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime } from "../lib/format.js";
 import { Toast, Modal, EmptyState, AvatarMenu } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
@@ -48,8 +48,9 @@ function findHighlightMatch(player, sched, isWeekLocked, leagueId) {
 
 // Get the specific match (and its court) on a given week that the player is in
 function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore) {
-  const court = week.courts.find(ct => ct.players.includes(playerId));
-  if (!court) return null;
+  const courtIndex = week.courts.findIndex(ct => ct.players.includes(playerId));
+  if (courtIndex === -1) return null;
+  const court = week.courts[courtIndex];
   // Among matches in their court, prefer one without a score
   let target = court.matches.find(m => {
     const inMatch = (m.format === "doubles"
@@ -65,7 +66,7 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
       ? [...(m.team1||[]), ...(m.team2||[])].includes(playerId)
       : (m.home === playerId || m.away === playerId)));
   }
-  return { court, match: target };
+  return { court, courtIndex, match: target };
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
@@ -150,12 +151,11 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
         const isUpcoming = kind === "upcoming";
         const partners = found.court.players.filter(p => p !== player.id);
         const dateLabel = formatDate(hw.date);
-        // Per-court time overrides the week-level time when set. This matters
-        // for leagues with staggered start times (e.g. Court 1 at 8:00,
-        // Court 3 at 9:30).
-        const effectiveTime = found.court.time || hw.time;
+        // Cascade: per-week override → league config → week default.
+        // Matters for leagues with staggered start times.
+        const effectiveTime = resolveCourtTime(found.court, found.courtIndex, selectedLeague, hw.time);
         const timeLabel = effectiveTime ? formatTime(effectiveTime) : null;
-        const displayCourtName = found.court.customName || found.court.courtName;
+        const displayCourtName = resolveCourtName(found.court, found.courtIndex, selectedLeague);
         return (
           <div style={{ margin: "12px 16px 0" }}>
             <div style={{
@@ -203,7 +203,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
                   </div>
                 )}
                 {myWeeks.length === 0 && <EmptyState msg="No schedule yet. Check back after the commissioner generates this season's schedule." />}
-                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />)}
+                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} league={selectedLeague} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />)}
               </div>
             )}
             {playerTab === "standings" && (() => {

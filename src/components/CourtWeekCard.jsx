@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
-import { formatDate, formatDateTime, formatTime } from "../lib/format.js";
+import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime } from "../lib/format.js";
 import { useIsMobile } from "../lib/session.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
@@ -11,31 +11,26 @@ import { matchSides } from "./ScoreForm.jsx";
 // myCourtPlayers: set of player IDs on the same court as myId this week (for edit gating)
 // isLocked: commissioner has locked this week — players cannot edit, commissioner still can
 // isAdmin: full commissioner access
-export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
+// league: the league record (used to resolve league-level court defaults)
+export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
 
   // Compute the time summary for the week header.
   // Default: the week's single time, e.g. "Wed Oct 15 · 8:00 AM".
-  // If any court has an override that differs, show a range or list, e.g.
-  // "Wed Oct 15 · 8:00 AM – 9:30 AM" — gives a quick sense of the day's
-  // span without enumerating every court.
+  // If any court has an override (per-week or league-level) that differs,
+  // show a range like "Wed Oct 15 · 8:00 AM – 9:30 AM" — quick sense of the
+  // day's span without enumerating every court.
   const headerDateTime = (() => {
     if (weekData.placeholder || !weekData.courts) {
       return formatDateTime(weekData.date, weekData.time);
     }
-    const courtTimes = weekData.courts
-      .map(ct => ct.time)
+    // Resolve each court's effective time via the cascade
+    const effective = weekData.courts
+      .map((ct, i) => resolveCourtTime(ct, i, league, weekData.time))
       .filter(Boolean);
-    if (courtTimes.length === 0) {
-      // No per-court overrides — use the week default
-      return formatDateTime(weekData.date, weekData.time);
-    }
-    // Some courts have overrides. Collect *every* effective court time
-    // (override OR week default), find min/max for the range.
-    const effective = weekData.courts.map(ct => ct.time || weekData.time).filter(Boolean);
+    if (effective.length === 0) return formatDate(weekData.date);
     const unique = [...new Set(effective)].sort();
-    if (unique.length === 0) return formatDate(weekData.date);
     if (unique.length === 1) return formatDateTime(weekData.date, unique[0]);
     return `${formatDate(weekData.date)} · ${formatTime(unique[0])} – ${formatTime(unique[unique.length - 1])}`;
   })();
@@ -126,12 +121,13 @@ export function CourtWeekCard({ weekData, leagueId, leagueName, getScore, getPla
             // For players: show only their own court; for commissioner: show all courts
             const onMyCourt = myId ? court.players.includes(myId) : true;
             if (myId && !onMyCourt) return null;
-            // Resolve the displayed court name: commissioner's customName wins
-            // over the generator's default "Court N".
-            const displayName = court.customName || court.courtName;
-            // Per-court time override. If it differs from the week's time
-            // (or the week has no time), show it next to the court label.
-            const courtTime = court.time;
+            // Three-tier name resolution: per-week override → league default
+            // → generator's "Court N" fallback.
+            const displayName = resolveCourtName(court, ci, league);
+            // Effective time considers per-week, league config, then week
+            // default. Show the time stripe only when it differs from the
+            // week's default (so single-time weeks stay clean).
+            const courtTime = resolveCourtTime(court, ci, league, weekData.time);
             const showCourtTime = courtTime && courtTime !== weekData.time;
             return (
               <div key={court.courtName} style={{ margin: "12px 16px 0" }}>

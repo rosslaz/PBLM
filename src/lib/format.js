@@ -60,3 +60,37 @@ export function formatDateTime(iso, hhmm) {
   if (datePart && timePart) return `${datePart} \u00b7 ${timePart}`;
   return datePart || timePart || "";
 }
+
+// ─── Court name + time resolution ───────────────────────────────────────────
+// Three-tier cascade for resolving the displayed name and time for a court:
+//   1. Per-week override on the court (court.customName / court.time)
+//   2. League-level court config (league.courtConfig[courtIndex])
+//   3. Fallback (generator's "Court N" / the week's default time)
+//
+// Why pass everything explicitly: pure functions, no surprise prop drilling,
+// easy to test, easy to read at the call site.
+
+export function resolveCourtName(court, courtIndex, league) {
+  if (court?.customName) return court.customName;
+  const cfg = league?.courtConfig?.[courtIndex];
+  if (cfg?.name) return cfg.name;
+  return court?.courtName || `Court ${courtIndex + 1}`;
+}
+
+// Returns the effective start time string ("HH:MM") for this court in this
+// week, or null/undefined if none is set anywhere in the cascade.
+// `weekTime` is the week's default time.
+export function resolveCourtTime(court, courtIndex, league, weekTime) {
+  if (court?.time) return court.time;
+  const cfg = league?.courtConfig?.[courtIndex];
+  if (cfg?.time) return cfg.time;
+  return weekTime || null;
+}
+
+// Returns true when this court has any non-week-default override (used to
+// decide whether to show the time stripe next to the court label).
+export function courtHasTimeOverride(court, courtIndex, league, weekTime) {
+  const t = resolveCourtTime(court, courtIndex, league, weekTime);
+  if (!t) return false;
+  return t !== weekTime;
+}

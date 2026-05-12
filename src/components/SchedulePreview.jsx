@@ -4,11 +4,12 @@
 // commissioner accepts, retries (if applicable), or cancels.
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
-import { formatDate, formatDateTime } from "../lib/format.js";
+import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime } from "../lib/format.js";
 import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
 // Single week of preview — collapsed list of courts and their players.
-function PreviewWeek({ week }) {
+// `league` is passed for resolving league-level court defaults.
+function PreviewWeek({ week, league }) {
   return (
     <div style={{ marginBottom: 12, border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: "12px 12px", background: "var(--color-background-secondary)" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
@@ -19,12 +20,22 @@ function PreviewWeek({ week }) {
       </div>
       {week.courts.map((court, ci) => {
         const color = COURT_COLORS[ci % COURT_COLORS.length];
+        // Resolve display: league-level overrides win since the preview is
+        // pre-commit and there are no per-week overrides yet.
+        const displayName = resolveCourtName(court, ci, league);
+        const courtTime = resolveCourtTime(court, ci, league, week.time);
+        const showCourtTime = courtTime && courtTime !== week.time;
         return (
           <div key={court.courtName} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: color + "12", border: `0.5px solid ${color}40` }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
             <span style={{ fontWeight: 700, fontSize: 11, color, letterSpacing: "0.4px", minWidth: 60 }}>
-              {court.courtName.toUpperCase()}
+              {displayName.toUpperCase()}
             </span>
+            {showCourtTime && (
+              <span style={{ fontSize: 11, fontWeight: 600, color, opacity: 0.85 }}>
+                {formatTime(courtTime)}
+              </span>
+            )}
             <span style={{ fontSize: 12, color: "var(--color-text-primary)", flex: 1, minWidth: 0 }}>
               {court.playerNames.join(" · ")}
             </span>
@@ -43,9 +54,10 @@ function PreviewWeek({ week }) {
 //     array alongside `players` (pre-resolved for display)
 //   - leagueName, summary (a one-line description)
 //   - canRetry (bool): whether the "Try Again" button is shown
+// `league` is the league record (for resolving league-level court defaults).
 // `onAccept` writes the preview to the DB; `onRetry` recomputes (only used if
 // canRetry); `onCancel` closes the modal.
-export function SchedulePreview({ preview, onAccept, onRetry, onCancel }) {
+export function SchedulePreview({ preview, league, onAccept, onRetry, onCancel }) {
   const isCommitting = useIsActionPending("commit-schedule");
   if (!preview) return null;
   return (
@@ -58,7 +70,7 @@ export function SchedulePreview({ preview, onAccept, onRetry, onCancel }) {
       </div>
 
       <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4, marginBottom: 12 }}>
-        {preview.weeks.map(w => <PreviewWeek key={w.week} week={w} />)}
+        {preview.weeks.map(w => <PreviewWeek key={w.week} week={w} league={league} />)}
       </div>
 
       {preview.warning && (

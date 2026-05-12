@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 import { SUPER_ADMIN, COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
 import { formatDate, formatPlayerName, playerInitial } from "./lib/format.js";
-import { useIsMobile, sortLeagues, loadSession, saveSession } from "./lib/session.js";
+import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail } from "./lib/session.js";
 import {
   supabase, loadDB, defaultDB,
   dbCreateLeague, dbUpdateLeague,
@@ -695,7 +695,13 @@ export default function App() {
       <ActionPendingProvider value={currentActionId}>
         <HomeView leagues={leagues} players={players} db={db}
           onAdmin={(email) => { setAdminEmail(email); setView("admin"); }}
-          onPlayerLogin={p => { setCurrentPlayer(p); setView("player"); }}
+          onPlayerLogin={p => {
+            // Remember this email on this device for next time, even if the
+            // user later logs out. The login screen will pre-fill it.
+            if (p?.email) saveLastEmail(p.email);
+            setCurrentPlayer(p);
+            setView("player");
+          }}
           onCreatePlayer={createPlayer} toast={toast} modal={modal} setModal={setModal}
           registerForLeague={registerForLeague} />
       </ActionPendingProvider>
@@ -805,10 +811,12 @@ export default function App() {
         })()}
         {modal?.type === "editWeek" && (() => {
           const w = modal.weekData;
+          const lg = db.leagues[modal.leagueId];
           return (
             <Modal title={`Edit Week ${w.week}`} onClose={() => setModal(null)}>
               <EditWeekForm
                 weekData={w}
+                league={lg}
                 onSubmit={(date, time, courtOverrides, applyTo) =>
                   updateWeekDateTime(modal.leagueId, w.week, date, time, courtOverrides, applyTo)
                 }
@@ -820,6 +828,7 @@ export default function App() {
           <Modal title={`Review Schedule · ${modal.proposal.leagueName}`} onClose={() => setModal(null)}>
             <SchedulePreview
               preview={modal.proposal}
+              league={db.leagues[modal.proposal.leagueId]}
               onAccept={() => commitScheduleProposal(modal.proposal)}
               onRetry={retryScheduleProposal}
               onCancel={() => setModal(null)} />

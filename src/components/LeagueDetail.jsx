@@ -249,7 +249,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               // Build these once per LeagueDetail render so all week cards
               // share the same stable references (helps any future React.memo)
               const getPlayerEmail = pid => db.players[pid]?.email;
-              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} onEditDateTime={onEditWeekDateTime} onRebalance={onRebalanceWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
+              return weeks.map(w => <CourtWeekCard key={w.week} weekData={w} league={league} leagueId={league.id} leagueName={league.name} getScore={getScore} getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail} onEnterScore={onEnterScore} onToggleLock={onToggleLockWeek} onEditDateTime={onEditWeekDateTime} onRebalance={onRebalanceWeek} isLocked={isWeekLocked(w.week)} isAdmin regs={regs} getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)} />);
             })()}
           </div>
         )}
