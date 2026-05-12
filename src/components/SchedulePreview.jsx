@@ -5,6 +5,7 @@
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
 import { formatDate, formatDateTime } from "../lib/format.js";
+import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
 // Single week of preview — collapsed list of courts and their players.
 function PreviewWeek({ week }) {
@@ -45,6 +46,7 @@ function PreviewWeek({ week }) {
 // `onAccept` writes the preview to the DB; `onRetry` recomputes (only used if
 // canRetry); `onCancel` closes the modal.
 export function SchedulePreview({ preview, onAccept, onRetry, onCancel }) {
+  const isCommitting = useIsActionPending("commit-schedule");
   if (!preview) return null;
   return (
     <div>
@@ -66,12 +68,17 @@ export function SchedulePreview({ preview, onAccept, onRetry, onCancel }) {
       )}
 
       <div style={{ ...S.row, justifyContent: "space-between", gap: 8 }}>
-        <button style={S.btn("secondary")} onClick={onCancel}>Cancel</button>
+        <button style={S.btn("secondary")} onClick={onCancel} disabled={isCommitting}>Cancel</button>
         <div style={{ display: "flex", gap: 8 }}>
           {preview.canRetry && (
-            <button style={S.btn("secondary")} onClick={onRetry}>↻ Try Again</button>
+            <button style={S.btn("secondary")} onClick={onRetry} disabled={isCommitting}>↻ Try Again</button>
           )}
-          <button style={S.btn("primary")} onClick={onAccept}>Accept &amp; Save</button>
+          <button
+            style={{ ...S.btn("primary"), minWidth: 150 }}
+            onClick={onAccept}
+            disabled={isCommitting}>
+            {isCommitting ? <><Spinner /> Saving…</> : "Accept & Save"}
+          </button>
         </div>
       </div>
     </div>

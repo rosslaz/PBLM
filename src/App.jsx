@@ -32,6 +32,7 @@ import { TrashTab } from "./components/TrashTab.jsx";
 import { SchedulePreview } from "./components/SchedulePreview.jsx";
 import { HomeView } from "./components/HomeView.jsx";
 import { PlayerView } from "./components/PlayerView.jsx";
+import { ActionPendingProvider, Spinner } from "./components/Spinner.jsx";
 
 export default function App() {
   const isMobile = useIsMobile();
@@ -43,7 +44,13 @@ export default function App() {
   const [playerTab, setPlayerTab] = useState("schedule");
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
-  const [saving, setSaving] = useState(false);
+  // Tracks which action is currently in flight. null = idle.
+  // String identifier like "submit-score-w1_c0_m0" lets specific buttons
+  // know it's their action that's pending so they can show a spinner.
+  // Actions that don't need per-button feedback pass no ID; they still
+  // set `currentActionId = "_generic"` to drive the global indicator.
+  const [currentActionId, setCurrentActionId] = useState(null);
+  const saving = currentActionId !== null;
   const [adminEmail, setAdminEmail] = useState(null);
   const [sessionRestored, setSessionRestored] = useState(false);
 
@@ -134,8 +141,15 @@ export default function App() {
     }
   }, [dbPlayers, currentPlayer]);
 
-  async function action(fn, successMsg) {
-    setSaving(true);
+  // Wraps every write: marks the action in flight, runs the write, reloads
+  // from DB, shows a success/error toast.
+  //
+  // `actionId` is an opaque string that prominent action buttons can use to
+  // know "this is my action running" — they read it via useIsActionPending
+  // and render their own inline spinner. If omitted, the action still drives
+  // the global "Saving…" indicator in the header.
+  async function action(fn, successMsg, actionId) {
+    setCurrentActionId(actionId || "_generic");
     try {
       await fn();
       await reload();
@@ -144,7 +158,7 @@ export default function App() {
       console.error("[action] failed:", e);
       showToast(e.message || "Operation failed", "error");
     } finally {
-      setSaving(false);
+      setCurrentActionId(null);
     }
   }
 
@@ -244,7 +258,7 @@ export default function App() {
   // "Delete" from the league detail page → soft-delete (moves to trash).
   // The toast tells the commissioner it's recoverable.
   async function doDeleteLeague(id) {
-    await action(() => dbSoftDeleteLeague(id), "League moved to trash. Restore from the Trash tab within 30 days.");
+    await action(() => dbSoftDeleteLeague(id), "League moved to trash. Restore from the Trash tab within 30 days.", "soft-delete-league");
     setSelectedLeague(null); setModal(null);
   }
   async function restoreLeague(id) {
@@ -252,7 +266,7 @@ export default function App() {
     setModal(null);
   }
   async function hardDeleteLeague(id) {
-    await action(() => dbHardDeleteLeague(id), "League permanently deleted.");
+    await action(() => dbHardDeleteLeague(id), "League permanently deleted.", "hard-delete-league");
     setSelectedLeague(null); setModal(null);
   }
 
@@ -502,7 +516,7 @@ export default function App() {
         const { error } = await supabase.from("pb_scores").delete().like("key", `${leagueId}_%`);
         if (error) throw error;
       }
-    });
+    }, undefined, "commit-schedule");
     showToast(successToast);
     setModal(null);
   }
@@ -552,7 +566,7 @@ export default function App() {
   // commissioner can restore within 30 days, or hard-delete from the trash UI.
   async function deletePlayer(playerId) {
     const p = db.players[playerId]; if (!p) return;
-    await action(() => dbSoftDeletePlayer(playerId), `${formatPlayerName(p)} moved to trash. Restore from the Trash tab within 30 days.`);
+    await action(() => dbSoftDeletePlayer(playerId), `${formatPlayerName(p)} moved to trash. Restore from the Trash tab within 30 days.`, "soft-delete-player");
     setModal(null);
   }
   async function restorePlayer(playerId) {
@@ -562,7 +576,7 @@ export default function App() {
   }
   async function hardDeletePlayer(playerId) {
     const p = db.players[playerId]; if (!p) return;
-    await action(() => dbHardDeletePlayer(playerId), `${formatPlayerName(p)} permanently deleted.`);
+    await action(() => dbHardDeletePlayer(playerId), `${formatPlayerName(p)} permanently deleted.`, "hard-delete-player");
     setModal(null);
   }
 
@@ -574,7 +588,11 @@ export default function App() {
   }
 
   async function submitScore(leagueId, week, matchId, homeScore, awayScore) {
-    await action(() => dbWriteScore(leagueId, week, matchId, homeScore, awayScore), "Score submitted!");
+    await action(
+      () => dbWriteScore(leagueId, week, matchId, homeScore, awayScore),
+      "Score submitted!",
+      "submit-score"
+    );
     setModal(null);
   }
 
@@ -612,7 +630,7 @@ export default function App() {
   async function seedTestPlayers() {
     const existingEmails = new Set(players.map(p => p.email?.toLowerCase()).filter(Boolean));
     let added = 0, skipped = 0;
-    setSaving(true);
+    setCurrentActionId("seed-test-players");
     try {
       for (let i = 1; i <= 20; i++) {
         const email = `test${i}@test.com`;
@@ -634,7 +652,7 @@ export default function App() {
       console.error("[seedTestPlayers] failed:", e);
       showToast(e.message || "Failed to seed players", "error");
     } finally {
-      setSaving(false);
+      setCurrentActionId(null);
       setModal(null);
     }
   }
@@ -651,11 +669,15 @@ export default function App() {
 
   // ─── HOME ─────────────────────────────────────────────────────────────────
   if (view === "home") {
-    return <HomeView leagues={leagues} players={players} db={db}
-      onAdmin={(email) => { setAdminEmail(email); setView("admin"); }}
-      onPlayerLogin={p => { setCurrentPlayer(p); setView("player"); }}
-      onCreatePlayer={createPlayer} toast={toast} modal={modal} setModal={setModal}
-      registerForLeague={registerForLeague} />;
+    return (
+      <ActionPendingProvider value={currentActionId}>
+        <HomeView leagues={leagues} players={players} db={db}
+          onAdmin={(email) => { setAdminEmail(email); setView("admin"); }}
+          onPlayerLogin={p => { setCurrentPlayer(p); setView("player"); }}
+          onCreatePlayer={createPlayer} toast={toast} modal={modal} setModal={setModal}
+          registerForLeague={registerForLeague} />
+      </ActionPendingProvider>
+    );
   }
 
   // ─── COMMISSIONER ─────────────────────────────────────────────────────────
@@ -666,8 +688,9 @@ export default function App() {
     const league = rawLeague && !rawLeague.deletedAt ? rawLeague : null;
     const c = league ? (COLORS[league.color] || COLORS.csc) : COLORS.teal;
     return (
-      <div style={S.page}>
-        <Toast toast={toast} />
+      <ActionPendingProvider value={currentActionId}>
+        <div style={S.page}>
+          <Toast toast={toast} />
         {scoreModal}
         {modal?.type === "createLeague" && <Modal title="Create League" onClose={() => setModal(null)}><LeagueForm onSubmit={createLeague} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "editLeague" && <Modal title="Edit League" onClose={() => setModal(null)}><LeagueForm initial={modal.league} onSubmit={d => updateLeague(modal.league.id, d)} onCancel={() => setModal(null)} /></Modal>}
@@ -691,7 +714,23 @@ export default function App() {
             </div>
           </Modal>
         )}
-        {modal?.type === "confirmDelete" && <Modal title="Move League to Trash" onClose={() => setModal(null)}><p style={{ fontSize: 15, margin: "0 0 12px" }}>Move <b>{modal.league.name}</b> to the trash?</p><p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 20px" }}>The league will be hidden from players immediately. You can restore it from the Trash tab within 30 days. After that, it will be permanently deleted along with its registrations, schedule, and scores.</p><div style={S.row}><button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => doDeleteLeague(modal.league.id)}>Move to Trash</button><button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button></div></Modal>}
+        {modal?.type === "confirmDelete" && (
+          <Modal title="Move League to Trash" onClose={() => setModal(null)}>
+            <p style={{ fontSize: 15, margin: "0 0 12px" }}>Move <b>{modal.league.name}</b> to the trash?</p>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 20px" }}>
+              The league will be hidden from players immediately. You can restore it from the Trash tab within 30 days. After that, it will be permanently deleted along with its registrations, schedule, and scores.
+            </p>
+            <div style={S.row}>
+              <button
+                style={{ ...S.btn("primary"), background: "#A32D2D", minWidth: 140 }}
+                onClick={() => doDeleteLeague(modal.league.id)}
+                disabled={currentActionId === "soft-delete-league"}>
+                {currentActionId === "soft-delete-league" ? <><Spinner /> Moving…</> : "Move to Trash"}
+              </button>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)} disabled={currentActionId === "soft-delete-league"}>Cancel</button>
+            </div>
+          </Modal>
+        )}
         {modal?.type === "confirmRebalance" && (() => {
           const w = modal.weekData;
           const lid = modal.leagueId;
@@ -789,8 +828,13 @@ export default function App() {
                 The player will be hidden from rosters and unable to log in. You can restore from the Trash tab within 30 days; after that they'll be permanently deleted along with their registrations and check-ins.
               </p>
               <div style={S.row}>
-                <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => deletePlayer(p.id)}>Move to Trash</button>
-                <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+                <button
+                  style={{ ...S.btn("primary"), background: "#A32D2D", minWidth: 140 }}
+                  onClick={() => deletePlayer(p.id)}
+                  disabled={currentActionId === "soft-delete-player"}>
+                  {currentActionId === "soft-delete-player" ? <><Spinner /> Moving…</> : "Move to Trash"}
+                </button>
+                <button style={S.btn("secondary")} onClick={() => setModal(null)} disabled={currentActionId === "soft-delete-player"}>Cancel</button>
               </div>
             </Modal>
           );
@@ -804,8 +848,13 @@ export default function App() {
               This removes the league plus all its registrations, schedule, scores, locked weeks, and check-ins. This action cannot be undone.
             </p>
             <div style={S.row}>
-              <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => hardDeleteLeague(modal.league.id)}>Delete Forever</button>
-              <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+              <button
+                style={{ ...S.btn("primary"), background: "#A32D2D", minWidth: 150 }}
+                onClick={() => hardDeleteLeague(modal.league.id)}
+                disabled={currentActionId === "hard-delete-league"}>
+                {currentActionId === "hard-delete-league" ? <><Spinner /> Deleting…</> : "Delete Forever"}
+              </button>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)} disabled={currentActionId === "hard-delete-league"}>Cancel</button>
             </div>
           </Modal>
         )}
@@ -818,8 +867,13 @@ export default function App() {
               This removes the player plus all their registrations and check-ins. This action cannot be undone.
             </p>
             <div style={S.row}>
-              <button style={{ ...S.btn("primary"), background: "#A32D2D" }} onClick={() => hardDeletePlayer(modal.player.id)}>Delete Forever</button>
-              <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+              <button
+                style={{ ...S.btn("primary"), background: "#A32D2D", minWidth: 150 }}
+                onClick={() => hardDeletePlayer(modal.player.id)}
+                disabled={currentActionId === "hard-delete-player"}>
+                {currentActionId === "hard-delete-player" ? <><Spinner /> Deleting…</> : "Delete Forever"}
+              </button>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)} disabled={currentActionId === "hard-delete-player"}>Cancel</button>
             </div>
           </Modal>
         )}
@@ -989,7 +1043,8 @@ export default function App() {
             )}
           </>
         )}
-      </div>
+        </div>
+      </ActionPendingProvider>
     );
   }
 
@@ -1011,14 +1066,18 @@ export default function App() {
       if (leagueGender === "Women's") return playerGender === "Female";
       return false;
     });
-    return <PlayerView db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
-      playerTab={playerTab} setPlayerTab={setPlayerTab} modal={modal} setModal={setModal} toast={toast}
-      getLeagueSchedule={getLeagueSchedule} getScore={getScore} getPlayerName={getPlayerName}
-      getStandings={getStandings} registerForLeague={registerForLeague} submitScore={submitScore}
-      isWeekLocked={isWeekLocked}
-      getCheckIn={getCheckIn} setCheckIn={setCheckIn}
-      adminEmails={db.adminEmails || [SUPER_ADMIN]}
-      onSwitchToAdmin={() => { setAdminEmail(currentPlayer.email.toLowerCase()); setView("admin"); }}
-      onBack={() => setView("home")} onLogout={logout} scoreModal={scoreModal} />;
+    return (
+      <ActionPendingProvider value={currentActionId}>
+        <PlayerView db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
+          playerTab={playerTab} setPlayerTab={setPlayerTab} modal={modal} setModal={setModal} toast={toast}
+          getLeagueSchedule={getLeagueSchedule} getScore={getScore} getPlayerName={getPlayerName}
+          getStandings={getStandings} registerForLeague={registerForLeague} submitScore={submitScore}
+          isWeekLocked={isWeekLocked}
+          getCheckIn={getCheckIn} setCheckIn={setCheckIn}
+          adminEmails={db.adminEmails || [SUPER_ADMIN]}
+          onSwitchToAdmin={() => { setAdminEmail(currentPlayer.email.toLowerCase()); setView("admin"); }}
+          onBack={() => setView("home")} onLogout={logout} scoreModal={scoreModal} />
+      </ActionPendingProvider>
+    );
   }
 }

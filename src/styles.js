@@ -25,7 +25,23 @@ export const S = {
   row: { display: "flex", gap: 12, alignItems: "center" },
   section: { padding: "16px 20px" },
   tabBar: { display: "flex", gap: 4, borderBottom: "0.5px solid var(--color-border-tertiary)", padding: "0 20px", background: "var(--color-background-primary)", overflowX: "auto" },
-  tab: (active, color) => ({ padding: "10px 16px", cursor: "pointer", fontSize: 14, border: "none", background: "transparent", fontFamily: "inherit", color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: active ? `2px solid ${color || CSC.blue}` : "2px solid transparent", fontWeight: active ? 500 : 400, whiteSpace: "nowrap" }),
+  // Active tab gets a thicker underline, heavier weight, and a faint
+  // background tint. Each on its own is subtle; together they make the
+  // active state read at a glance instead of requiring a second look.
+  tab: (active, color) => ({
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontSize: 14,
+    border: "none",
+    background: active ? "var(--color-background-secondary)" : "transparent",
+    fontFamily: "inherit",
+    color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+    borderBottom: active ? `3px solid ${color || CSC.blue}` : "3px solid transparent",
+    fontWeight: active ? 600 : 500,
+    whiteSpace: "nowrap",
+    // Subtle hover hint for the inactive tabs on devices that hover
+    transition: "background-color 120ms ease, color 120ms ease",
+  }),
   badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"], purple: ["#EEEDFE","#534AB7"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 600, display: "inline-block" }; },
   modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 },
   modalBox: { background: "var(--color-background-primary)", borderRadius: 16, padding: "24px", maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto" },

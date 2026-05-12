@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { S } from "../styles.js";
 import { useIsMobile } from "../lib/session.js";
 import { formatDate } from "../lib/format.js";
+import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
 function validatePickleballScore(h, a) {
   const hi = parseInt(h, 10), ai = parseInt(a, 10);
@@ -34,6 +35,7 @@ const AUTO_ADVANCE_MS = 400;
 
 export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, onClose }) {
   const isMobile = useIsMobile();
+  const isLoading = useIsActionPending("submit-score");
   const [home, setHome] = useState(existing?.homeScore ?? "");
   const [away, setAway] = useState(existing?.awayScore ?? "");
   const homeRef = useRef(null);
@@ -177,8 +179,14 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
         {parseInt(home,10) > parseInt(away,10) ? labelA : labelB} wins!
       </p>}
       <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
-        <button style={S.btn("secondary")} onClick={onClose}>Cancel</button>
-        <button style={{ ...S.btn("primary"), opacity: isValid ? 1 : 0.5 }} onClick={handleSubmit}>Submit Score</button>
+        <button style={S.btn("secondary")} onClick={onClose} disabled={isLoading}>Cancel</button>
+        <button
+          style={{ ...S.btn("primary"), opacity: isValid && !isLoading ? 1 : 0.5, minWidth: 130 }}
+          onClick={handleSubmit}
+          disabled={isLoading}
+        >
+          {isLoading ? <><Spinner /> Saving…</> : "Submit Score"}
+        </button>
       </div>
     </div>
   );
