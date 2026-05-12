@@ -339,8 +339,14 @@ export default function App() {
     setModal(null);
   }
 
-  async function updateWeekDateTime(leagueId, weekNum, date, time) {
-    await action(() => dbWriteWeekDateTime(leagueId, weekNum, date, time), `Week ${weekNum} updated.`);
+  async function updateWeekDateTime(leagueId, weekNum, date, time, courtOverrides, applyTo) {
+    const successMsg = applyTo === "all"
+      ? `Week ${weekNum} updated, and court settings applied to all weeks.`
+      : `Week ${weekNum} updated.`;
+    await action(
+      () => dbWriteWeekDateTime(leagueId, weekNum, date, time, courtOverrides, applyTo),
+      successMsg
+    );
     setModal(null);
   }
 
@@ -389,10 +395,26 @@ export default function App() {
       existingWeeks.forEach(w => { existingByWeek[w.week] = w; });
       result.weeks = result.weeks.map(w => {
         const prev = existingByWeek[w.week];
-        if (prev && (prev.date !== w.date || prev.time)) {
-          return { ...w, date: prev.date || w.date, time: prev.time || null };
+        if (!prev) return w;
+        const merged = { ...w };
+        // Carry over commissioner-edited week date/time
+        if (prev.date) merged.date = prev.date;
+        if (prev.time) merged.time = prev.time;
+        // Carry over per-court customizations by position. The generator
+        // produces fresh court groups, but court *index* is stable — so the
+        // commissioner's "Court 3 = 9:30 AM" sticks to Court 3 in the new
+        // schedule, even though the players in Court 3 are different.
+        if (prev.courts && prev.courts.length > 0) {
+          merged.courts = w.courts.map((newCt, i) => {
+            const prevCt = prev.courts[i];
+            if (!prevCt) return newCt;
+            const carried = { ...newCt };
+            if (prevCt.customName) carried.customName = prevCt.customName;
+            if (prevCt.time) carried.time = prevCt.time;
+            return carried;
+          });
         }
-        return w;
+        return merged;
       });
       const scoresWiped = Object.keys(db.scores).filter(k => k.startsWith(`${leagueId}_`)).length;
       const courtsCount = result.weeks[0]?.courts.length || 0;
@@ -787,7 +809,9 @@ export default function App() {
             <Modal title={`Edit Week ${w.week}`} onClose={() => setModal(null)}>
               <EditWeekForm
                 weekData={w}
-                onSubmit={(date, time) => updateWeekDateTime(modal.leagueId, w.week, date, time)}
+                onSubmit={(date, time, courtOverrides, applyTo) =>
+                  updateWeekDateTime(modal.leagueId, w.week, date, time, courtOverrides, applyTo)
+                }
                 onCancel={() => setModal(null)} />
             </Modal>
           );

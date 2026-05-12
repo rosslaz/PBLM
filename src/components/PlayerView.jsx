@@ -150,7 +150,12 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
         const isUpcoming = kind === "upcoming";
         const partners = found.court.players.filter(p => p !== player.id);
         const dateLabel = formatDate(hw.date);
-        const timeLabel = hw.time ? formatTime(hw.time) : null;
+        // Per-court time overrides the week-level time when set. This matters
+        // for leagues with staggered start times (e.g. Court 1 at 8:00,
+        // Court 3 at 9:30).
+        const effectiveTime = found.court.time || hw.time;
+        const timeLabel = effectiveTime ? formatTime(effectiveTime) : null;
+        const displayCourtName = found.court.customName || found.court.courtName;
         return (
           <div style={{ margin: "12px 16px 0" }}>
             <div style={{
@@ -169,7 +174,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
                 }}>
                   {isUpcoming ? "Your next match" : "Most recent match"}
                 </span>
-                <span style={{ fontSize: 12, opacity: 0.85 }}>Week {hw.week} · {found.court.courtName}</span>
+                <span style={{ fontSize: 12, opacity: 0.85 }}>Week {hw.week} · {displayCourtName}</span>
               </div>
               <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, letterSpacing: "-0.2px" }}>
                 {dateLabel}{timeLabel ? ` · ${timeLabel}` : ""}

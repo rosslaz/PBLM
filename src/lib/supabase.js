@@ -270,24 +270,81 @@ export async function dbToggleRegPaid(leagueId, playerId) {
   if (error) throw error;
 }
 
-export async function dbWriteWeekDateTime(leagueId, weekNum, date, time) {
-  // Read the current schedule, mutate just the week's date/time, write back.
-  // If the week doesn't exist yet (e.g. ladder placeholder), append a stub.
+// Write a week's date + time, plus optional per-court name/time overrides.
+// `courtOverrides` is an array indexed by court position, e.g.
+//   [{ name: "8AM North", time: "08:00" }, { name: "", time: "08:00" }, ...]
+// An empty/missing entry means "no override" — the court falls back to the
+// week's date/time and the generator's default court name. To clear an
+// override, pass { name: "", time: "" } for that position.
+// If `courtOverrides` is undefined, only date/time are updated (existing
+// court overrides are preserved).
+// `applyTo` can be "this" (default — update only weekNum) or "all" (apply the
+// same court overrides + time to every real, non-placeholder week).
+export async function dbWriteWeekDateTime(leagueId, weekNum, date, time, courtOverrides, applyTo = "this") {
   const { data, error: e1 } = await supabase
     .from("pb_schedules").select("data").eq("league_id", leagueId).single();
-  if (e1 && e1.code !== "PGRST116") throw e1; // PGRST116 = no rows
+  if (e1 && e1.code !== "PGRST116") throw e1;
   const sched = data?.data || { weeks: [] };
   const existing = sched.weeks || [];
-  const found = existing.find(w => w.week === weekNum);
-  let weeks;
-  if (found) {
-    weeks = existing.map(w =>
-      w.week === weekNum ? { ...w, date, time: time || null } : w
-    );
-  } else {
-    weeks = [...existing, { week: weekNum, date, time: time || null, courts: [], placeholder: true }]
-      .sort((a, b) => a.week - b.week);
+
+  // Reusable function: apply name/time changes to one week's courts.
+  // Returns a new courts array; falls through to the existing courts when
+  // `courtOverrides` isn't provided.
+  function applyCourtOverrides(courts) {
+    if (!courtOverrides) return courts;
+    return courts.map((ct, i) => {
+      const o = courtOverrides[i];
+      if (!o) return ct;
+      const updated = { ...ct };
+      // Empty string means "clear the override". Non-empty means "set".
+      if (o.name !== undefined) {
+        if (o.name) updated.customName = o.name;
+        else delete updated.customName;
+      }
+      if (o.time !== undefined) {
+        if (o.time) updated.time = o.time;
+        else delete updated.time;
+      }
+      return updated;
+    });
   }
+
+  let weeks;
+  if (applyTo === "all") {
+    // Update this week's date/time, plus apply the same court overrides AND
+    // time to every other real (non-placeholder) week. Other weeks keep
+    // their own date — only time + court-overrides get copied.
+    weeks = existing.map(w => {
+      if (w.week === weekNum) {
+        return { ...w, date, time: time || null, courts: applyCourtOverrides(w.courts || []) };
+      }
+      if (w.placeholder || !w.courts || w.courts.length === 0) return w;
+      return {
+        ...w,
+        time: time || w.time || null,
+        courts: applyCourtOverrides(w.courts),
+      };
+    });
+    // If this week didn't exist, add it as a placeholder
+    if (!existing.find(w => w.week === weekNum)) {
+      weeks = [...weeks, { week: weekNum, date, time: time || null, courts: [], placeholder: true }]
+        .sort((a, b) => a.week - b.week);
+    }
+  } else {
+    // Just update this one week
+    const found = existing.find(w => w.week === weekNum);
+    if (found) {
+      weeks = existing.map(w =>
+        w.week === weekNum
+          ? { ...w, date, time: time || null, courts: applyCourtOverrides(w.courts || []) }
+          : w
+      );
+    } else {
+      weeks = [...existing, { week: weekNum, date, time: time || null, courts: [], placeholder: true }]
+        .sort((a, b) => a.week - b.week);
+    }
+  }
+
   const { error: e2 } = await supabase
     .from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } });
   if (e2) throw e2;
