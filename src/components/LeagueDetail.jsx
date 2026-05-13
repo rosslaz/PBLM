@@ -63,7 +63,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
       };
     }
     if (!isLadder) {
-      // Mixer
+      // Round-Robin (internal id: "mixer")
       if (realWeeksCount === 0) {
         return {
           tone: "ready",
@@ -132,7 +132,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
             <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text, fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
               <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : "info"), marginLeft: 8, fontSize: 10 }}>
-                {league.competitionType === "ladder" ? "🪜 Ladder" : "🔀 Mixer"}
+                {league.competitionType === "ladder" ? "🪜 Ladder" : "🔀 Round-Robin"}
               </span>
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}

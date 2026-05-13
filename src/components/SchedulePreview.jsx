@@ -1,5 +1,5 @@
 // ─── Schedule preview — review a generated schedule before committing it ────
-// Mixer leagues generate a full season at once; ladder leagues generate one
+// Round-Robin leagues generate a full season at once; ladder leagues generate one
 // week. Either way, this modal shows the proposed court compositions and the
 // commissioner accepts, retries (if applicable), or cancels.
 import { S } from "../styles.js";

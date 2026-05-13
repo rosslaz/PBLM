@@ -94,3 +94,25 @@ export function courtHasTimeOverride(court, courtIndex, league, weekTime) {
   if (!t) return false;
   return t !== weekTime;
 }
+
+// ─── Week eligibility ──────────────────────────────────────────────────────
+// "Is this week today or earlier?" — used to gate player score entry to the
+// current week and past weeks only, not future weeks. The commissioner
+// bypasses this; only players are restricted.
+//
+// Uses lexicographic comparison on the ISO date string ("YYYY-MM-DD") because
+// ISO ordering matches chronological ordering. todayISO() returns the local
+// date, not UTC — players in different timezones see "today" as their own
+// calendar day.
+export function todayISO() {
+  // Local-time YYYY-MM-DD. Date.toISOString() would give UTC and could be a
+  // day off for users west of UTC late in the evening.
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function isCurrentOrPastWeek(weekDate) {
+  if (!weekDate) return false;
+  return weekDate <= todayISO();
+}

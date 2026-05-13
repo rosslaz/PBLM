@@ -396,7 +396,7 @@ export default function App() {
     }));
 
     if (!isLadder) {
-      // ─── Mixer: full season at once ───────────────────────────────────
+      // ─── Round-Robin: full season at once ───────────────────────────────────
       const existingWeeks = db.schedules[leagueId]?.weeks || [];
       const hasLockedWeek = existingWeeks.some(w => isWeekLocked(leagueId, w.week));
       if (hasLockedWeek) {
@@ -442,9 +442,9 @@ export default function App() {
           schedule: result,
           scoresWiped,
           weeks: withNames(result.weeks),
-          summary: `Mixer schedule: ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks`,
+          summary: `Round-Robin schedule: ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks`,
           warning: scoresWiped > 0 ? `Accepting will clear ${scoresWiped} existing score${scoresWiped!==1?"s":""} from this league.` : null,
-          // Mixer generation is deterministic with the current seeding (the
+          // Round-Robin generation is deterministic with the current seeding (the
           // week-index folds into a fixed seed, not a random one). Retrying
           // would produce identical output, so don't offer it.
           canRetry: false,

@@ -51,7 +51,7 @@ export function sortLeagues(leagues) {
 
 // For commissioners viewing a ladder league, build placeholder week stubs
 // for any weeks not yet generated, so the schedule UI shows the full season.
-// Mixer leagues already contain all weeks from generation.
+// Round-Robin leagues already contain all weeks from generation.
 // Stored placeholders (from commissioner editing date/time before generation)
 // are kept as-is.
 export function buildDisplayWeeks(league, schedule) {

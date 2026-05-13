@@ -96,7 +96,10 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       <div>
         <label style={S.label}>Competition Type *</label>
         <select style={S.input} value={form.competitionType} onChange={e => set("competitionType", e.target.value)}>
-          <option value="mixer">Mixer — full schedule generated upfront, courts rotate for variety</option>
+          {/* The dropdown value is still "mixer" internally — it's the
+              database identifier. The user-facing label is "Round-Robin" as
+              of v0.10.x. */}
+          <option value="mixer">Round-Robin — every player faces every other player across the season</option>
           <option value="ladder">Ladder — week-by-week, courts based on previous week's results</option>
         </select>
       </div>

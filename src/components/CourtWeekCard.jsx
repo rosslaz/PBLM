@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
-import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime } from "../lib/format.js";
+import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime, isCurrentOrPastWeek } from "../lib/format.js";
 import { useIsMobile } from "../lib/session.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
@@ -37,6 +37,10 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
   const totalMatches = weekData.courts.reduce((s, c) => s + c.matches.length, 0);
   const scoredMatches = weekData.courts.reduce((s, c) => s + c.matches.filter(m => getScore(leagueId, m.week, m.id)).length, 0);
   const allScored = scoredMatches === totalMatches && totalMatches > 0;
+  // Players can't enter scores for weeks that haven't happened yet. The
+  // commissioner can score any week regardless (for testing / corrections).
+  const weekIsCurrentOrPast = isCurrentOrPastWeek(weekData.date);
+  const playerBlockedFuture = !!myId && !weekIsCurrentOrPast;
 
   const headerBg = isLocked ? "#F1EFE8" : allScored ? "#EAF3DE" : "var(--color-background-secondary)";
 
@@ -101,6 +105,14 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
               This week has been locked by the commissioner. Scores can no longer be edited.
             </div>
           )}
+          {/* Future-week notice: shown to players (not the commissioner) for
+              weeks whose date hasn't arrived yet. Hidden when the week is
+              already locked because the locked notice covers that case. */}
+          {!weekData.placeholder && !isLocked && playerBlockedFuture && (
+            <div style={{ margin: "12px 16px 0", padding: "8px 12px", background: CSC.blueLight, borderRadius: 6, fontSize: 12, color: CSC.blueDark }}>
+              📅 Scoring opens {formatDate(weekData.date)}. You can preview matchups now and enter scores when the week begins.
+            </div>
+          )}
           {/* Player's own check-in */}
           {myId && onSetCheckIn && (
             <CheckInRow
@@ -157,7 +169,9 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                   const myWon = hasScore && ((myOnSideA && sideAWon) || (myOnSideB && !sideAWon));
                   // Player can edit any match on their own court (not just ones they're in)
                   // unless the week is locked. Commissioner can always edit.
-                  const playerCanEdit = onMyCourt && !isLocked;
+                  // Players are also blocked from scoring weeks that haven't happened
+                  // yet — the commissioner bypasses this restriction.
+                  const playerCanEdit = onMyCourt && !isLocked && weekIsCurrentOrPast;
                   const canEdit = isAdmin || playerCanEdit;
 
                   const labelA = sideA.map(getPlayerName).join(" + ");
