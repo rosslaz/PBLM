@@ -11,7 +11,7 @@
 //   - Major (x.0.0): reserved for the 1.0 milestone (per Ross's direction)
 // Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "0.9.0",
+  version: "0.10.0",
   createdBy: "Ross Lazar",
   description: "League Manager for CSC Pickleball — schedules, scoring, standings.",
 };

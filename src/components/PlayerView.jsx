@@ -2,7 +2,7 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS } from "../lib/constants.js";
 import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime } from "../lib/format.js";
-import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter } from "./ui.jsx";
+import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
@@ -70,7 +70,7 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
-export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onLogout, scoreModal }) {
+export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   // Even if the commissioner soft-deletes a league while the player is
   // looking at it, don't render the stale data — treat it as null.
@@ -81,6 +81,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
 
   return (
+    <PullToRefresh onRefresh={onRefresh} isRefreshing={isRefreshing}>
     <div style={S.page}>
       <Toast toast={toast} />
       {scoreModal}
@@ -111,18 +112,21 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
           <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>Playing as</p>
           <h1 style={{ ...S.logo, fontSize: 16 }}>{playerFullName(player)}</h1>
         </div>
-        <AvatarMenu
-          initial={playerInitial(player)}
-          ariaLabel={`Menu for ${playerFullName(player)}`}
-          items={[
-            // Commissioner Mode — only for users in the admin allowlist
-            ...(adminEmails.map(e => e.toLowerCase()).includes(player.email.toLowerCase())
-              ? [{ label: "Commissioner Mode", icon: "⚙", onClick: onSwitchToAdmin }]
-              : []),
-            { label: "Join a League", icon: "＋", onClick: () => setModal({ type: "joinLeague" }) },
-            { label: "Log Out", icon: "↪", onClick: onLogout, danger: true },
-          ]}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <RefreshButton onClick={onRefresh} isRefreshing={isRefreshing} />
+          <AvatarMenu
+            initial={playerInitial(player)}
+            ariaLabel={`Menu for ${playerFullName(player)}`}
+            items={[
+              // Commissioner Mode — only for users in the admin allowlist
+              ...(adminEmails.map(e => e.toLowerCase()).includes(player.email.toLowerCase())
+                ? [{ label: "Commissioner Mode", icon: "⚙", onClick: onSwitchToAdmin }]
+                : []),
+              { label: "Join a League", icon: "＋", onClick: () => setModal({ type: "joinLeague" }) },
+              { label: "Log Out", icon: "↪", onClick: onLogout, danger: true },
+            ]}
+          />
+        </div>
       </div>
 
       {myLeagues.length > 1 && (
@@ -216,5 +220,6 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
       )}
       <VersionFooter />
     </div>
+    </PullToRefresh>
   );
 }

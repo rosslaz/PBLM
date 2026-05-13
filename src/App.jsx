@@ -20,7 +20,7 @@ import {
 } from "./lib/scheduling.js";
 import { S } from "./styles.js";
 
-import { Modal, Toast, EmptyState, VersionFooter } from "./components/ui.jsx";
+import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { PlayerForm } from "./components/PlayerForm.jsx";
 import { LeagueForm } from "./components/LeagueForm.jsx";
 import { EditWeekForm } from "./components/EditWeekForm.jsx";
@@ -157,6 +157,21 @@ export default function App() {
     } catch (e) {
       console.error("[action] failed:", e);
       showToast(e.message || "Operation failed", "error");
+    } finally {
+      setCurrentActionId(null);
+    }
+  }
+
+  // User-initiated refresh — pull-to-refresh on mobile, refresh button on
+  // desktop. Re-runs loadDB() so changes made by other commissioners or by
+  // the same user from another device become visible. Reuses the saving
+  // indicator state so any in-flight refresh is naturally serialized with
+  // other writes.
+  async function refresh() {
+    if (currentActionId) return; // already busy
+    setCurrentActionId("refresh");
+    try {
+      await reload();
     } finally {
       setCurrentActionId(null);
     }
@@ -693,6 +708,7 @@ export default function App() {
   if (view === "home") {
     return (
       <ActionPendingProvider value={currentActionId}>
+        <PullToRefresh onRefresh={refresh} isRefreshing={currentActionId === "refresh"}>
         <HomeView leagues={leagues} players={players} db={db}
           onAdmin={(email) => { setAdminEmail(email); setView("admin"); }}
           onPlayerLogin={p => {
@@ -704,6 +720,7 @@ export default function App() {
           }}
           onCreatePlayer={createPlayer} toast={toast} modal={modal} setModal={setModal}
           registerForLeague={registerForLeague} />
+        </PullToRefresh>
       </ActionPendingProvider>
     );
   }
@@ -717,6 +734,7 @@ export default function App() {
     const c = league ? (COLORS[league.color] || COLORS.csc) : COLORS.teal;
     return (
       <ActionPendingProvider value={currentActionId}>
+        <PullToRefresh onRefresh={refresh} isRefreshing={currentActionId === "refresh"}>
         <div style={S.page}>
           <Toast toast={toast} />
         {scoreModal}
@@ -919,6 +937,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span>
             <span style={{ fontSize: 12, opacity: 0.5 }}>{saving ? "Saving…" : "●"}</span>
+            <RefreshButton onClick={refresh} isRefreshing={currentActionId === "refresh"} disabled={!!currentActionId && currentActionId !== "refresh"} />
             {currentPlayer && (
               <button
                 style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.2)", border: "0.5px solid rgba(255,255,255,0.5)", color: "#fff", fontSize: 11 }}
@@ -1078,6 +1097,7 @@ export default function App() {
         )}
         <VersionFooter />
         </div>
+        </PullToRefresh>
       </ActionPendingProvider>
     );
   }
@@ -1110,7 +1130,8 @@ export default function App() {
           getCheckIn={getCheckIn} setCheckIn={setCheckIn}
           adminEmails={db.adminEmails || [SUPER_ADMIN]}
           onSwitchToAdmin={() => { setAdminEmail(currentPlayer.email.toLowerCase()); setView("admin"); }}
-          onLogout={logout} scoreModal={scoreModal} />
+          onLogout={logout} scoreModal={scoreModal}
+          onRefresh={refresh} isRefreshing={currentActionId === "refresh"} />
       </ActionPendingProvider>
     );
   }

@@ -180,3 +180,10 @@ input[type="number"]::-webkit-outer-spin-button {
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
 }
+
+/* Used by RefreshButton's icon when refreshing and the PullToRefresh
+   indicator while a pull-triggered refresh is in flight. */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

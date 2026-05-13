@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { S } from "../styles.js";
 import { CSC, SPACE, APP_INFO } from "../lib/constants.js";
+import { useIsMobile } from "../lib/session.js";
 
 // Modal renders an overlay + sheet. On desktop it centers; on mobile (≤640px)
 // it pins to the bottom and slides up — the bottom-sheet pattern, defined in
@@ -271,6 +272,193 @@ export function VersionFooter() {
           <AboutContent onClose={() => setShowAbout(false)} />
         </Modal>
       )}
+    </>
+  );
+}
+
+// ─── RefreshButton ─────────────────────────────────────────────────────────
+// Small circular refresh button intended for headers. Spins while the
+// `isRefreshing` flag is true. Pass the parent's refresh callback as onClick.
+// Disabled while another action is in flight so it doesn't pile up requests.
+//
+// Hidden on mobile by default — mobile users have pull-to-refresh, so a
+// button would just crowd the header. Pass `alwaysShow` to force render.
+export function RefreshButton({ onClick, isRefreshing, disabled, alwaysShow }) {
+  const isMobile = useIsMobile();
+  if (isMobile && !alwaysShow) return null;
+  const isBusy = !!isRefreshing;
+  return (
+    <button
+      type="button"
+      aria-label="Refresh data"
+      title="Refresh data"
+      onClick={onClick}
+      disabled={disabled || isBusy}
+      style={{
+        width: 32, height: 32, borderRadius: "50%",
+        background: "rgba(255,255,255,0.15)",
+        border: "0.5px solid rgba(255,255,255,0.3)",
+        color: "#fff",
+        cursor: (disabled || isBusy) ? "default" : "pointer",
+        opacity: disabled ? 0.4 : 1,
+        fontFamily: "inherit", padding: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        // The icon itself spins; the button is static.
+      }}>
+      <span style={{
+        display: "inline-block", fontSize: 16, lineHeight: 1,
+        animation: isBusy ? "spin 0.8s linear infinite" : "none",
+        // Slight vertical nudge — the unicode "↻" sits high in the line-box.
+        transform: "translateY(-1px)",
+      }}>↻</span>
+    </button>
+  );
+}
+
+// ─── PullToRefresh ─────────────────────────────────────────────────────────
+// Mobile pull-to-refresh wrapper. Listens for touchstart/move/end at the
+// document root; only activates when the page is scrolled to the very top
+// AND the drag is mostly vertical. Past a threshold, calling onRefresh()
+// re-fetches data; the indicator spins until it resolves.
+//
+// Transparent — renders children unchanged; the only DOM it adds is a small
+// fixed-position indicator that slides into view from above as you pull.
+//
+// `isRefreshing` is the parent's "currently refreshing" state, so the
+// indicator can stay visible during the awaited refresh and dismiss only
+// when the parent says it's done.
+const PULL_THRESHOLD = 70; // px to commit a refresh
+const PULL_MAX = 110;      // px the indicator can travel
+export function PullToRefresh({ children, onRefresh, isRefreshing }) {
+  const [pullDistance, setPullDistance] = useState(0);
+  const [committing, setCommitting] = useState(false);
+  const startY = useRef(null);
+  const startX = useRef(null);
+  const horizontalLock = useRef(false);
+
+  useEffect(() => {
+    // Only set up listeners on touch devices. Desktops have the refresh
+    // button; PTR on a non-touch device just adds dead listeners.
+    if (typeof window === "undefined") return;
+    if (!("ontouchstart" in window)) return;
+
+    function onTouchStart(e) {
+      // Only start tracking if the page is scrolled to the very top
+      if (window.scrollY > 0) {
+        startY.current = null;
+        return;
+      }
+      // Don't start tracking inside scrollable containers that are above
+      // their own scrollTop=0 — but that's hard to detect cheaply. We rely
+      // on the horizontal-lock check below to bail out for tab-row swipes.
+      startY.current = e.touches[0].clientY;
+      startX.current = e.touches[0].clientX;
+      horizontalLock.current = false;
+    }
+
+    function onTouchMove(e) {
+      if (startY.current === null) return;
+      if (isRefreshing) return; // ignore additional pulls during refresh
+      const dy = e.touches[0].clientY - startY.current;
+      const dx = e.touches[0].clientX - startX.current;
+      // If the gesture is clearly horizontal, abandon — the user is
+      // swiping the league-tabs row or similar horizontal scroller.
+      if (!horizontalLock.current && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8) {
+        horizontalLock.current = true;
+        setPullDistance(0);
+        return;
+      }
+      if (horizontalLock.current) return;
+      if (dy <= 0) {
+        // Dragging up — reset.
+        if (pullDistance !== 0) setPullDistance(0);
+        return;
+      }
+      // Apply a damping factor so the further you pull, the harder it gets —
+      // mimics native PTR feel.
+      const damped = Math.min(PULL_MAX, dy * 0.55);
+      setPullDistance(damped);
+      // Block iOS rubber-band only when we're actively pulling and the
+      // page is at the top. preventDefault must be called on a non-passive
+      // listener; we use { passive: false } below.
+      if (window.scrollY === 0 && e.cancelable) {
+        e.preventDefault();
+      }
+    }
+
+    function onTouchEnd() {
+      if (startY.current === null) return;
+      startY.current = null;
+      if (pullDistance >= PULL_THRESHOLD && !isRefreshing) {
+        setCommitting(true);
+        Promise.resolve(onRefresh?.()).finally(() => {
+          setCommitting(false);
+          setPullDistance(0);
+        });
+      } else {
+        // Released before threshold — snap back.
+        setPullDistance(0);
+      }
+    }
+
+    // passive: false on touchmove so preventDefault works (suppresses iOS bounce)
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [pullDistance, isRefreshing, onRefresh]);
+
+  const visible = pullDistance > 0 || isRefreshing || committing;
+  const ready = pullDistance >= PULL_THRESHOLD;
+  // Indicator position: when refreshing, fix at +30; while pulling, follow
+  // the finger up to PULL_MAX, biased so the indicator is visible by ~20px
+  // when at the threshold.
+  const indicatorY = isRefreshing || committing
+    ? 30
+    : Math.max(-40, pullDistance - 40);
+
+  return (
+    <>
+      <div
+        aria-hidden={!visible}
+        style={{
+          position: "fixed",
+          top: 60, // below the sticky header
+          left: "50%",
+          transform: `translateX(-50%) translateY(${indicatorY}px)`,
+          width: 40, height: 40, borderRadius: "50%",
+          background: CSC.blue, color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          zIndex: 150,
+          pointerEvents: "none",
+          opacity: visible ? 1 : 0,
+          transition: visible
+            ? "opacity 120ms ease"
+            : "opacity 200ms ease, transform 200ms ease",
+        }}>
+        <span style={{
+          display: "inline-block",
+          fontSize: 20,
+          lineHeight: 1,
+          // While refreshing → spin. While pulling → rotate by pull progress.
+          // Past threshold → flip the arrow upside down to signal "release".
+          transform: (isRefreshing || committing)
+            ? "none"
+            : `rotate(${ready ? 180 : (pullDistance / PULL_THRESHOLD) * 180}deg)`,
+          transition: !startY.current ? "transform 120ms ease" : "none",
+          animation: (isRefreshing || committing) ? "spin 0.8s linear infinite" : "none",
+        }}>
+          {(isRefreshing || committing) ? "↻" : "↓"}
+        </span>
+      </div>
+      {children}
     </>
   );
 }
