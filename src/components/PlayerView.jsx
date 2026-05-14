@@ -9,6 +9,72 @@ import { StandingsTable } from "./StandingsTable.jsx";
 import { LeagueRegistrationCard } from "./LeagueRegistrationCard.jsx";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Hero card state machine ───────────────────────────────────────────────
+// Decides what the hero card should show, in priority order:
+//   1. "pending-scores"  — player has unscored past matches; nudge to enter
+//   2. "needs-checkin"   — current week has no check-in status set
+//   3. fall through      — caller uses findHighlightMatch for the default
+//                          "next/most-recent match" display
+//   4. null              — nothing useful; hero is hidden
+//
+// Each shape carries enough data for the renderer to display without
+// further DB lookups. The renderer is dumb; this function is the brain.
+function computeHeroState({ player, allWeeks, today, currentWeek, leagueId, getScore, isWeekLocked, getCheckIn }) {
+  // ─ Priority 1: unscored past matches ────────────────────────────────
+  // A week qualifies if: date is today or earlier, week is unlocked, and
+  // the player is on a court with at least one missing score for a match
+  // they're in. Multiple weeks may qualify; we pick the oldest (most
+  // overdue) so the player chips away at the backlog.
+  const pendingWeeks = [];
+  for (const w of allWeeks) {
+    if (!w.date || w.date > today) continue;          // future
+    if (isWeekLocked(leagueId, w.week)) continue;     // already finalized
+    if (w.placeholder) continue;
+    const court = w.courts?.find(c => c.players.includes(player.id));
+    if (!court) continue;                              // not on this week
+    const unscored = court.matches.filter(m => {
+      const inMatch = m.format === "doubles"
+        ? [...(m.team1 || []), ...(m.team2 || [])].includes(player.id)
+        : (m.home === player.id || m.away === player.id);
+      if (!inMatch) return false;
+      return !getScore(leagueId, m.week, m.id);
+    });
+    if (unscored.length > 0) {
+      pendingWeeks.push({ week: w, unscoredCount: unscored.length });
+    }
+  }
+  if (pendingWeeks.length > 0) {
+    // Oldest first — chip away at backlog
+    pendingWeeks.sort((a, b) => (a.week.date || "").localeCompare(b.week.date || ""));
+    const oldest = pendingWeeks[0];
+    return {
+      kind: "pending-scores",
+      week: oldest.week,
+      unscoredCount: oldest.unscoredCount,
+      totalPendingWeeks: pendingWeeks.length,
+    };
+  }
+
+  // ─ Priority 2: needs check-in for the current week ───────────────────
+  if (currentWeek
+      && currentWeek.date
+      && currentWeek.date >= today
+      && !currentWeek.placeholder
+      && !isWeekLocked(leagueId, currentWeek.week)) {
+    const onThisWeek = currentWeek.courts?.some(c => c.players.includes(player.id));
+    const ci = getCheckIn(leagueId, currentWeek.week, player.id);
+    if (onThisWeek && !ci?.status) {
+      return {
+        kind: "needs-checkin",
+        week: currentWeek,
+      };
+    }
+  }
+
+  // Fall through — caller renders next/most-recent match
+  return null;
+}
+
 // Find the player's next or most recent match in a league's schedule.
 // "Next" = the earliest unlocked week >= today where they have a match.
 // If none, fall back to the most recent locked week with a match.
@@ -93,6 +159,25 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
   function startJoinFlow(league) {
     setModal({ type: "confirmJoinLeague", league });
   }
+
+  // ─── Hero state ───────────────────────────────────────────────────────
+  // Used in two places below: the schedule tab uses `currentWeek` for its
+  // progress banner and the "THIS WEEK" pill; the hero card uses the full
+  // computed state to decide which prompt to show.
+  const today = todayISO();
+  const allWeeks = (sched.weeks || []);
+  const currentWeek = (() => {
+    if (allWeeks.length === 0) return null;
+    const upcoming = allWeeks.find(w => w.date && w.date >= today);
+    return upcoming || allWeeks[allWeeks.length - 1];
+  })();
+  const heroState = (selectedLeague && selectedLeague.status !== "archived")
+    ? computeHeroState({
+        player, allWeeks, today, currentWeek,
+        leagueId: selectedLeagueId, getScore, isWeekLocked,
+        getCheckIn,
+      })
+    : null;
 
   return (
     <PullToRefresh onRefresh={onRefresh} isRefreshing={isRefreshing}>
@@ -246,16 +331,95 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
       )}
 
       {selectedLeague && (() => {
+        // ─── Hero card ─────────────────────────────────────────────────
+        // State-driven: shows the most relevant prompt for the player
+        // right now. computeHeroState picks the priority case (pending
+        // scores > missing check-in); when null, falls through to the
+        // default "next/most-recent match" summary.
+        if (selectedLeague.status === "archived") return null;
+
+        // ── Variant 1: unscored past matches ────────────────────────
+        if (heroState?.kind === "pending-scores") {
+          const { week: hw, unscoredCount, totalPendingWeeks } = heroState;
+          const dateLabel = formatDate(hw.date);
+          return (
+            <div style={{ margin: "12px 16px 0" }}>
+              <div style={{
+                background: "#FAEEDA",
+                border: "1px solid #ECC580",
+                color: "#854F0B",
+                borderRadius: 12, padding: "12px 16px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: "0.6px",
+                    textTransform: "uppercase",
+                    background: "#854F0B", color: "#fff",
+                    padding: "2px 8px", borderRadius: 999,
+                  }}>
+                    Action needed
+                  </span>
+                  <span style={{ fontSize: 12 }}>Week {hw.week} · {dateLabel}</span>
+                </div>
+                <p style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 700 }}>
+                  {unscoredCount === 1
+                    ? "You have an unscored match"
+                    : `You have ${unscoredCount} unscored matches`}
+                </p>
+                <p style={{ margin: 0, fontSize: 13, opacity: 0.9 }}>
+                  {totalPendingWeeks > 1
+                    ? `From ${dateLabel}. ${totalPendingWeeks - 1} other week${totalPendingWeeks - 1 !== 1 ? "s" : ""} also waiting. Scroll down to enter scores.`
+                    : `Scroll down to Week ${hw.week} to enter your scores.`}
+                </p>
+              </div>
+            </div>
+          );
+        }
+
+        // ── Variant 2: needs to check in for current week ────────────
+        if (heroState?.kind === "needs-checkin") {
+          const { week: hw } = heroState;
+          const dateLabel = formatDate(hw.date);
+          const timeLabel = hw.time ? formatTime(hw.time) : null;
+          return (
+            <div style={{ margin: "12px 16px 0" }}>
+              <div style={{
+                background: CSC.blueLight,
+                border: `1px solid ${CSC.blue}40`,
+                color: CSC.blueDark,
+                borderRadius: 12, padding: "12px 16px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: "0.6px",
+                    textTransform: "uppercase",
+                    background: CSC.blue, color: "#fff",
+                    padding: "2px 8px", borderRadius: 999,
+                  }}>
+                    Check in
+                  </span>
+                  <span style={{ fontSize: 12 }}>Week {hw.week}</span>
+                </div>
+                <p style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 700 }}>
+                  {dateLabel}{timeLabel ? ` · ${timeLabel}` : ""}
+                </p>
+                <p style={{ margin: 0, fontSize: 13, opacity: 0.85 }}>
+                  Let your court know if you'll be there. Scroll down to Week {hw.week} to check in.
+                </p>
+              </div>
+            </div>
+          );
+        }
+
+        // ── Default: next/most-recent match summary (existing) ───────
         const highlight = findHighlightMatch(player, sched, isWeekLocked, selectedLeagueId);
-        if (!highlight || selectedLeague.status === "archived") return null;
+        if (!highlight) return null;
         const { w: hw, kind } = highlight;
         const found = findPlayerMatchInWeek(hw, player.id, isWeekLocked, selectedLeagueId, getScore);
         if (!found?.court) return null;
         const isUpcoming = kind === "upcoming";
         const partners = found.court.players.filter(p => p !== player.id);
         const dateLabel = formatDate(hw.date);
-        // Cascade: per-week override → league config → week default.
-        // Matters for leagues with staggered start times.
         const effectiveTime = resolveCourtTime(found.court, found.courtIndex, selectedLeague, hw.time);
         const timeLabel = effectiveTime ? formatTime(effectiveTime) : null;
         const displayCourtName = resolveCourtName(found.court, found.courtIndex, selectedLeague);
@@ -298,17 +462,9 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
           </div>
           <div style={S.section}>
             {playerTab === "schedule" && (() => {
-              // Season progress: identify the "current week" — the earliest
-              // week whose date is >= today, falling back to the last week
-              // if the whole season is in the past. Used both for the
-              // summary text and to highlight the current week's card.
-              const today = todayISO();
-              const allWeeks = sched.weeks || [];
-              const currentWeek = (() => {
-                if (allWeeks.length === 0) return null;
-                const upcoming = allWeeks.find(w => w.date && w.date >= today);
-                return upcoming || allWeeks[allWeeks.length - 1];
-              })();
+              // Season progress: `today`, `allWeeks`, and `currentWeek` are
+              // computed once at the top of PlayerView so the hero card and
+              // this tab share the same definitions.
               const completedWeeks = allWeeks.filter(w => w.date && w.date < today).length;
               const totalWeeks = selectedLeague.weeks || allWeeks.length;
               const weeksLeft = Math.max(0, totalWeeks - completedWeeks);

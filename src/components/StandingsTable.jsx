@@ -46,6 +46,10 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
               name={getPlayerName(s.id)}
               isMe={myId && s.id === myId}
               themeColor={c}
+              // Pass adjacent rows so we can compute "you vs the player above
+              // and below" gaps. Only used for the "you" card.
+              ahead={i > 0 ? standings[i - 1] : null}
+              behind={i < standings.length - 1 ? standings[i + 1] : null}
             />
           ))}
         </div>
@@ -75,6 +79,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                 <tr key={s.id} style={{ background: isMe ? c.light : i%2===0 ? "transparent" : "var(--color-background-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
                   <td style={{ padding: "12px 12px", fontWeight: isMe?700:400, color: isMe?c.bg:"var(--color-text-primary)" }}>
                     <span style={{ marginRight: 8, color: "var(--color-text-tertiary)", fontSize: 12 }}>#{i+1}</span>
+                    <TrendArrow trend={s.trend} />
                     {getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
                   </td>
@@ -110,10 +115,18 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
 //   └─────────────────────────────────────────────┘
 // The "You" card uses the league-theme tint for the background so the user
 // can spot themselves in a long list at a glance.
-function StandingsCard({ rank, stat, name, isMe, themeColor }) {
+function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind }) {
   const diff = stat.pointsFor - stat.pointsAgainst;
   const c = themeColor;
   const hasMatches = stat.matches > 0;
+  // Gap line under the "you" card — concise neighbor comparison so the
+  // player sees what's close. Each gap uses point-differential as the
+  // single quantity (win% is more abstract; +/- is a number players
+  // intuit). Skipped when the player has no matches recorded yet, since
+  // every comparison would be against zeros.
+  const aheadDiff = ahead ? (ahead.pointsFor - ahead.pointsAgainst) - diff : null;
+  const behindDiff = behind ? diff - (behind.pointsFor - behind.pointsAgainst) : null;
+  const showGapLine = isMe && hasMatches && (aheadDiff != null || behindDiff != null);
   return (
     <div
       style={{
@@ -123,7 +136,7 @@ function StandingsCard({ rank, stat, name, isMe, themeColor }) {
         padding: `${SPACE.md}px ${SPACE.lg}px`,
         marginBottom: SPACE.sm,
       }}>
-      {/* Top row: rank + name + you-badge */}
+      {/* Top row: rank + trend + name + you-badge */}
       <div style={{ display: "flex", alignItems: "center", gap: SPACE.sm, marginBottom: SPACE.sm }}>
         <span style={{
           fontSize: 13,
@@ -133,6 +146,7 @@ function StandingsCard({ rank, stat, name, isMe, themeColor }) {
         }}>
           #{rank}
         </span>
+        <TrendArrow trend={stat.trend} />
         <span style={{
           flex: 1,
           fontSize: 15,
@@ -180,6 +194,29 @@ function StandingsCard({ rank, stat, name, isMe, themeColor }) {
         <DetailStat label="PF" value={stat.pointsFor} color="var(--color-text-secondary)" />
         <DetailStat label="PA" value={stat.pointsAgainst} color="var(--color-text-secondary)" />
       </div>
+      {/* Neighbor-gap line — only on the player's own card. Uses point
+          differential as the single legible quantity (player intuition
+          for +/- is much stronger than for win-percent fractions). A zero
+          gap is hidden — "behind by 0" reads as redundant when the table
+          already shows the same +/- on adjacent rows. */}
+      {showGapLine && (aheadDiff > 0 || behindDiff > 0) && (
+        <p style={{
+          margin: `${SPACE.sm}px 0 0`,
+          paddingTop: SPACE.sm,
+          borderTop: "0.5px dashed var(--color-border-tertiary)",
+          fontSize: 12,
+          color: "var(--color-text-secondary)",
+          textAlign: "center",
+        }}>
+          {aheadDiff > 0 && (
+            <span>Behind #{rank - 1} by <strong style={{ color: "#A32D2D" }}>{aheadDiff}</strong></span>
+          )}
+          {aheadDiff > 0 && behindDiff > 0 && <span> · </span>}
+          {behindDiff > 0 && (
+            <span>Ahead of #{rank + 1} by <strong style={{ color: CSC.blue }}>{behindDiff}</strong></span>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -214,5 +251,37 @@ function DetailStat({ label, value, color }) {
       <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 600 }}>{label}:</span>{" "}
       <span style={{ fontSize: 13, fontWeight: 600, color }}>{value}</span>
     </div>
+  );
+}
+
+// ─── TrendArrow ────────────────────────────────────────────────────────────
+// Renders a small ▲/▼ indicator next to a player's rank, communicating how
+// far they moved since the most recently locked week.
+//
+// `trend` is a signed number (or null):
+//   - null:    no previous snapshot, nothing to compare (early season)
+//   - 0:       same rank as before → no arrow (keeps the column quiet)
+//   - >0:      moved up that many spots → green ▲
+//   - <0:      moved down that many spots → red ▼
+//
+// Magnitude isn't displayed numerically — the arrow alone reads at a glance.
+// Returns null when no arrow should appear; the parent can place it inline.
+function TrendArrow({ trend }) {
+  if (trend == null || trend === 0) return null;
+  const up = trend > 0;
+  return (
+    <span
+      aria-label={up ? `Up ${trend} spot${trend > 1 ? "s" : ""}` : `Down ${-trend} spot${trend < -1 ? "s" : ""}`}
+      title={up ? `Up ${trend} since last week` : `Down ${-trend} since last week`}
+      style={{
+        display: "inline-block",
+        marginRight: 6,
+        fontSize: 11,
+        fontWeight: 700,
+        color: up ? "#3B6D11" : "#A32D2D",
+        lineHeight: 1,
+      }}>
+      {up ? "▲" : "▼"}
+    </span>
   );
 }

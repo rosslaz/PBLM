@@ -231,8 +231,8 @@ export default function App() {
   function getStandings(leagueId) {
     const regs = getLeagueRegs(leagueId);
     const sched = getLeagueSchedule(leagueId);
-    const stats = {};
-    regs.forEach(r => { stats[r.playerId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }; });
+    const allLockedWeeks = (sched.weeks || []).filter(w => isWeekLocked(leagueId, w.week));
+
     // A player whose check-in for a given week is "sub" or "out" doesn't
     // get points or wins attributed for that week's matches — they didn't
     // actually play. "in", "maybe", and unset all count normally (maybe ≈
@@ -243,41 +243,75 @@ export default function App() {
       const ci = db.checkIns?.[`${leagueId}_w${week}_${pid}`];
       return ci?.status === "sub" || ci?.status === "out";
     }
-    (sched.weeks || []).forEach(w => {
-      if (!isWeekLocked(leagueId, w.week)) return;
-      w.courts.forEach(ct => ct.matches.forEach(match => {
-        const score = getScore(leagueId, match.week, match.id);
-        if (!score) return;
-        const { homeScore: hs, awayScore: as } = score;
-        const sideA = match.format === "doubles" ? match.team1 : [match.home];
-        const sideB = match.format === "doubles" ? match.team2 : [match.away];
-        const aWon = hs > as;
-        sideA.forEach(pid => {
-          if (!stats[pid]) return;
-          if (playerSatOutThisWeek(pid, match.week)) return;
-          stats[pid].pointsFor += hs;
-          stats[pid].pointsAgainst += as;
-          if (aWon) stats[pid].wins++; else stats[pid].losses++;
-        });
-        sideB.forEach(pid => {
-          if (!stats[pid]) return;
-          if (playerSatOutThisWeek(pid, match.week)) return;
-          stats[pid].pointsFor += as;
-          stats[pid].pointsAgainst += hs;
-          if (!aWon) stats[pid].wins++; else stats[pid].losses++;
-        });
-      }));
-    });
-    return Object.entries(stats).map(([id, s]) => {
-      const matches = s.wins + s.losses;
-      const winPct = matches > 0 ? s.wins / matches : 0;
-      return { id, ...s, matches, winPct };
-    }).sort((a, b) => {
-      if (b.winPct !== a.winPct) return b.winPct - a.winPct;
-      const da = a.pointsFor - a.pointsAgainst, dbb = b.pointsFor - b.pointsAgainst;
-      if (dbb !== da) return dbb - da;
-      return b.wins - a.wins;
-    });
+
+    // Build a sorted standings array from a given subset of locked weeks.
+    // Factored out so we can compute "now" and "before the most recent
+    // locked week" snapshots with the same logic.
+    function buildSorted(weeks) {
+      const stats = {};
+      regs.forEach(r => { stats[r.playerId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }; });
+      weeks.forEach(w => {
+        w.courts.forEach(ct => ct.matches.forEach(match => {
+          const score = getScore(leagueId, match.week, match.id);
+          if (!score) return;
+          const { homeScore: hs, awayScore: as } = score;
+          const sideA = match.format === "doubles" ? match.team1 : [match.home];
+          const sideB = match.format === "doubles" ? match.team2 : [match.away];
+          const aWon = hs > as;
+          sideA.forEach(pid => {
+            if (!stats[pid]) return;
+            if (playerSatOutThisWeek(pid, match.week)) return;
+            stats[pid].pointsFor += hs;
+            stats[pid].pointsAgainst += as;
+            if (aWon) stats[pid].wins++; else stats[pid].losses++;
+          });
+          sideB.forEach(pid => {
+            if (!stats[pid]) return;
+            if (playerSatOutThisWeek(pid, match.week)) return;
+            stats[pid].pointsFor += as;
+            stats[pid].pointsAgainst += hs;
+            if (!aWon) stats[pid].wins++; else stats[pid].losses++;
+          });
+        }));
+      });
+      return Object.entries(stats).map(([id, s]) => {
+        const matches = s.wins + s.losses;
+        const winPct = matches > 0 ? s.wins / matches : 0;
+        return { id, ...s, matches, winPct };
+      }).sort((a, b) => {
+        if (b.winPct !== a.winPct) return b.winPct - a.winPct;
+        const da = a.pointsFor - a.pointsAgainst, dbb = b.pointsFor - b.pointsAgainst;
+        if (dbb !== da) return dbb - da;
+        return b.wins - a.wins;
+      });
+    }
+
+    const current = buildSorted(allLockedWeeks);
+
+    // Previous-week snapshot for trend arrows. Only meaningful when at
+    // least 2 weeks are locked — otherwise there's no "previous" state
+    // to compare against (week 1's previous is everyone tied at zero).
+    // Drop the most recently locked week (last in chronological/week order)
+    // to compute what the standings looked like before it counted.
+    let prevRankById = null;
+    if (allLockedWeeks.length >= 2) {
+      // Sort by week number to be sure we drop the latest, not an arbitrary one.
+      const sortedLocked = [...allLockedWeeks].sort((a, b) => a.week - b.week);
+      const previousWeeks = sortedLocked.slice(0, -1);
+      const previous = buildSorted(previousWeeks);
+      prevRankById = {};
+      previous.forEach((row, i) => { prevRankById[row.id] = i + 1; });
+    }
+
+    return current.map((row, i) => ({
+      ...row,
+      // The trend value lives on each row so the view layer doesn't have to
+      // do a separate lookup. null when no previous snapshot exists; a
+      // signed number otherwise (positive = moved up, negative = moved down).
+      trend: prevRankById && prevRankById[row.id] != null
+        ? prevRankById[row.id] - (i + 1) // moved up = prevRank > currentRank
+        : null,
+    }));
   }
 
   const getCheckIn = (leagueId, week, playerId) =>
