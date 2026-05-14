@@ -7,7 +7,7 @@ import {
   supabase, loadDB, defaultDB,
   dbCreateLeague, dbUpdateLeague,
   dbSoftDeleteLeague, dbRestoreLeague, dbHardDeleteLeague,
-  dbCreatePlayer, dbUpdatePlayer, dbTogglePlayerPaid,
+  dbCreatePlayer, dbUpdatePlayer,
   dbSoftDeletePlayer, dbRestorePlayer, dbHardDeletePlayer,
   dbRegisterForLeague, dbRemovePlayerFromLeague, dbToggleRegPaid,
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
@@ -193,14 +193,15 @@ export default function App() {
   const trashedPlayers = allPlayers.filter(isTrashed);
   const sortedLeagues = sortLeagues(leagues);
 
-  // Pre-index registrations by leagueId so getLeagueRegs is O(1) lookup.
-  const regsByLeague = (() => {
-    const idx = {};
-    Object.values(db.registrations).forEach(r => {
-      (idx[r.leagueId] || (idx[r.leagueId] = [])).push(r);
-    });
-    return idx;
-  })();
+  // Pre-index registrations so league/player lookups are O(1). Single pass
+  // through the registration list builds both indexes — used by getLeagueRegs
+  // and by the Players tab's per-league payment summary.
+  const regsByLeague = {};
+  const regsByPlayer = {};
+  Object.values(db.registrations).forEach(r => {
+    (regsByLeague[r.leagueId] || (regsByLeague[r.leagueId] = [])).push(r);
+    (regsByPlayer[r.playerId] || (regsByPlayer[r.playerId] = [])).push(r);
+  });
 
   const getLeagueRegs = lid => regsByLeague[lid] || [];
   const getLeagueSchedule = lid => db.schedules[lid] || { weeks: [] };
@@ -604,11 +605,6 @@ export default function App() {
   async function updatePlayer(id, data) {
     await action(() => dbUpdatePlayer(id, data), "Player updated!");
     setModal(null);
-  }
-
-  async function togglePlayerPaid(playerId) {
-    const p = db.players[playerId]; if (!p) return;
-    await action(() => dbTogglePlayerPaid(playerId), !p.paid ? "Marked as paid!" : "Payment removed.");
   }
 
   // "Delete" from the players list → soft-delete (moves to trash). The
@@ -1055,7 +1051,20 @@ export default function App() {
                   </div>
                 </div>
                 {players.length === 0 && <EmptyState msg="No players registered yet." />}
-                {players.map(p => (
+                {players.map(p => {
+                  // Payment is per-league, not per-player. Compute an
+                  // at-a-glance summary across the player's live (non-
+                  // archived) registrations so the commissioner can spot
+                  // who still owes for which league without leaving this
+                  // tab. The actual mark-paid action lives on the per-
+                  // league screen where it's unambiguous.
+                  const liveRegs = (regsByPlayer[p.id] || []).filter(r => {
+                    const lg = db.leagues[r.leagueId];
+                    return lg && lg.status !== "archived" && !lg.deletedAt;
+                  });
+                  const paidIn = liveRegs.filter(r => r.paid).length;
+                  const totalIn = liveRegs.length;
+                  return (
                   <div key={p.id} style={S.card}>
                     <div style={{ ...S.row, marginBottom: 12 }}>
                       <div style={{ width: 40, height: 40, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 16, flexShrink: 0 }}>{playerInitial(p)}</div>
@@ -1064,17 +1073,18 @@ export default function App() {
                           <p style={{ margin: 0, fontWeight: 600 }}>{formatPlayerName(p)}</p>
                           {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
                           {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC Member</span>}
-                          {p.paid ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid</span> : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Unpaid</span>}
+                          {/* Per-league payment summary. No badge if the
+                              player isn't in any live leagues. */}
+                          {totalIn > 0 && (
+                            paidIn === totalIn
+                              ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid · {totalIn} league{totalIn !== 1 ? "s" : ""}</span>
+                              : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Paid in {paidIn} of {totalIn}</span>
+                          )}
                         </div>
                         <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${p.phone}` : ""}</p>
                       </div>
                     </div>
                     <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10 }}>
-                      <button
-                        style={p.paid ? { ...S.btnSm("secondary"), color: "#854F0B", borderColor: "#854F0B", fontSize: 11 } : { ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }}
-                        onClick={() => togglePlayerPaid(p.id)}>
-                        {p.paid ? "Undo Payment" : "Mark as Paid"}
-                      </button>
                       <button style={S.btnSm("secondary")} onClick={() => setModal({ type: "editPlayer", player: p })}>Edit</button>
                       <button
                         style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }}
@@ -1083,7 +1093,8 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {adminTab === "admins" && (

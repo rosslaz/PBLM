@@ -159,15 +159,6 @@ export async function dbUpdatePlayer(id, patch) {
   if (error) throw error;
 }
 
-export async function dbTogglePlayerPaid(id) {
-  const { data: existing, error: e1 } = await supabase
-    .from("pb_players").select("data").eq("id", id).single();
-  if (e1) throw e1;
-  const updated = { ...existing.data, paid: !existing.data.paid };
-  const { error } = await supabase.from("pb_players").upsert({ id, data: updated });
-  if (error) throw error;
-}
-
 export async function dbCreateLeague(leagueData, colorIndex) {
   const nextId = await getCurrentNextId();
   const id = `league_${nextId.league}`;
