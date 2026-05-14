@@ -141,8 +141,14 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
 
       {myLeagues.length === 0 && (
         <div style={{ textAlign: "center", padding: "48px 20px", color: "var(--color-text-secondary)" }}>
-          <p style={{ fontSize: 15 }}>You're not in any leagues yet.</p>
-          <button style={{ ...S.btn("primary"), marginTop: 12 }} onClick={() => setModal({ type: "joinLeague" })}>Join a League</button>
+          <p style={{ fontSize: 28, margin: "0 0 8px" }}>🏓</p>
+          <p style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
+            Ready to play?
+          </p>
+          <p style={{ fontSize: 14, margin: "6px 0 0" }}>
+            You're not in any leagues yet. Pick one to get started.
+          </p>
+          <button style={{ ...S.btn("primary"), marginTop: 16 }} onClick={() => setModal({ type: "joinLeague" })}>Browse Leagues</button>
         </div>
       )}
 
@@ -186,7 +192,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
               <p style={{ margin: 0, fontSize: 13, opacity: 0.92 }}>
                 {partners.length > 0
                   ? `${selectedLeague.format === "Singles" ? "Court with" : "On court with"}: ${partners.map(p => getPlayerName(p)).join(" · ")}`
-                  : "Court roster TBD"}
+                  : "Court matchups will appear here once the schedule is published."}
               </p>
             </div>
           </div>
@@ -206,7 +212,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
                     📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
                   </div>
                 )}
-                {myWeeks.length === 0 && <EmptyState msg="No schedule yet. Check back after the commissioner generates this season's schedule." />}
+                {myWeeks.length === 0 && <EmptyState msg="Schedule coming soon! Your matches will appear here once the commissioner generates the season." />}
                 {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} league={selectedLeague} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />)}
               </div>
             )}

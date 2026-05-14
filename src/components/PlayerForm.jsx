@@ -56,7 +56,7 @@ export function PlayerForm({ onSubmit, onCancel, initial }) {
         </div>
         <div>
           <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 500 }}>CSC Member</p>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>I am a current Community Sports Club member</p>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>I am a current Cranbrook Swim Club member</p>
         </div>
       </div>
       <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, marginTop: 4 }}>

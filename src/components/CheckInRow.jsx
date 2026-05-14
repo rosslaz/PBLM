@@ -7,6 +7,21 @@ import { CHECKIN_OPTS } from "../lib/constants.js";
 // joined visually, never wraps. Tapping the active segment clears the
 // selection. The Sub variant reveals a name input below the control without
 // reflowing the segments themselves.
+//
+// Below the segmented control, a small caption explains what each state
+// means so a first-time player doesn't have to guess.
+
+// Caption text per status. The unset state still gets a caption to nudge
+// the user toward selecting *something* — otherwise the row looks
+// decorative rather than actionable.
+const CAPTIONS = {
+  null:  "Tap to let your court know if you're playing.",
+  in:    "✓ You're confirmed for this week.",
+  maybe: "? Heads-up to the commissioner — your spot stays held.",
+  sub:   "↔ Your court spot will be filled by your sub.",
+  out:   "✗ You'll be removed from this week's courts.",
+};
+
 export function CheckInRow({ current, currentSubName, onSet, isLocked }) {
   const [subName, setSubName] = useState(currentSubName || "");
   // Keep local input in sync when the parent value changes (e.g. after reload)
@@ -107,6 +122,19 @@ export function CheckInRow({ current, currentSubName, onSet, isLocked }) {
           />
         </div>
       )}
+      {/* Status caption — tells a new player what each state actually does.
+          Keyed by current status so it animates from one explanation to the
+          next as the player makes selections. */}
+      <p
+        key={current || "none"}
+        style={{
+          margin: "8px 0 0",
+          fontSize: 12,
+          color: "var(--color-text-secondary)",
+          lineHeight: 1.4,
+        }}>
+        {CAPTIONS[current] || CAPTIONS.null}
+      </p>
     </div>
   );
 }

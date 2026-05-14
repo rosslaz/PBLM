@@ -116,14 +116,50 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
   // Score input field — shared styling for both sides. Font size comes from
   // the .score-input CSS class (necessary because the iOS-zoom-prevention
   // media query uses !important; we need a class-based !important to win).
-  const fieldStyle = (filled) => ({
-    ...S.input,
-    textAlign: "center",
-    padding: isMobile ? "14px 6px" : "18px 8px",
-    fontVariantNumeric: "tabular-nums",
-    fontWeight: 600,
-    border: `2px solid ${home !== "" && away !== "" ? (isValid ? "#3B6D11" : "#A32D2D") : (filled ? CSC_BLUE_30 : "var(--color-border-secondary)")}`,
-  });
+  //
+  // Visual state machine:
+  //   - empty/partial:   neutral border
+  //   - one side filled: blue border on the filled side (focus signal)
+  //   - both filled, invalid: red border both sides
+  //   - both filled, valid:   green border + faint green tint on the
+  //                           WINNER's side; loser gets neutral border
+  // The winner-side highlight makes the result legible at the numbers
+  // themselves rather than requiring the user to read the "X wins!" banner
+  // below.
+  const fieldStyle = (filled, isWinner) => {
+    let border;
+    let bg = "var(--color-background-secondary)";
+    if (home !== "" && away !== "") {
+      if (isValid) {
+        if (isWinner) {
+          border = "2px solid #3B6D11";
+          bg = "#EAF3DE"; // faint green tint
+        } else {
+          border = "2px solid var(--color-border-secondary)";
+        }
+      } else {
+        border = "2px solid #A32D2D";
+      }
+    } else {
+      border = `2px solid ${filled ? CSC_BLUE_30 : "var(--color-border-secondary)"}`;
+    }
+    return {
+      ...S.input,
+      textAlign: "center",
+      padding: isMobile ? "14px 6px" : "18px 8px",
+      fontVariantNumeric: "tabular-nums",
+      fontWeight: 600,
+      border,
+      background: bg,
+      transition: "background-color 160ms ease, border-color 160ms ease",
+    };
+  };
+
+  // Who wins given the current input? Used to pick which side gets the
+  // green highlight. Only meaningful when isValid is true; otherwise both
+  // sides render with the invalid border.
+  const homeWins = isValid && parseInt(home, 10) > parseInt(away, 10);
+  const awayWins = isValid && parseInt(away, 10) > parseInt(home, 10);
 
   return (
     <div>
@@ -138,7 +174,7 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
           <input
             ref={homeRef}
             className="score-input"
-            style={fieldStyle(home !== "")}
+            style={fieldStyle(home !== "", homeWins)}
             // type=text + inputMode=numeric gives the iOS numeric keypad
             // without the spinner UI and odd arrow-key behavior of type=number.
             type="text"
@@ -160,7 +196,7 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
           <input
             ref={awayRef}
             className="score-input"
-            style={fieldStyle(away !== "")}
+            style={fieldStyle(away !== "", awayWins)}
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"

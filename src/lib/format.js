@@ -116,3 +116,11 @@ export function isCurrentOrPastWeek(weekDate) {
   if (!weekDate) return false;
   return weekDate <= todayISO();
 }
+
+// "Is this week strictly before today?" — used to hide the check-in row on
+// past weeks where RSVP is moot. Different from isCurrentOrPastWeek (which
+// allows today and is used for score-entry gating).
+export function isPastWeek(weekDate) {
+  if (!weekDate) return false;
+  return weekDate < todayISO();
+}

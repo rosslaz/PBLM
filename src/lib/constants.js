@@ -11,9 +11,11 @@
 //   - Major (x.0.0): reserved for the 1.0 milestone (per Ross's direction)
 // Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "0.10.1",
+  version: "0.10.3",
   createdBy: "Ross Lazar",
-  description: "League Manager for CSC Pickleball — schedules, scoring, standings.",
+  // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
+  // modal don't have to decode the acronym.
+  description: "League Manager for CSC Pickleball at Cranbrook Swim Club — schedules, scoring, standings.",
 };
 
 export const SUPER_ADMIN = "ross.lazar@gmail.com";

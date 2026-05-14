@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
-import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime, isCurrentOrPastWeek } from "../lib/format.js";
+import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime, isCurrentOrPastWeek, isPastWeek } from "../lib/format.js";
 import { useIsMobile } from "../lib/session.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
@@ -40,6 +40,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
   // Players can't enter scores for weeks that haven't happened yet. The
   // commissioner can score any week regardless (for testing / corrections).
   const weekIsCurrentOrPast = isCurrentOrPastWeek(weekData.date);
+  const weekIsStrictlyPast = isPastWeek(weekData.date);
   const playerBlockedFuture = !!myId && !weekIsCurrentOrPast;
 
   const headerBg = isLocked ? "#F1EFE8" : allScored ? "#EAF3DE" : "var(--color-background-secondary)";
@@ -88,7 +89,11 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
               ⚖ Rebalance
             </button>
           )}
-          {!weekData.placeholder && <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{scoredMatches}/{totalMatches} scored</span>}
+          {!weekData.placeholder && (
+            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+              {isMobile ? `${scoredMatches}/${totalMatches} matches` : `${scoredMatches} of ${totalMatches} matches scored`}
+            </span>
+          )}
           <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
         </div>
       </div>
@@ -113,8 +118,10 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
               📅 Scoring opens {formatDate(weekData.date)}. You can preview matchups now and enter scores when the week begins.
             </div>
           )}
-          {/* Player's own check-in */}
-          {myId && onSetCheckIn && (
+          {/* Player's own check-in. Hidden on past weeks where RSVP is
+              moot — the player is in the schedule to look up scores, not
+              to commit to attending a week that's already happened. */}
+          {myId && onSetCheckIn && !weekIsStrictlyPast && (
             <CheckInRow
               current={myCheckIn?.status}
               currentSubName={myCheckIn?.subName}
