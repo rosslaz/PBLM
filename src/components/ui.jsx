@@ -4,57 +4,29 @@ import { S } from "../styles.js";
 import { CSC, SPACE, APP_INFO } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 
-// ─── PickleballIcon ────────────────────────────────────────────────────────
-// Custom SVG paddle + ball. Replaces the 🏓 emoji, which is technically the
-// "ping pong" character and renders as a red ping-pong paddle on most
-// platforms — visually wrong for a pickleball app.
+// ─── CSCMark ───────────────────────────────────────────────────────────────
+// The club's brand mark — green dolphin leaping over a yellow pickleball with
+// "CSC" lettered across the bottom — used as the decorative icon for empty
+// states and the About modal hero. Cropped from the master logo banner; the
+// image lives at /csc-mark.png in the public folder.
 //
-// Visual: a tilted blue paddle with a darker grip band, plus a yellow
-// whiffle ball with a few hole dots. Colors come from the CSC brand palette
-// so the icon belongs visually with the rest of the app.
-//
-// Use anywhere a small decorative pickleball icon helps — empty states,
-// About modal, etc. Pass `size` (number of pixels) to control footprint.
-export function PickleballIcon({ size = 32, style }) {
+// `PickleballIcon` is kept as a backwards-compat alias so any older imports
+// still resolve. New code should use `CSCMark` directly.
+export function CSCMark({ size = 32, style }) {
   return (
-    <svg
+    <img
+      src="/csc-mark.png"
+      alt=""
+      aria-hidden="true"
       width={size}
       height={size}
-      viewBox="0 0 100 100"
-      xmlns="http://www.w3.org/2000/svg"
-      style={style}
-      aria-hidden="true"
-    >
-      {/* Paddle, tilted ~25° so it has visual energy.
-          The face is a rounded rectangle (not pure oval) to match real
-          pickleball paddle silhouettes — flatter top and bottom edges. */}
-      <g transform="rotate(25 50 55)">
-        {/* Handle base */}
-        <rect x="46" y="68" width="8" height="22" rx="2" fill={CSC.blueDark} />
-        {/* Grip band — gives the handle dimension at small sizes */}
-        <rect x="45" y="74" width="10" height="3" fill="#000" opacity="0.25" />
-        <rect x="45" y="82" width="10" height="3" fill="#000" opacity="0.25" />
-        {/* Paddle face — solid CSC blue with a thin edge so it reads as a
-            paddle even at 24-28px */}
-        <rect x="22" y="18" width="56" height="56" rx="14" ry="14"
-              fill={CSC.blue} stroke={CSC.blueDark} strokeWidth="1.5" />
-        {/* Face highlight — top-left lighter region gives the paddle a
-            subtle 3D feel without going full skeuomorphism */}
-        <ellipse cx="38" cy="32" rx="14" ry="8" fill="#fff" opacity="0.18" />
-      </g>
-
-      {/* Pickleball whiffle ball — yellow with hole dots.
-          Positioned upper-left of paddle as if just struck.
-          The holes are darker than the ball so they read at small sizes. */}
-      <circle cx="22" cy="24" r="11" fill={CSC.yellow} stroke="#A88800" strokeWidth="1" />
-      {/* Hole pattern — three dots arranged like a real pickleball pattern.
-          Kept small so they don't muddy the icon at small sizes. */}
-      <circle cx="19" cy="21" r="1.6" fill="#A88800" opacity="0.55" />
-      <circle cx="26" cy="22" r="1.6" fill="#A88800" opacity="0.55" />
-      <circle cx="22" cy="28" r="1.6" fill="#A88800" opacity="0.55" />
-    </svg>
+      // Slight border-radius so the square-cropped mark sits naturally inside
+      // round chips and card surfaces without looking like a raw screenshot.
+      style={{ borderRadius: Math.max(4, Math.round(size * 0.12)), display: "block", ...style }}
+    />
   );
 }
+export const PickleballIcon = CSCMark;
 
 // Modal renders an overlay + sheet. On desktop it centers; on mobile (≤640px)
 // it pins to the bottom and slides up — the bottom-sheet pattern, defined in
@@ -240,13 +212,10 @@ export function AboutContent({ onClose }) {
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: SPACE.lg }}>
-        <div style={{
-          width: 64, height: 64, borderRadius: 16,
-          background: CSC.blueLight,
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          marginBottom: SPACE.md,
-        }}>
-          <PickleballIcon size={44} />
+        {/* The CSC mark already includes the brand blue background and
+            its own internal margin, so it doesn't need a surrounding chip. */}
+        <div style={{ display: "inline-block", marginBottom: SPACE.md }}>
+          <CSCMark size={80} />
         </div>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
           CSC Pickleball League Manager
