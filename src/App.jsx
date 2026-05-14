@@ -212,6 +212,16 @@ export default function App() {
     const sched = getLeagueSchedule(leagueId);
     const stats = {};
     regs.forEach(r => { stats[r.playerId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }; });
+    // A player whose check-in for a given week is "sub" or "out" doesn't
+    // get points or wins attributed for that week's matches — they didn't
+    // actually play. "in", "maybe", and unset all count normally (maybe ≈
+    // showed up since the match still has them on the court). This is a
+    // per-week, per-player check; subs in Week 3 still earn points in
+    // Week 4 if they show up there.
+    function playerSatOutThisWeek(pid, week) {
+      const ci = db.checkIns?.[`${leagueId}_w${week}_${pid}`];
+      return ci?.status === "sub" || ci?.status === "out";
+    }
     (sched.weeks || []).forEach(w => {
       if (!isWeekLocked(leagueId, w.week)) return;
       w.courts.forEach(ct => ct.matches.forEach(match => {
@@ -223,12 +233,14 @@ export default function App() {
         const aWon = hs > as;
         sideA.forEach(pid => {
           if (!stats[pid]) return;
+          if (playerSatOutThisWeek(pid, match.week)) return;
           stats[pid].pointsFor += hs;
           stats[pid].pointsAgainst += as;
           if (aWon) stats[pid].wins++; else stats[pid].losses++;
         });
         sideB.forEach(pid => {
           if (!stats[pid]) return;
+          if (playerSatOutThisWeek(pid, match.week)) return;
           stats[pid].pointsFor += as;
           stats[pid].pointsAgainst += hs;
           if (!aWon) stats[pid].wins++; else stats[pid].losses++;
