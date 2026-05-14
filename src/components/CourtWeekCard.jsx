@@ -12,7 +12,7 @@ import { matchSides } from "./ScoreForm.jsx";
 // isLocked: commissioner has locked this week — players cannot edit, commissioner still can
 // isAdmin: full commissioner access
 // league: the league record (used to resolve league-level court defaults)
-export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
+export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
 
@@ -45,8 +45,29 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
 
   const headerBg = isLocked ? "#F1EFE8" : allScored ? "#EAF3DE" : "var(--color-background-secondary)";
 
+  // Season-progress tinting via a 4px left stripe on the card.
+  //   - Past:    muted gray (de-emphasized — for reference)
+  //   - Current: vivid CSC blue (the week the player is in)
+  //   - Future:  pale blue (gently positive, "coming up")
+  // Placeholder weeks (no data yet) get no stripe — they're already labelled
+  // "Not generated" in the header. The stripe is purely a player-side
+  // orientation aid; commissioners view all weeks equivalently so no stripe
+  // for them either (the stripe would just visually noise their workflow).
+  const showStripe = !weekData.placeholder && !isAdmin;
+  const stripeColor = isCurrentWeek
+    ? CSC.blue
+    : weekIsStrictlyPast
+      ? "var(--color-border-secondary)"
+      : CSC.blueLight;
+
   return (
-    <div style={{ ...S.card, marginBottom: 12, padding: 0, overflow: "hidden" }}>
+    <div style={{
+      ...S.card,
+      marginBottom: 12,
+      padding: 0,
+      overflow: "hidden",
+      borderLeft: showStripe ? `4px solid ${stripeColor}` : (S.card.borderLeft || undefined),
+    }}>
       <div
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: headerBg, borderBottom: expanded ? "0.5px solid var(--color-border-tertiary)" : "none" }}
         onClick={() => setExpanded(!expanded)}>
@@ -56,6 +77,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
             {headerDateTime}
           </span>
           {weekData.placeholder && <span style={{ ...S.badge("info"), fontSize: 10 }}>Not generated</span>}
+          {isCurrentWeek && !weekData.placeholder && <span style={{ background: CSC.blue, color: "#fff", borderRadius: 999, padding: "2px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>This week</span>}
           {isLocked && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒 Locked</span>}
           {!isLocked && !weekData.placeholder && allScored && totalMatches > 0 && <span style={{ ...S.badge("success"), fontSize: 10 }}>Complete</span>}
         </div>

@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { S } from "../styles.js";
-import { COLORS } from "../lib/constants.js";
-import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime } from "../lib/format.js";
+import { COLORS, CSC, MAX_PER_COURT } from "../lib/constants.js";
+import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime, todayISO } from "../lib/format.js";
 import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh, PickleballIcon } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
+import { LeagueRegistrationCard } from "./LeagueRegistrationCard.jsx";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 // Find the player's next or most recent match in a league's schedule.
@@ -80,6 +81,19 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
   const sched = selectedLeagueId ? getLeagueSchedule(selectedLeagueId) : { weeks: [] };
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
 
+  // Group registrations by league so the join cards can show a roster
+  // preview and player count without re-scanning all registrations per card.
+  const regsByLeague = {};
+  Object.values(db.registrations).forEach(r => {
+    (regsByLeague[r.leagueId] || (regsByLeague[r.leagueId] = [])).push(r);
+  });
+
+  // Helper to start the join flow — goes through a confirm step rather than
+  // enrolling on a single tap (prevents thumb-mis-tap enrollments).
+  function startJoinFlow(league) {
+    setModal({ type: "confirmJoinLeague", league });
+  }
+
   return (
     <PullToRefresh onRefresh={onRefresh} isRefreshing={isRefreshing}>
     <div style={S.page}>
@@ -95,17 +109,74 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
         </Modal>
       )}
       {modal?.type === "joinLeague" && (
-        <Modal title="Join League" onClose={() => setModal(null)}>
-          {unregistered.length === 0 && <p style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>You're already in all available leagues!</p>}
-          {unregistered.map(l => {
-            const lc = COLORS[l.color] || COLORS.csc;
-            return <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}` }}>
-              <div style={S.row}><div style={{ flex: 1 }}><p style={{ margin:"0 0 2px",fontWeight:600 }}>{l.name}</p><p style={{ margin:0,fontSize:12,color:"var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {l.format} · {l.weeks} weeks</p></div>
-              <button style={{ ...S.btnSm("primary"), background: lc.bg }} onClick={() => { registerForLeague(l.id, player.id); setModal(null); setSelectedLeagueId(l.id); }}>Join</button></div>
-            </div>;
-          })}
+        <Modal title="Join a League" onClose={() => setModal(null)}>
+          {unregistered.length === 0 && (
+            <p style={{ color: "var(--color-text-secondary)", fontSize: 14, textAlign: "center", padding: "16px 0" }}>
+              No leagues are open for registration right now. Check back soon!
+            </p>
+          )}
+          {unregistered.length > 0 && (
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--color-text-secondary)" }}>
+              Tap a league to see details and join.
+            </p>
+          )}
+          {unregistered.map(l => (
+            <LeagueRegistrationCard
+              key={l.id}
+              league={l}
+              regs={regsByLeague[l.id] || []}
+              players={db.players}
+              onSelect={league => startJoinFlow(league)} />
+          ))}
         </Modal>
       )}
+
+      {/* Join confirmation — second step so a tap on a list of leagues
+          doesn't enroll the player by accident. The modal restates the
+          league details before they commit. */}
+      {modal?.type === "confirmJoinLeague" && (() => {
+        const league = modal.league;
+        const lc = COLORS[league.color] || COLORS.csc;
+        const leagueRegs = regsByLeague[league.id] || [];
+        const filled = leagueRegs.length;
+        const capacity = (league.numCourts || 4) * MAX_PER_COURT;
+        return (
+          <Modal title="Join this league?" onClose={() => setModal(null)}>
+            <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--color-background-secondary)", borderRadius: 8, borderLeft: `4px solid ${lc.bg}` }}>
+              <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: 15 }}>{league.name}</p>
+              <p style={{ margin: "0 0 4px", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
+              </p>
+              <p style={{ margin: "0 0 4px", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                Starts {formatDate(league.startDate)}
+              </p>
+              {league.location && (
+                <p style={{ margin: "0 0 4px", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                  📍 {league.location}
+                </p>
+              )}
+              <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                {filled} of {capacity} spots filled
+              </p>
+            </div>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-secondary)" }}>
+              You'll be added to the roster. The commissioner will mark you as paid once your payment is received.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
+              <button
+                style={{ ...S.btn("primary"), background: lc.bg }}
+                onClick={() => {
+                  registerForLeague(league.id, player.id);
+                  setModal(null);
+                  setSelectedLeagueId(league.id);
+                }}>
+                Join League
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
 
       <div style={S.header(c.bg)} className="pwa-safe-top pwa-safe-x">
         <div>
@@ -140,17 +211,37 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
       )}
 
       {myLeagues.length === 0 && (
-        <div style={{ textAlign: "center", padding: "48px 20px", color: "var(--color-text-secondary)" }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-            <PickleballIcon size={48} />
+        <div style={{ padding: "32px 20px", color: "var(--color-text-secondary)" }}>
+          <div style={{ textAlign: "center", marginBottom: unregistered.length > 0 ? 28 : 0 }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+              <PickleballIcon size={48} />
+            </div>
+            <p style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
+              Ready to play?
+            </p>
+            <p style={{ fontSize: 14, margin: "6px 0 0" }}>
+              {unregistered.length > 0
+                ? "You're not in any leagues yet. Pick one below to get started."
+                : "No leagues are open for registration right now. Check back soon!"}
+            </p>
           </div>
-          <p style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
-            Ready to play?
-          </p>
-          <p style={{ fontSize: 14, margin: "6px 0 0" }}>
-            You're not in any leagues yet. Pick one to get started.
-          </p>
-          <button style={{ ...S.btn("primary"), marginTop: 16 }} onClick={() => setModal({ type: "joinLeague" })}>Browse Leagues</button>
+          {/* Show actual open leagues directly on the empty state so a
+              brand-new player can browse and join without a modal hop. */}
+          {unregistered.length > 0 && (
+            <>
+              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Open for registration
+              </p>
+              {unregistered.map(l => (
+                <LeagueRegistrationCard
+                  key={l.id}
+                  league={l}
+                  regs={regsByLeague[l.id] || []}
+                  players={db.players}
+                  onSelect={league => startJoinFlow(league)} />
+              ))}
+            </>
+          )}
         </div>
       )}
 
@@ -206,18 +297,65 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
             {["schedule","standings"].map(t => <button key={t} style={S.tab(playerTab===t,c.bg)} onClick={() => setPlayerTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
           </div>
           <div style={S.section}>
-            {playerTab === "schedule" && (
-              <div>
-                <p style={{ margin: "0 0 16px", fontSize: 14, color: "var(--color-text-secondary)" }}>Your matches in <b>{selectedLeague.name}</b></p>
-                {selectedLeague.status === "archived" && (
-                  <div style={{ padding: "12px 16px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
-                    📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
-                  </div>
-                )}
-                {myWeeks.length === 0 && <EmptyState msg="Schedule coming soon! Your matches will appear here once the commissioner generates the season." />}
-                {myWeeks.map(w => <CourtWeekCard key={w.week} weekData={w} league={selectedLeague} leagueId={selectedLeagueId} getScore={getScore} getPlayerName={getPlayerName} onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })} myId={player.id} isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"} myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)} onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />)}
-              </div>
-            )}
+            {playerTab === "schedule" && (() => {
+              // Season progress: identify the "current week" — the earliest
+              // week whose date is >= today, falling back to the last week
+              // if the whole season is in the past. Used both for the
+              // summary text and to highlight the current week's card.
+              const today = todayISO();
+              const allWeeks = sched.weeks || [];
+              const currentWeek = (() => {
+                if (allWeeks.length === 0) return null;
+                const upcoming = allWeeks.find(w => w.date && w.date >= today);
+                return upcoming || allWeeks[allWeeks.length - 1];
+              })();
+              const completedWeeks = allWeeks.filter(w => w.date && w.date < today).length;
+              const totalWeeks = selectedLeague.weeks || allWeeks.length;
+              const weeksLeft = Math.max(0, totalWeeks - completedWeeks);
+              const showProgress = totalWeeks > 0 && selectedLeague.status !== "archived";
+              return (
+                <div>
+                  <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--color-text-secondary)" }}>Your matches in <b>{selectedLeague.name}</b></p>
+                  {selectedLeague.status === "archived" && (
+                    <div style={{ padding: "12px 16px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                      📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
+                    </div>
+                  )}
+                  {/* Season-at-a-glance summary. Hidden for archived leagues
+                      (the archive banner is the more important signal there)
+                      and for empty schedules (no weeks to summarize). */}
+                  {showProgress && currentWeek && (
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "10px 14px", marginBottom: 12,
+                      background: CSC.blueLight, borderRadius: 8,
+                      fontSize: 13, color: CSC.blueDark, fontWeight: 600,
+                    }}>
+                      <span>Week {currentWeek.week} of {totalWeeks}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>
+                        {weeksLeft === 0 ? "Season complete" : `${weeksLeft} week${weeksLeft !== 1 ? "s" : ""} left`}
+                      </span>
+                    </div>
+                  )}
+                  {myWeeks.length === 0 && <EmptyState msg="Schedule coming soon! Your matches will appear here once the commissioner generates the season." />}
+                  {myWeeks.map(w => (
+                    <CourtWeekCard
+                      key={w.week}
+                      weekData={w}
+                      league={selectedLeague}
+                      leagueId={selectedLeagueId}
+                      getScore={getScore}
+                      getPlayerName={getPlayerName}
+                      onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })}
+                      myId={player.id}
+                      isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"}
+                      isCurrentWeek={currentWeek?.week === w.week && selectedLeague.status !== "archived"}
+                      myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)}
+                      onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />
+                  ))}
+                </div>
+              );
+            })()}
             {playerTab === "standings" && (() => {
               const weeks = sched.weeks || [];
               const pendingWeeks = weeks.filter(w => !isWeekLocked(selectedLeagueId, w.week) && w.courts.some(ct => ct.matches.some(m => getScore(selectedLeagueId, w.week, m.id)))).length;
