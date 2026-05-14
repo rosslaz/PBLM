@@ -310,7 +310,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
             const courtTime = resolveCourtTime(court, ci, league, weekData.time);
             const showCourtTime = courtTime && courtTime !== weekData.time;
             return (
-              <div key={court.courtName} style={{ margin: "12px 16px 0" }}>
+              <div key={court.courtName} style={{ margin: isMobile ? "12px 12px 0" : "12px 16px 0" }}>
                 {/* Court label */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: courtColor + "18", border: `0.5px solid ${courtColor}40` }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: courtColor, flexShrink: 0 }} />
@@ -375,7 +375,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                   );
 
                   return (
-                    <div key={match.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, marginBottom: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div key={match.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: isMobile ? 4 : 6, padding: isMobile ? "7px 8px" : "7px 10px", borderRadius: 8, marginBottom: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
                       {renderSide(sideA, myOnSideA, "right")}
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
                         {hasScore ? (
@@ -394,15 +394,39 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                         )}
                       </div>
                       {renderSide(sideB, myOnSideB, "left")}
-                      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: isMobile ? 3 : 5 }}>
                         {mySat && <span style={{ ...S.badge("info"), fontSize: 10 }}>You sit</span>}
                         {myInMatch && hasScore && <span style={S.badge(myWon ? "success" : "danger")}>{myWon ? "W" : "L"}</span>}
                         {isLocked && hasScore && isAdmin && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒</span>}
                         {canEdit && hasScore && (
-                          <button style={{ ...S.btnSm("secondary"), fontSize: 11 }}
-                            onClick={() => onEnterScore(match)}>
-                            Edit
-                          </button>
+                          // Icon-only on mobile (saves ~30px of row width so
+                          // longer names like "Ross L." don't get truncated).
+                          // Stays a labeled button on desktop where space
+                          // isn't at a premium.
+                          isMobile ? (
+                            <button
+                              onClick={() => onEnterScore(match)}
+                              aria-label="Edit score"
+                              title="Edit score"
+                              style={{
+                                background: "transparent",
+                                border: "0.5px solid var(--color-border-secondary)",
+                                borderRadius: 6,
+                                width: 28, height: 28, padding: 0,
+                                cursor: "pointer", fontSize: 14,
+                                color: "var(--color-text-secondary)",
+                                fontFamily: "inherit",
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                flexShrink: 0,
+                              }}>
+                              ✏
+                            </button>
+                          ) : (
+                            <button style={{ ...S.btnSm("secondary"), fontSize: 11 }}
+                              onClick={() => onEnterScore(match)}>
+                              Edit
+                            </button>
+                          )
                         )}
                         {!canEdit && !hasScore && (
                           <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
