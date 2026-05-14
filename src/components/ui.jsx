@@ -4,6 +4,58 @@ import { S } from "../styles.js";
 import { CSC, SPACE, APP_INFO } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 
+// ─── PickleballIcon ────────────────────────────────────────────────────────
+// Custom SVG paddle + ball. Replaces the 🏓 emoji, which is technically the
+// "ping pong" character and renders as a red ping-pong paddle on most
+// platforms — visually wrong for a pickleball app.
+//
+// Visual: a tilted blue paddle with a darker grip band, plus a yellow
+// whiffle ball with a few hole dots. Colors come from the CSC brand palette
+// so the icon belongs visually with the rest of the app.
+//
+// Use anywhere a small decorative pickleball icon helps — empty states,
+// About modal, etc. Pass `size` (number of pixels) to control footprint.
+export function PickleballIcon({ size = 32, style }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      xmlns="http://www.w3.org/2000/svg"
+      style={style}
+      aria-hidden="true"
+    >
+      {/* Paddle, tilted ~25° so it has visual energy.
+          The face is a rounded rectangle (not pure oval) to match real
+          pickleball paddle silhouettes — flatter top and bottom edges. */}
+      <g transform="rotate(25 50 55)">
+        {/* Handle base */}
+        <rect x="46" y="68" width="8" height="22" rx="2" fill={CSC.blueDark} />
+        {/* Grip band — gives the handle dimension at small sizes */}
+        <rect x="45" y="74" width="10" height="3" fill="#000" opacity="0.25" />
+        <rect x="45" y="82" width="10" height="3" fill="#000" opacity="0.25" />
+        {/* Paddle face — solid CSC blue with a thin edge so it reads as a
+            paddle even at 24-28px */}
+        <rect x="22" y="18" width="56" height="56" rx="14" ry="14"
+              fill={CSC.blue} stroke={CSC.blueDark} strokeWidth="1.5" />
+        {/* Face highlight — top-left lighter region gives the paddle a
+            subtle 3D feel without going full skeuomorphism */}
+        <ellipse cx="38" cy="32" rx="14" ry="8" fill="#fff" opacity="0.18" />
+      </g>
+
+      {/* Pickleball whiffle ball — yellow with hole dots.
+          Positioned upper-left of paddle as if just struck.
+          The holes are darker than the ball so they read at small sizes. */}
+      <circle cx="22" cy="24" r="11" fill={CSC.yellow} stroke="#A88800" strokeWidth="1" />
+      {/* Hole pattern — three dots arranged like a real pickleball pattern.
+          Kept small so they don't muddy the icon at small sizes. */}
+      <circle cx="19" cy="21" r="1.6" fill="#A88800" opacity="0.55" />
+      <circle cx="26" cy="22" r="1.6" fill="#A88800" opacity="0.55" />
+      <circle cx="22" cy="28" r="1.6" fill="#A88800" opacity="0.55" />
+    </svg>
+  );
+}
+
 // Modal renders an overlay + sheet. On desktop it centers; on mobile (≤640px)
 // it pins to the bottom and slides up — the bottom-sheet pattern, defined in
 // index.css. The grab handle above the title shows on mobile only and is
@@ -53,7 +105,14 @@ export function Toast({ toast }) {
 }
 
 export function EmptyState({ msg }) {
-  return <div style={{ textAlign: "center", padding: "32px 0", color: "var(--color-text-secondary)", fontSize: 14 }}><div style={{ fontSize: 32, marginBottom: 8 }}>🏓</div><p style={{ margin: 0 }}>{msg}</p></div>;
+  return (
+    <div style={{ textAlign: "center", padding: "32px 0", color: "var(--color-text-secondary)", fontSize: 14 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+        <PickleballIcon size={40} />
+      </div>
+      <p style={{ margin: 0 }}>{msg}</p>
+    </div>
+  );
 }
 
 // ─── AvatarMenu ─────────────────────────────────────────────────────────────
@@ -183,11 +242,11 @@ export function AboutContent({ onClose }) {
       <div style={{ textAlign: "center", marginBottom: SPACE.lg }}>
         <div style={{
           width: 64, height: 64, borderRadius: 16,
-          background: CSC.blue, color: "#fff",
+          background: CSC.blueLight,
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          fontSize: 36, marginBottom: SPACE.md,
+          marginBottom: SPACE.md,
         }}>
-          🏓
+          <PickleballIcon size={44} />
         </div>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
           CSC Pickleball League Manager
