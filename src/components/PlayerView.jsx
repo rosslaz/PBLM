@@ -71,7 +71,7 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
-export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
+export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, submitScoreInline, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   // Even if the commissioner soft-deletes a league while the player is
   // looking at it, don't render the stale data — treat it as null.
@@ -347,6 +347,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
                       getScore={getScore}
                       getPlayerName={getPlayerName}
                       onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })}
+                      onSubmitScore={(home, away, match, actionId) => submitScoreInline(selectedLeagueId, home, away, match, actionId)}
                       myId={player.id}
                       isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"}
                       isCurrentWeek={currentWeek?.week === w.week && selectedLeague.status !== "archived"}

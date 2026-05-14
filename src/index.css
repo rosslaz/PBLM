@@ -65,10 +65,19 @@ input[type="number"]::-webkit-outer-spin-button {
   .score-input {
     font-size: 28px !important;
   }
+  /* Inline score inputs (in the schedule list, not the modal). Smaller
+     than the modal score inputs but still >= 16px so iOS doesn't zoom on
+     focus. The class plus !important wins over the catch-all rule above. */
+  .inline-score-input {
+    font-size: 16px !important;
+  }
 }
 /* Desktop / wide-viewport size for score input (no media query needed) */
 .score-input {
   font-size: 36px;
+}
+.inline-score-input {
+  font-size: 16px;
 }
 
 /* ─── PWA safe-area handling ───────────────────────────────────────

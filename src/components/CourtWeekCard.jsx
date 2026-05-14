@@ -1,18 +1,158 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
 import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime, isCurrentOrPastWeek, isPastWeek } from "../lib/format.js";
 import { useIsMobile } from "../lib/session.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
-import { matchSides } from "./ScoreForm.jsx";
+import { matchSides, validatePickleballScore } from "./ScoreForm.jsx";
+import { Spinner, useIsActionPending } from "./Spinner.jsx";
+
+// ─── Inline score entry ────────────────────────────────────────────────────
+// Compact two-input + submit-button group that sits in place of the "Score"
+// button on unscored match rows. Replaces the round-trip to the modal for
+// the common case: just played a match, type two numbers, done.
+//
+// Validation happens inline — invalid scores can't be submitted; an error
+// message appears below the row briefly. Editing existing scores still
+// goes through the full modal (tap the displayed score), since that's the
+// less-frequent and validation-heavier case.
+//
+// matchId is used as part of the per-match action ID so a spinning ✓
+// button doesn't affect other rows.
+function InlineScoreEntry({ match, onSubmit, accentColor }) {
+  const [home, setHome] = useState("");
+  const [away, setAway] = useState("");
+  const homeRef = useRef(null);
+  const awayRef = useRef(null);
+  const actionId = `submit-score-${match.id}`;
+  const isPending = useIsActionPending(actionId);
+
+  // Digits-only normalization (mobile keyboards can sneak in weird chars).
+  const clean = v => v.replace(/[^0-9]/g, "").slice(0, 2);
+
+  const both = home !== "" && away !== "";
+  const validation = both ? validatePickleballScore(home, away) : null;
+  const isValid = validation === "valid";
+
+  function handleSubmit() {
+    if (!both) {
+      // If only one side is filled, focus the empty one.
+      if (home === "") homeRef.current?.focus();
+      else if (away === "") awayRef.current?.focus();
+      return;
+    }
+    if (!isValid) {
+      // Button is already disabled when invalid; this branch is defensive.
+      return;
+    }
+    onSubmit(home, away, match, actionId);
+  }
+
+  // Auto-advance to the away input on space/enter/dash from home; Enter on
+  // away submits. The keyboard's "next" / "done" hints reinforce this.
+  function handleHomeChange(v) {
+    setHome(clean(v));
+  }
+  function handleAwayChange(v) {
+    setAway(clean(v));
+  }
+  function handleHomeKey(e) {
+    if (e.key === "Enter" || e.key === " " || e.key === "-") {
+      e.preventDefault();
+      awayRef.current?.focus();
+    }
+  }
+  function handleAwayKey(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }
+
+  const sharedInputStyle = {
+    width: 36,
+    height: 28,
+    padding: "0 4px",
+    textAlign: "center",
+    fontWeight: 700,
+    fontFamily: "inherit",
+    fontVariantNumeric: "tabular-nums",
+    borderRadius: 6,
+    border: `1.5px solid ${both && !isValid ? "#A32D2D" : "var(--color-border-secondary)"}`,
+    background: "var(--color-background-primary)",
+    color: "var(--color-text-primary)",
+    boxSizing: "border-box",
+    outline: "none",
+  };
+
+  return (
+    <>
+      <input
+        ref={homeRef}
+        className="inline-score-input"
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={2}
+        autoComplete="off"
+        enterKeyHint={away === "" ? "next" : "done"}
+        value={home}
+        onChange={e => handleHomeChange(e.target.value)}
+        onKeyDown={handleHomeKey}
+        onFocus={e => e.target.select()}
+        aria-label="Home score"
+        disabled={isPending}
+        style={sharedInputStyle}
+      />
+      <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
+      <input
+        ref={awayRef}
+        className="inline-score-input"
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={2}
+        autoComplete="off"
+        enterKeyHint="done"
+        value={away}
+        onChange={e => handleAwayChange(e.target.value)}
+        onKeyDown={handleAwayKey}
+        onFocus={e => e.target.select()}
+        aria-label="Away score"
+        disabled={isPending}
+        style={sharedInputStyle}
+      />
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={isPending || (both && !isValid)}
+        aria-label="Submit score"
+        title={both && !isValid ? validation : "Submit score"}
+        style={{
+          marginLeft: 4,
+          width: 30, height: 28,
+          padding: 0,
+          fontSize: 14, fontWeight: 700, lineHeight: 1,
+          border: "none", borderRadius: 6,
+          background: (both && isValid) ? accentColor : "var(--color-border-secondary)",
+          color: (both && isValid) ? "#fff" : "var(--color-text-tertiary)",
+          cursor: isPending ? "default" : ((both && isValid) ? "pointer" : "not-allowed"),
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          fontFamily: "inherit",
+        }}>
+        {isPending ? <Spinner marginRight={0} /> : "✓"}
+      </button>
+    </>
+  );
+}
 
 // myId: the current player's id (undefined for commissioner full view)
 // myCourtPlayers: set of player IDs on the same court as myId this week (for edit gating)
 // isLocked: commissioner has locked this week — players cannot edit, commissioner still can
 // isAdmin: full commissioner access
 // league: the league record (used to resolve league-level court defaults)
-export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
+export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
 
@@ -206,7 +346,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                   const labelB = sideB.map(getPlayerName).join(" + ");
 
                   return (
-                    <div key={match.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, marginBottom: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                    <div key={match.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, marginBottom: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
                       <span style={{ flex: 1, fontSize: 13, fontWeight: myOnSideA ? 700 : 400, textAlign: "right", color: myOnSideA ? "var(--color-text-primary)" : "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {labelA}
                       </span>
@@ -217,6 +357,11 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                             <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
                             <span style={{ fontSize: 17, fontWeight: 700, color: !sideAWon ? CSC.blue : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.awayScore}</span>
                           </>
+                        ) : canEdit && onSubmitScore ? (
+                          // Inline score entry — replaces the modal round-trip
+                          // for the common case (just played, type two numbers).
+                          // Editing existing scores still goes through the modal.
+                          <InlineScoreEntry match={match} onSubmit={onSubmitScore} accentColor={courtColor} />
                         ) : (
                           <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", padding: "0 6px" }}>vs</span>
                         )}
@@ -228,13 +373,14 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                         {mySat && <span style={{ ...S.badge("info"), fontSize: 10 }}>You sit</span>}
                         {myInMatch && hasScore && <span style={S.badge(myWon ? "success" : "danger")}>{myWon ? "W" : "L"}</span>}
                         {isLocked && hasScore && isAdmin && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒</span>}
-                        {canEdit ? (
-                          <button style={{ ...S.btnSm(hasScore ? "secondary" : "primary", hasScore ? undefined : courtColor), fontSize: 11 }}
+                        {canEdit && hasScore && (
+                          <button style={{ ...S.btnSm("secondary"), fontSize: 11 }}
                             onClick={() => onEnterScore(match)}>
-                            {hasScore ? "Edit" : "Score"}
+                            Edit
                           </button>
-                        ) : (
-                          !hasScore && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
+                        )}
+                        {!canEdit && !hasScore && (
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
                         )}
                       </div>
                     </div>

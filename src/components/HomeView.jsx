@@ -3,7 +3,7 @@ import { S } from "../styles.js";
 import { CSC, COLORS, SPACE } from "../lib/constants.js";
 import { formatDate, playerFullName, playerInitial } from "../lib/format.js";
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
-import { Toast, Modal, VersionFooter } from "./ui.jsx";
+import { Toast, Modal, VersionFooter, PWAInstallBanner } from "./ui.jsx";
 import { PlayerForm } from "./PlayerForm.jsx";
 
 export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, modal, setModal, registerForLeague }) {
@@ -86,6 +86,11 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
         <p style={{ margin: 0, color: "#fff", opacity: 0.92, fontSize: 14, fontWeight: 500, letterSpacing: "0.3px" }}>League Manager</p>
       </div>
       <div style={{ maxWidth: 520, margin: "0 auto", padding: "24px 20px" }}>
+
+        {/* PWA install nudge — appears once for iOS Safari users who haven't
+            installed the app or dismissed the banner. Other platforms see
+            nothing here. */}
+        <PWAInstallBanner />
 
         {/* Continue-as card: one-tap re-login when we know who used this
             device last. Replaces the email form for the common case. */}

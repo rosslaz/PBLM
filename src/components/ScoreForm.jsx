@@ -4,7 +4,7 @@ import { useIsMobile } from "../lib/session.js";
 import { formatDate } from "../lib/format.js";
 import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
-function validatePickleballScore(h, a) {
+export function validatePickleballScore(h, a) {
   const hi = parseInt(h, 10), ai = parseInt(a, 10);
   if (isNaN(hi) || isNaN(ai)) return null;
   if (hi < 0 || ai < 0) return "Scores cannot be negative.";

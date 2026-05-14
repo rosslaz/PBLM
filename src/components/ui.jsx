@@ -490,3 +490,100 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
     </>
   );
 }
+
+// ─── PWA install banner ────────────────────────────────────────────────────
+// Dismissible banner shown on the home screen to teach iOS Safari users how
+// to install the app to their home screen. Hidden when:
+//   - Already running as an installed PWA (display-mode standalone, or
+//     iOS's legacy navigator.standalone === true)
+//   - Previously dismissed (localStorage flag)
+//   - Not iOS Safari (Chrome Android has its own install UI; desktop users
+//     are uncommon for this app and can install via browser menu)
+//
+// The flag is versioned so a future copy update can re-show the banner if
+// we ever want to nudge again — bump the suffix.
+const PWA_DISMISS_KEY = "pickleball_pwa_dismissed_v1";
+
+// True when on an iPhone/iPad in Safari (not Chrome/Firefox iOS, which can't
+// trigger Add-to-Home-Screen). Detection is permissive: it accepts the
+// classic "iPhone/iPad" UA tokens and modern iPadOS where Safari masquerades
+// as desktop Safari. False on anything else — better to under-show than
+// to teach the wrong gesture.
+function isIOSSafari() {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/.test(ua) ||
+    // iPadOS 13+ reports Mac UA but still has touch
+    (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  if (!isIOS) return false;
+  // Exclude Chrome/Firefox/Edge on iOS (CriOS, FxiOS, EdgiOS) — those
+  // browsers wrap WebKit but don't support Add-to-Home-Screen the same way.
+  const isOtherBrowser = /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+  return !isOtherBrowser;
+}
+
+function isStandalone() {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia?.("(display-mode: standalone)")?.matches) return true;
+  // iOS legacy property
+  if (typeof navigator !== "undefined" && navigator.standalone === true) return true;
+  return false;
+}
+
+export function PWAInstallBanner() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Run detection client-side only. SSR-safe by virtue of the useEffect.
+    if (isStandalone()) return;
+    if (!isIOSSafari()) return;
+    try {
+      if (localStorage.getItem(PWA_DISMISS_KEY)) return;
+    } catch (_) { /* localStorage unavailable — show anyway */ }
+    setVisible(true);
+  }, []);
+
+  function dismiss() {
+    try { localStorage.setItem(PWA_DISMISS_KEY, "1"); } catch (_) {}
+    setVisible(false);
+  }
+
+  if (!visible) return null;
+
+  return (
+    <div style={{
+      background: CSC.blueLight,
+      border: `0.5px solid ${CSC.blue}40`,
+      borderRadius: 10,
+      padding: `${SPACE.md}px ${SPACE.lg}px`,
+      marginBottom: SPACE.lg,
+      display: "flex", alignItems: "flex-start", gap: SPACE.md,
+    }}>
+      <span style={{ fontSize: 22, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>📱</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: CSC.blueDark }}>
+          Install the app
+        </p>
+        <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12, color: CSC.blueDark, lineHeight: 1.4 }}>
+          Tap <span style={{
+            display: "inline-block", padding: "0 4px",
+            border: `0.5px solid ${CSC.blue}60`, borderRadius: 3,
+            background: "rgba(255,255,255,0.6)",
+          }}>↑ Share</span>, then <strong>Add to Home Screen</strong> for faster access.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        style={{
+          background: "transparent", border: "none",
+          color: CSC.blueDark, opacity: 0.6,
+          fontSize: 20, lineHeight: 1, padding: 4, cursor: "pointer",
+          fontFamily: "inherit", flexShrink: 0,
+        }}>
+        ×
+      </button>
+    </div>
+  );
+}

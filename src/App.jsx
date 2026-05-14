@@ -666,6 +666,17 @@ export default function App() {
     setModal(null);
   }
 
+  // Inline variant — called from the per-row entry in the schedule list.
+  // Uses a per-match action ID so each row's ✓ button can show its own
+  // spinner independently. No modal is open, so no setModal cleanup.
+  async function submitScoreInline(leagueId, homeScore, awayScore, match, actionId) {
+    await action(
+      () => dbWriteScore(leagueId, match.week, match.id, homeScore, awayScore),
+      buildScoreToast(match, homeScore, awayScore, currentPlayer),
+      actionId
+    );
+  }
+
   async function togglePaid(leagueId, playerId) {
     const reg = db.registrations[`${leagueId}_${playerId}`]; if (!reg) return;
     await action(() => dbToggleRegPaid(leagueId, playerId), !reg.paid ? "Marked as paid!" : "Payment removed.");
@@ -1000,6 +1011,7 @@ export default function App() {
             onToggleLockWeek={(week) => toggleLockWeek(league.id, week)}
             isWeekLocked={(week) => isWeekLocked(league.id, week)}
             onEnterScore={match => setModal({ type: "enterScore", match, leagueId: league.id })}
+            onSubmitScore={(home, away, match, actionId) => submitScoreInline(league.id, home, away, match, actionId)}
             onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })}
             onRebalanceWeek={weekData => setModal({ type: "confirmRebalance", leagueId: league.id, weekData })} />
         ) : (
@@ -1169,13 +1181,23 @@ export default function App() {
       if (leagueGender === "Men's") return playerGender === "Male";
       if (leagueGender === "Women's") return playerGender === "Female";
       return false;
+    }).sort((a, b) => {
+      // Earliest start date first. Leagues missing a startDate go last so the
+      // common case (well-formed leagues) reads top-to-bottom chronologically.
+      const ad = a.startDate || "";
+      const bd = b.startDate || "";
+      if (!ad && !bd) return (a.name || "").localeCompare(b.name || "");
+      if (!ad) return 1;
+      if (!bd) return -1;
+      if (ad !== bd) return ad.localeCompare(bd); // ISO YYYY-MM-DD sorts correctly as string
+      return (a.name || "").localeCompare(b.name || "");
     });
     return (
       <ActionPendingProvider value={currentActionId}>
         <PlayerView db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
           playerTab={playerTab} setPlayerTab={setPlayerTab} modal={modal} setModal={setModal} toast={toast}
           getLeagueSchedule={getLeagueSchedule} getScore={getScore} getPlayerName={getPlayerName}
-          getStandings={getStandings} registerForLeague={registerForLeague} submitScore={submitScore}
+          getStandings={getStandings} registerForLeague={registerForLeague} submitScore={submitScore} submitScoreInline={submitScoreInline}
           isWeekLocked={isWeekLocked}
           getCheckIn={getCheckIn} setCheckIn={setCheckIn}
           adminEmails={db.adminEmails || [SUPER_ADMIN]}
