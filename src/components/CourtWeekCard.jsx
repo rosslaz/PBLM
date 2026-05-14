@@ -342,14 +342,41 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                   const playerCanEdit = onMyCourt && !isLocked && weekIsCurrentOrPast;
                   const canEdit = isAdmin || playerCanEdit;
 
-                  const labelA = sideA.map(getPlayerName).join(" + ");
-                  const labelB = sideB.map(getPlayerName).join(" + ");
+                  // Render each side's player names on their own line so
+                  // doubles teammates don't get squeezed/truncated on narrow
+                  // viewports. Singles renders as a single name (just one
+                  // entry in the array). When the current player is on the
+                  // side, only their own name is bolded — partners stay
+                  // regular weight so "you" stands out from your team.
+                  const renderSide = (playerIds, isMySide, align) => (
+                    <span style={{
+                      flex: 1, minWidth: 0,
+                      fontSize: 13,
+                      display: "flex", flexDirection: "column",
+                      alignItems: align === "right" ? "flex-end" : "flex-start",
+                      lineHeight: 1.25,
+                      color: isMySide ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                    }}>
+                      {playerIds.map(pid => {
+                        const isMe = myId && pid === myId;
+                        return (
+                          <span key={pid} style={{
+                            fontWeight: isMe ? 700 : 400,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            maxWidth: "100%",
+                          }}>
+                            {getPlayerName(pid)}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  );
 
                   return (
                     <div key={match.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, marginBottom: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: myOnSideA ? 700 : 400, textAlign: "right", color: myOnSideA ? "var(--color-text-primary)" : "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {labelA}
-                      </span>
+                      {renderSide(sideA, myOnSideA, "right")}
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
                         {hasScore ? (
                           <>
@@ -366,9 +393,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                           <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", padding: "0 6px" }}>vs</span>
                         )}
                       </div>
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: myOnSideB ? 700 : 400, color: myOnSideB ? "var(--color-text-primary)" : "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {labelB}
-                      </span>
+                      {renderSide(sideB, myOnSideB, "left")}
                       <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
                         {mySat && <span style={{ ...S.badge("info"), fontSize: 10 }}>You sit</span>}
                         {myInMatch && hasScore && <span style={S.badge(myWon ? "success" : "danger")}>{myWon ? "W" : "L"}</span>}
