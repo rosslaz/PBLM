@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { S } from "../styles.js";
-import { CSC, COLORS, COURT_NAMES, COURT_COLORS, SPACE } from "../lib/constants.js";
+import { CSC, COLORS, SPACE } from "../lib/constants.js";
 import { formatDate, playerFullName, playerInitial } from "../lib/format.js";
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
 import { Toast, Modal, VersionFooter } from "./ui.jsx";
@@ -183,17 +183,6 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
           </div>
         )}
 
-        {/* Court legend */}
-        <div style={{ ...S.card, padding: "12px 16px", marginBottom: 16 }}>
-          <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>How scheduling works</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
-            {COURT_NAMES.map((name, i) => <div key={name} style={{ textAlign: "center" }}>
-              <div style={{ height: 28, borderRadius: 6, background: COURT_COLORS[i], display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>4–5</span></div>
-              <p style={{ margin: "4px 0 0", fontSize: 10, color: COURT_COLORS[i], fontWeight: 600 }}>{name}</p>
-            </div>)}
-          </div>
-          <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--color-text-secondary)" }}>Each week, players rotate to new court groups. All players within a court play each other. Matchmaking balances opponents across the season.</p>
-        </div>
         {leagues.length > 0 && (
           <div>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--color-text-secondary)" }}>Active Leagues</h3>
