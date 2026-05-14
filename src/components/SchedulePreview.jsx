@@ -85,12 +85,26 @@ export function SchedulePreview({ preview, league, onAccept, onRetry, onCancel }
           {preview.canRetry && (
             <button style={S.btn("secondary")} onClick={onRetry} disabled={isCommitting}>↻ Try Again</button>
           )}
-          <button
-            style={{ ...S.btn("primary"), minWidth: 150 }}
-            onClick={onAccept}
-            disabled={isCommitting}>
-            {isCommitting ? <><Spinner /> Saving…</> : "Accept & Save"}
-          </button>
+          {/* Label and color shift when we're about to overwrite an existing
+              schedule. Plain "Generate" reads as creation; "Replace" admits
+              the destructive nature. Red tint only when there are actual
+              scores to lose — losing an empty prior schedule is low stakes. */}
+          {(() => {
+            const replacing = !!preview.isReplace;
+            const destructive = preview.scoresWiped > 0;
+            const label = isCommitting
+              ? <><Spinner /> Saving…</>
+              : replacing ? "Replace Schedule" : "Generate Schedule";
+            const bg = destructive ? "#A32D2D" : undefined; // primary red when wiping scores
+            return (
+              <button
+                style={{ ...S.btn("primary", bg), minWidth: 170 }}
+                onClick={onAccept}
+                disabled={isCommitting}>
+                {label}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>

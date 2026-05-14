@@ -47,18 +47,17 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
 
   // Season-progress tinting via a 4px left stripe on the card.
   //   - Past:    muted gray (de-emphasized — for reference)
-  //   - Current: vivid CSC blue (the week the player is in)
+  //   - Current: NO stripe — identity comes from the "THIS WEEK" badge in
+  //              the header; a stripe + badge double-cued the same idea
+  //              and made the card feel visually shouty.
   //   - Future:  pale blue (gently positive, "coming up")
-  // Placeholder weeks (no data yet) get no stripe — they're already labelled
-  // "Not generated" in the header. The stripe is purely a player-side
-  // orientation aid; commissioners view all weeks equivalently so no stripe
-  // for them either (the stripe would just visually noise their workflow).
-  const showStripe = !weekData.placeholder && !isAdmin;
-  const stripeColor = isCurrentWeek
-    ? CSC.blue
-    : weekIsStrictlyPast
-      ? "var(--color-border-secondary)"
-      : CSC.blueLight;
+  // Placeholder weeks (no data yet) and the commissioner view both skip the
+  // stripe entirely — the stripe is purely a player-side orientation aid.
+  const showStripe = !weekData.placeholder && !isAdmin && !isCurrentWeek
+    && (weekIsStrictlyPast || !weekIsCurrentOrPast);
+  const stripeColor = weekIsStrictlyPast
+    ? "var(--color-border-secondary)"
+    : CSC.blueLight;
 
   return (
     <div style={{

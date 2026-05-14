@@ -104,7 +104,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
           <ScoreForm match={modal.match} leagueId={modal.leagueId}
             existing={getScore(modal.leagueId, modal.match.week, modal.match.id)}
             getPlayerName={getPlayerName}
-            onSubmit={(h, a) => submitScore(modal.leagueId, modal.match.week, modal.match.id, h, a)}
+            onSubmit={(h, a) => submitScore(modal.leagueId, modal.match.week, modal.match.id, h, a, modal.match)}
             onClose={() => setModal(null)} />
         </Modal>
       )}

@@ -34,6 +34,26 @@ import { HomeView } from "./components/HomeView.jsx";
 import { PlayerView } from "./components/PlayerView.jsx";
 import { ActionPendingProvider, Spinner } from "./components/Spinner.jsx";
 
+// ─── Score toast picker ────────────────────────────────────────────────────
+// The "Score submitted!" toast is generic. For the common case — a player
+// just finished their own match and entered the score — it's much warmer
+// to acknowledge their win or loss. We only celebrate when we're sure the
+// submitter played in the match. Anyone else (commissioner-only logged in,
+// or a player entering for a court they're not on) gets the neutral copy.
+function buildScoreToast(match, homeScore, awayScore, currentPlayer) {
+  if (!currentPlayer || !match) return "Score submitted!";
+  const sideA = match.format === "doubles" ? (match.team1 || []) : [match.home];
+  const sideB = match.format === "doubles" ? (match.team2 || []) : [match.away];
+  const onSideA = sideA.includes(currentPlayer.id);
+  const onSideB = sideB.includes(currentPlayer.id);
+  if (!onSideA && !onSideB) return "Score submitted!";
+  const aWon = +homeScore > +awayScore;
+  const myWin = (onSideA && aWon) || (onSideB && !aWon);
+  return myWin
+    ? "🎉 Nice win! Score submitted."
+    : "Score submitted — get 'em next time!";
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   const [db, setDB] = useState(null);
@@ -447,6 +467,10 @@ export default function App() {
       const scoresWiped = Object.keys(db.scores).filter(k => k.startsWith(`${leagueId}_`)).length;
       const courtsCount = result.weeks[0]?.courts.length || 0;
       const sz = result.weeks[0]?.courts.map(c => c.players.length) || [];
+      // "Replace" if there's a prior schedule to overwrite. Scores existing
+      // is the harder destructive trigger; either alone is enough to make
+      // the button explicit.
+      const isReplace = existingWeeks.length > 0 || scoresWiped > 0;
       return {
         proposal: {
           kind: "mixer",
@@ -454,6 +478,7 @@ export default function App() {
           leagueName: league.name,
           schedule: result,
           scoresWiped,
+          isReplace,
           weeks: withNames(result.weeks),
           summary: `Round-Robin schedule: ${courtsCount} courts (${sz.join(", ")} players) × ${league.weeks} weeks`,
           warning: scoresWiped > 0 ? `Accepting will clear ${scoresWiped} existing score${scoresWiped!==1?"s":""} from this league.` : null,
@@ -632,10 +657,10 @@ export default function App() {
     setModal(null);
   }
 
-  async function submitScore(leagueId, week, matchId, homeScore, awayScore) {
+  async function submitScore(leagueId, week, matchId, homeScore, awayScore, match) {
     await action(
       () => dbWriteScore(leagueId, week, matchId, homeScore, awayScore),
-      "Score submitted!",
+      buildScoreToast(match, homeScore, awayScore, currentPlayer),
       "submit-score"
     );
     setModal(null);
@@ -707,7 +732,7 @@ export default function App() {
       <ScoreForm match={modal.match} leagueId={modal.leagueId}
         existing={getScore(modal.leagueId, modal.match.week, modal.match.id)}
         getPlayerName={getPlayerName}
-        onSubmit={(h, a) => submitScore(modal.leagueId, modal.match.week, modal.match.id, h, a)}
+        onSubmit={(h, a) => submitScore(modal.leagueId, modal.match.week, modal.match.id, h, a, modal.match)}
         onClose={() => setModal(null)} />
     </Modal>
   );
@@ -851,7 +876,9 @@ export default function App() {
           );
         })()}
         {modal?.type === "schedulePreview" && (
-          <Modal title={`Review Schedule · ${modal.proposal.leagueName}`} onClose={() => setModal(null)}>
+          <Modal
+            title={`${modal.proposal.isReplace ? "Replace" : "Review"} Schedule · ${modal.proposal.leagueName}`}
+            onClose={() => setModal(null)}>
             <SchedulePreview
               preview={modal.proposal}
               league={db.leagues[modal.proposal.leagueId]}

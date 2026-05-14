@@ -18,8 +18,8 @@ const CAPTIONS = {
   null:  "Tap to let your court know if you're playing.",
   in:    "✓ You're confirmed for this week.",
   maybe: "? Heads-up to the commissioner — your spot stays held.",
-  sub:   "↔ Your sub will play your spot. This week won't count toward your standings.",
-  out:   "✗ You'll be removed from this week's courts. This week won't count toward your standings.",
+  sub:   "↔ Your sub plays — this week won't count toward your standings.",
+  out:   "✗ You're sitting out — this week won't count toward your standings.",
 };
 
 export function CheckInRow({ current, currentSubName, onSet, isLocked }) {

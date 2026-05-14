@@ -83,8 +83,8 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
       return {
         tone: "info",
         title: `Schedule generated · ${realWeeksCount} of ${league.weeks} weeks · ${totalMatches} matches.`,
-        hint: "Regenerating will reshuffle court assignments and clear any entered scores.",
-        action: { label: "Regenerate" },
+        hint: "Replacing the schedule will reshuffle court assignments and clear any entered scores.",
+        action: { label: "Replace Schedule" },
       };
     }
     // Ladder
