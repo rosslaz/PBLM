@@ -140,7 +140,35 @@ export function assignBalancedCourts(shuffledPlayers, sizes, playerGenders) {
   return groups;
 }
 
+// ─── Build a single court's matches ─────────────────────────────────────────
+// Used both by the master generator (initial schedule) and by the schedule
+// preview editor (recomputing matches after the commissioner moves players
+// between courts). The function is intentionally stateless — it doesn't
+// touch any opponent-frequency tracking — so it can be called any number of
+// times for the same week/court without side effects.
+//
+// `weekNum` is 1-indexed (matches the convention used elsewhere — week 1
+// for the first week of the season). `courtIdx` is 0-indexed.
+export function buildCourtMatches(group, weekNum, courtIdx, format, dateStr) {
+  const isDoubles = format === "Doubles" || format === "Mixed Doubles";
+  const raw = isDoubles
+    ? doublesMatches(group, weekNum * 1009 + courtIdx * 7 + 13)
+    : singlesMatches(group);
+  return raw.map((m, mi) => ({
+    id: `w${weekNum}_c${courtIdx}_m${mi}`,
+    ...m,
+    week: weekNum,
+    court: courtName(courtIdx),
+    date: dateStr,
+    format: isDoubles ? "doubles" : "singles",
+  }));
+}
+
 // ─── Master schedule generator (for mixer leagues) ──────────────────────────
+// Builds the entire season at once. Per-week-per-court edits are handled at
+// the preview-modal level — they're applied to the proposal in memory and
+// the algorithm here doesn't re-run after them. So this function has no
+// "starting groups" parameter; it always runs from scratch.
 export function generateCourtSchedule(playerIds, weeks, startDate, format = "Singles", numCourts = 4, playerGenders = {}) {
   const n = playerIds.length;
   const sizes = distributePlayersToCourts(n, numCourts);

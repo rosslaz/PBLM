@@ -143,3 +143,34 @@ export function playerFitsLeagueGender(playerGender, leagueGender) {
   if (g === "Women's") return playerGender !== "Male";
   return true; // unrecognized league gender → permissive default
 }
+
+// ─── Phone number helpers ──────────────────────────────────────────────────
+// Light handling — North America-friendly without being strict about it.
+// We don't try to truly validate international numbers; we just want the
+// commissioner to be able to copy a roster's worth of numbers into a
+// messaging app to spin up a group thread.
+//
+// digitsOnly: strip everything that isn't 0-9. Used for the canonical form
+//   stored in the DB and copied to the clipboard.
+// formatPhone: best-effort pretty display. (248) 555-1234 for 10-digit
+//   North American numbers; falls back to the raw input otherwise.
+// isValidPhone: 10+ digits — strict enough to catch obvious nonsense,
+//   loose enough not to reject international entries.
+export function digitsOnly(s) {
+  return String(s || "").replace(/\D/g, "");
+}
+export function isValidPhone(s) {
+  return digitsOnly(s).length >= 10;
+}
+export function formatPhone(s) {
+  const d = digitsOnly(s);
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  if (d.length === 11 && d[0] === "1") {
+    return `+1 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  // Anything else (international, malformed) → return as-entered so the
+  // commissioner can read what's there and fix it manually if needed.
+  return String(s || "");
+}

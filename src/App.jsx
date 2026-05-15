@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 import { SUPER_ADMIN, COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
-import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender } from "./lib/format.js";
+import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender, formatPhone } from "./lib/format.js";
 import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail } from "./lib/session.js";
 import {
   supabase, loadDB, defaultDB,
@@ -26,6 +26,7 @@ import { LeagueForm } from "./components/LeagueForm.jsx";
 import { EditWeekForm } from "./components/EditWeekForm.jsx";
 import { ScoreForm } from "./components/ScoreForm.jsx";
 import { AddPlayerToLeague } from "./components/AddPlayerToLeague.jsx";
+import { LeagueContactsModal } from "./components/LeagueContactsModal.jsx";
 import { LeagueDetail } from "./components/LeagueDetail.jsx";
 import { AdminsTab } from "./components/AdminsTab.jsx";
 import { TrashTab } from "./components/TrashTab.jsx";
@@ -551,6 +552,8 @@ export default function App() {
     const isFirstWeek = realWeeks.length === 0;
     if (isFirstWeek) {
       // Week 1 is random; a retry generates a fresh seed and reshuffles.
+      // Manual edits to court assignments are applied by the preview modal
+      // in memory — they don't need to feed back into this function.
       const seed = (seedOverride ?? (Date.now() & 0xffffffff));
       const shuffled = seededShuffle(playerIds, seed);
       if (league.format === "Mixed Doubles") {
@@ -755,7 +758,10 @@ export default function App() {
           lastName: "Player",
           name: `Test${i} Player`,
           email,
-          phone: "",
+          // 248-555-01XX is in NANP's reserved-for-fiction range (any
+          // area code + 555-0100..0199 line numbers). Safe for test data
+          // and stays inside the 10-digit format the validator expects.
+          phone: `248555${String(100 + i - 1).padStart(4, "0")}`,
           gender: i % 2 === 0 ? "Female" : "Male",
           cscMember: false,
         });
@@ -819,6 +825,14 @@ export default function App() {
         {modal?.type === "createLeague" && <Modal title="Create League" onClose={() => setModal(null)}><LeagueForm onSubmit={createLeague} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "editLeague" && <Modal title="Edit League" onClose={() => setModal(null)}><LeagueForm initial={modal.league} onSubmit={d => updateLeague(modal.league.id, d)} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "addPlayerToLeague" && <Modal title="Add Player to League" onClose={() => setModal(null)}><AddPlayerToLeague players={players} leagueId={modal.leagueId} leagueGender={db.leagues[modal.leagueId]?.gender || "Mixed"} existing={getLeagueRegs(modal.leagueId).map(r => r.playerId)} onRegister={registerForLeague} onCreatePlayer={createPlayer} onClose={() => setModal(null)} /></Modal>}
+        {modal?.type === "leagueContacts" && (
+          <Modal title={`Contacts · ${db.leagues[modal.leagueId]?.name || "League"}`} onClose={() => setModal(null)}>
+            <LeagueContactsModal
+              regs={getLeagueRegs(modal.leagueId)}
+              players={db.players}
+              onClose={() => setModal(null)} />
+          </Modal>
+        )}
         {modal?.type === "createPlayer" && <Modal title="Create Player" onClose={() => setModal(null)}><PlayerForm onSubmit={createPlayer} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "editPlayer" && <Modal title="Edit Player" onClose={() => setModal(null)}><PlayerForm initial={modal.player} onSubmit={d => updatePlayer(modal.player.id, d)} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "seedPlayers" && (
@@ -927,7 +941,7 @@ export default function App() {
             <SchedulePreview
               preview={modal.proposal}
               league={db.leagues[modal.proposal.leagueId]}
-              onAccept={() => commitScheduleProposal(modal.proposal)}
+              onAccept={(finalProposal) => commitScheduleProposal(finalProposal)}
               onRetry={retryScheduleProposal}
               onCancel={() => setModal(null)} />
           </Modal>
@@ -1040,6 +1054,7 @@ export default function App() {
             onToggleArchive={() => toggleArchiveLeague(league.id)}
             onGenerate={() => generateSchedule(league.id)}
             onAddPlayer={() => setModal({ type: "addPlayerToLeague", leagueId: league.id })}
+            onShowContacts={() => setModal({ type: "leagueContacts", leagueId: league.id })}
             onRemovePlayer={pid => removePlayer(league.id, pid)}
             onTogglePaid={pid => togglePaid(league.id, pid)}
             onToggleLockWeek={(week) => toggleLockWeek(league.id, week)}
@@ -1154,7 +1169,7 @@ export default function App() {
                               : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Paid in {paidIn} of {totalIn}</span>
                           )}
                         </div>
-                        <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${p.phone}` : ""}</p>
+                        <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${formatPhone(p.phone)}` : ""}</p>
                       </div>
                     </div>
                     <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10 }}>

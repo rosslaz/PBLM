@@ -2,6 +2,7 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { CSC } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
+import { isValidPhone, digitsOnly } from "../lib/format.js";
 
 export function PlayerForm({ onSubmit, onCancel, initial }) {
   const isMobile = useIsMobile();
@@ -25,12 +26,18 @@ export function PlayerForm({ onSubmit, onCancel, initial }) {
     if (!form.firstName.trim()) return alert("First name required");
     if (!form.lastName.trim()) return alert("Last name required");
     if (!form.email.trim()) return alert("Email required");
+    if (!form.phone.trim()) return alert("Phone number required");
+    if (!isValidPhone(form.phone)) return alert("Please enter a valid phone number (at least 10 digits).");
     if (!form.gender) return alert("Please select a gender");
-    // Also write the derived name for any legacy code paths that still read it
+    // Store the digits-only canonical form. Display formatting happens at
+    // render time via formatPhone. This keeps copy-to-clipboard and any
+    // future SMS/WhatsApp links consistent regardless of how the user
+    // typed the number ("(248) 555-1234" vs "248-555-1234" vs "2485551234").
     onSubmit({
       ...form,
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
+      phone: digitsOnly(form.phone),
       name: `${form.firstName.trim()} ${form.lastName.trim()}`,
     });
   }
@@ -41,7 +48,7 @@ export function PlayerForm({ onSubmit, onCancel, initial }) {
         <div><label style={S.label}>Last Name *</label><input style={S.input} value={form.lastName} onChange={e => set("lastName", e.target.value)} placeholder="Smith" /></div>
       </div>
       <div><label style={S.label}>Email *</label><input style={S.input} type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="jane@email.com" /></div>
-      <div><label style={S.label}>Phone Number</label><input style={S.input} type="tel" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" /></div>
+      <div><label style={S.label}>Phone Number *</label><input style={S.input} type="tel" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" /></div>
       <div>
         <label style={S.label}>Gender *</label>
         <select style={S.input} value={form.gender} onChange={e => set("gender", e.target.value)}>

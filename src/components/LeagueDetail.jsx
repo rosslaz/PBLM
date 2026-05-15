@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { S, genderBadgeStyle } from "../styles.js";
 import { COLORS, COURT_COLORS, MAX_PER_COURT, MIN_PER_COURT, courtNames } from "../lib/constants.js";
-import { formatDate, formatPlayerName, playerFullName, playerInitial } from "../lib/format.js";
+import { formatDate, formatPlayerName, playerFullName, playerInitial, formatPhone } from "../lib/format.js";
 import { useIsMobile, buildDisplayWeeks } from "../lib/session.js";
 import { distributePlayersToCourts } from "../lib/scheduling.js";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { EmptyState } from "./ui.jsx";
 
-export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn }) {
+export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onShowContacts, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn }) {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState("schedule");
   const c = COLORS[league.color] || COLORS.csc;
@@ -256,9 +256,19 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
 
         {tab === "players" && (
           <div>
-            <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
               <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-secondary)" }}>{n} registered · {paidCount} paid</p>
-              <button style={{ ...S.btn("primary"), background: c.bg }} onClick={onAddPlayer}>+ Add Player</button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {/* Pulls up phone numbers for the league with copy-all,
+                    so the commissioner can paste into WhatsApp/iMessage
+                    when setting up a group thread. */}
+                {regs.length > 0 && (
+                  <button style={S.btn("secondary")} onClick={onShowContacts}>
+                    📞 Contacts
+                  </button>
+                )}
+                <button style={{ ...S.btn("primary"), background: c.bg }} onClick={onAddPlayer}>+ Add Player</button>
+              </div>
             </div>
             {regs.length === 0 && <EmptyState msg="No players yet. Add players to start building the roster." />}
             {regs.map(r => {
@@ -275,7 +285,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                         {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC</span>}
                         {r.paid ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid</span> : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Unpaid</span>}
                       </div>
-                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${p.phone}` : ""}</p>
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{p.email}{p.phone ? ` · ${formatPhone(p.phone)}` : ""}</p>
                     </div>
                   </div>
                   <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
