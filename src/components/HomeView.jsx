@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { S } from "../styles.js";
 import { CSC, COLORS, SPACE } from "../lib/constants.js";
-import { formatDate, playerFullName, playerInitial } from "../lib/format.js";
+import { formatDate, playerFullName, playerInitial, todayISO } from "../lib/format.js";
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
 import { Toast, Modal, VersionFooter, PWAInstallBanner } from "./ui.jsx";
 import { PlayerForm } from "./PlayerForm.jsx";
@@ -195,12 +195,24 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
               const lc = COLORS[l.color] || COLORS.csc;
               const regs = Object.values(db.registrations).filter(r => r.leagueId === l.id);
               const archived = l.status === "archived";
+              // "Pre-start" = today is earlier than the league's start date.
+              // Before the league actually begins, the description is
+              // useful context for prospective players. Once play begins,
+              // the description becomes noise and the focus shifts to
+              // the schedule.
+              const hasStarted = l.startDate && l.startDate <= todayISO();
+              const showDescription = !hasStarted && l.description && l.description.trim();
               return (
                 <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, marginBottom: 8, opacity: archived ? 0.6 : 1 }}>
                   <div style={S.row}>
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
                       <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>{l.gender || "Mixed"} · {regs.length} players · {l.weeks} weeks · Starts {formatDate(l.startDate)}</p>
+                      {showDescription && (
+                        <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+                          {l.description}
+                        </p>
+                      )}
                     </div>
                     <span style={S.badge(l.status==="active"?"success":l.status==="archived"?"warning":"info")}>{l.status==="archived"?"📦 archived":l.status||"open"}</span>
                   </div>

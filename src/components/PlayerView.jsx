@@ -468,7 +468,14 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
               const completedWeeks = allWeeks.filter(w => w.date && w.date < today).length;
               const totalWeeks = selectedLeague.weeks || allWeeks.length;
               const weeksLeft = Math.max(0, totalWeeks - completedWeeks);
-              const showProgress = totalWeeks > 0 && selectedLeague.status !== "archived";
+              // Only show the progress banner once a week has actually
+              // passed — pre-start, "Week 1 of 8 · 8 weeks left" duplicates
+              // info the schedule itself shows below and reads as noise.
+              // Archived leagues also skip (the archive banner is the
+              // more important signal).
+              const showProgress = totalWeeks > 0
+                && completedWeeks > 0
+                && selectedLeague.status !== "archived";
               return (
                 <div>
                   <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--color-text-secondary)" }}>Your matches in <b>{selectedLeague.name}</b></p>
@@ -477,9 +484,11 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
                       📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
                     </div>
                   )}
-                  {/* Season-at-a-glance summary. Hidden for archived leagues
-                      (the archive banner is the more important signal there)
-                      and for empty schedules (no weeks to summarize). */}
+                  {/* Season-at-a-glance summary. Appears once the first
+                      week has passed — pre-start, the schedule below
+                      already conveys the same info without redundancy.
+                      Hidden for archived leagues (the archive banner is
+                      the more important signal there). */}
                   {showProgress && currentWeek && (
                     <div style={{
                       display: "flex", alignItems: "center", justifyContent: "space-between",

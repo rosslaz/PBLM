@@ -65,6 +65,15 @@ export function LeagueRegistrationCard({ league, regs, players, onSelect }) {
           📍 {league.location}
         </p>
       )}
+      {/* Description: helps the player decide whether this league fits.
+          Only shown when set — otherwise the card stays compact. The card
+          itself is only rendered for open-registration leagues, so this
+          surface is by definition pre-start. */}
+      {league.description && league.description.trim() && (
+        <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+          {league.description}
+        </p>
+      )}
       {/* Roster preview */}
       {previewNames.length > 0 && (
         <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
