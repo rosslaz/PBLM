@@ -28,6 +28,12 @@ export function CSCMark({ size = 32, style }) {
 }
 export const PickleballIcon = CSCMark;
 
+// Module-level counter for nested/overlapping modal opens. Used by the
+// Modal scroll-lock effect to ensure the body unlocks only when the last
+// modal closes. Decoupled from React state so the value persists across
+// remounts and isn't subject to closure capture surprises.
+let modalOpenCount = 0;
+
 // Modal renders an overlay + sheet. On desktop it centers; on mobile (≤640px)
 // it pins to the bottom and slides up — the bottom-sheet pattern, defined in
 // index.css. The grab handle above the title shows on mobile only and is
@@ -43,11 +49,24 @@ export function Modal({ title, onClose, children }) {
 
   // Lock body scroll while open. Without this, the page underneath can be
   // scrolled which feels wrong — especially with the bottom-sheet pattern
-  // where the sheet itself is the scrollable surface. Restore on unmount.
+  // where the sheet itself is the scrollable surface. Uses a global
+  // open-count so two modals (one above the other) coexist correctly: the
+  // body unlocks only when the last modal closes. Restoring an empty
+  // string (rather than the previously captured value) avoids the
+  // "captures hidden, leaves it hidden permanently" failure that could
+  // otherwise lock the page indefinitely if cleanup paths interleaved.
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    if (typeof document === "undefined") return;
+    modalOpenCount += 1;
+    if (modalOpenCount === 1) {
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      modalOpenCount = Math.max(0, modalOpenCount - 1);
+      if (modalOpenCount === 0) {
+        document.body.style.overflow = "";
+      }
+    };
   }, []);
 
   return (
@@ -363,6 +382,27 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
   const startY = useRef(null);
   const startX = useRef(null);
   const horizontalLock = useRef(false);
+  // Mirror of pullDistance for use inside the touchmove handler. Reading
+  // state directly inside the handler would either force the effect to
+  // re-run on every pixel of pull (which was causing scroll to break on
+  // mobile — listeners got torn down and re-added mid-gesture, occasionally
+  // missing the touchend and leaving startY pinned), or capture a stale
+  // value. The ref tracks the live value without re-mounting the effect.
+  const pullDistanceRef = useRef(0);
+  // Also mirror isRefreshing for the same reason — its changes shouldn't
+  // remount the effect mid-scroll.
+  const isRefreshingRef = useRef(isRefreshing);
+  useEffect(() => { isRefreshingRef.current = isRefreshing; }, [isRefreshing]);
+  // Keep onRefresh fresh without forcing the effect to remount when the
+  // parent supplies a new function reference each render.
+  const onRefreshRef = useRef(onRefresh);
+  useEffect(() => { onRefreshRef.current = onRefresh; }, [onRefresh]);
+
+  // Wrap setPullDistance so the ref stays in lockstep with state.
+  const updatePull = (v) => {
+    pullDistanceRef.current = v;
+    setPullDistance(v);
+  };
 
   useEffect(() => {
     // Only set up listeners on touch devices. Desktops have the refresh
@@ -376,9 +416,6 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
         startY.current = null;
         return;
       }
-      // Don't start tracking inside scrollable containers that are above
-      // their own scrollTop=0 — but that's hard to detect cheaply. We rely
-      // on the horizontal-lock check below to bail out for tab-row swipes.
       startY.current = e.touches[0].clientY;
       startX.current = e.touches[0].clientX;
       horizontalLock.current = false;
@@ -386,26 +423,26 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
 
     function onTouchMove(e) {
       if (startY.current === null) return;
-      if (isRefreshing) return; // ignore additional pulls during refresh
+      if (isRefreshingRef.current) return; // ignore additional pulls during refresh
       const dy = e.touches[0].clientY - startY.current;
       const dx = e.touches[0].clientX - startX.current;
       // If the gesture is clearly horizontal, abandon — the user is
       // swiping the league-tabs row or similar horizontal scroller.
       if (!horizontalLock.current && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8) {
         horizontalLock.current = true;
-        setPullDistance(0);
+        if (pullDistanceRef.current !== 0) updatePull(0);
         return;
       }
       if (horizontalLock.current) return;
       if (dy <= 0) {
         // Dragging up — reset.
-        if (pullDistance !== 0) setPullDistance(0);
+        if (pullDistanceRef.current !== 0) updatePull(0);
         return;
       }
       // Apply a damping factor so the further you pull, the harder it gets —
       // mimics native PTR feel.
       const damped = Math.min(PULL_MAX, dy * 0.55);
-      setPullDistance(damped);
+      updatePull(damped);
       // Block iOS rubber-band only when we're actively pulling and the
       // page is at the top. preventDefault must be called on a non-passive
       // listener; we use { passive: false } below.
@@ -417,15 +454,16 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
     function onTouchEnd() {
       if (startY.current === null) return;
       startY.current = null;
-      if (pullDistance >= PULL_THRESHOLD && !isRefreshing) {
+      const final = pullDistanceRef.current;
+      if (final >= PULL_THRESHOLD && !isRefreshingRef.current) {
         setCommitting(true);
-        Promise.resolve(onRefresh?.()).finally(() => {
+        Promise.resolve(onRefreshRef.current?.()).finally(() => {
           setCommitting(false);
-          setPullDistance(0);
+          updatePull(0);
         });
       } else {
         // Released before threshold — snap back.
-        setPullDistance(0);
+        updatePull(0);
       }
     }
 
@@ -440,7 +478,9 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
       document.removeEventListener("touchend", onTouchEnd);
       document.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [pullDistance, isRefreshing, onRefresh]);
+    // Empty deps — listeners mount once and use refs for live state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const visible = pullDistance > 0 || isRefreshing || committing;
   const ready = pullDistance >= PULL_THRESHOLD;
