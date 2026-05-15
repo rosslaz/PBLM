@@ -479,6 +479,23 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
               return (
                 <div>
                   <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--color-text-secondary)" }}>Your matches in <b>{selectedLeague.name}</b></p>
+                  {/* League description. Shown only before any week has
+                      completed — same gate as the season-progress banner
+                      below, just inverted. After play begins, the
+                      description becomes noise and the schedule is the
+                      main attraction. */}
+                  {completedWeeks === 0 && selectedLeague.description && selectedLeague.description.trim() && (
+                    <div style={{
+                      padding: "12px 14px", marginBottom: 12,
+                      background: "var(--color-background-secondary)",
+                      border: "0.5px solid var(--color-border-tertiary)",
+                      borderRadius: 8,
+                      fontSize: 13, color: "var(--color-text-primary)",
+                      lineHeight: 1.5, whiteSpace: "pre-wrap",
+                    }}>
+                      {selectedLeague.description}
+                    </div>
+                  )}
                   {selectedLeague.status === "archived" && (
                     <div style={{ padding: "12px 16px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
                       📦 This league has been archived. Your matches are visible for reference, but scores and check-ins can no longer be edited.
