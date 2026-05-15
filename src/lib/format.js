@@ -124,3 +124,22 @@ export function isPastWeek(weekDate) {
   if (!weekDate) return false;
   return weekDate < todayISO();
 }
+
+// ─── Gender eligibility ────────────────────────────────────────────────────
+// True when a player can join a league based on the league's gender setting.
+// "Mixed" leagues accept anyone; "Men's" rejects only players known to be
+// Female; "Women's" rejects only players known to be Male. Players with no
+// gender on file (legacy records before gender was required) pass through
+// every filter — the commissioner can see and decide. Used by both the
+// commissioner's add-player flow and the player's join-league flow so the
+// rule stays in one place.
+export function playerFitsLeagueGender(playerGender, leagueGender) {
+  const g = leagueGender || "Mixed";
+  if (g === "Mixed") return true;
+  // Be permissive when player gender isn't recorded — legacy data shouldn't
+  // disappear silently. Only filter out the explicit opposite gender.
+  if (!playerGender) return true;
+  if (g === "Men's") return playerGender !== "Female";
+  if (g === "Women's") return playerGender !== "Male";
+  return true; // unrecognized league gender → permissive default
+}

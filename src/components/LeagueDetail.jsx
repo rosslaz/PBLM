@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { S } from "../styles.js";
+import { S, genderBadgeStyle } from "../styles.js";
 import { COLORS, COURT_COLORS, MAX_PER_COURT, MIN_PER_COURT, courtNames } from "../lib/constants.js";
 import { formatDate, formatPlayerName, playerFullName, playerInitial } from "../lib/format.js";
 import { useIsMobile, buildDisplayWeeks } from "../lib/session.js";
@@ -271,7 +271,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                         <p style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>{formatPlayerName(p)}</p>
-                        {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
+                        {p.gender && <span style={{ ...genderBadgeStyle(p.gender), fontSize: 10 }}>{p.gender}</span>}
                         {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC</span>}
                         {r.paid ? <span style={{ ...S.badge("success"), fontSize: 10 }}>Paid</span> : <span style={{ ...S.badge("warning"), fontSize: 10 }}>Unpaid</span>}
                       </div>

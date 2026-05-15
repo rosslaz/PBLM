@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 import { SUPER_ADMIN, COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
-import { formatDate, formatPlayerName, playerInitial } from "./lib/format.js";
+import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender } from "./lib/format.js";
 import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail } from "./lib/session.js";
 import {
   supabase, loadDB, defaultDB,
@@ -18,7 +18,7 @@ import {
   distributePlayersToCourts, seededShuffle, singlesMatches, doublesMatches,
   generateCourtSchedule, assignBalancedCourts, laddderRotate, buildLadderWeek,
 } from "./lib/scheduling.js";
-import { S } from "./styles.js";
+import { S, genderBadgeStyle } from "./styles.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { PlayerForm } from "./components/PlayerForm.jsx";
@@ -818,7 +818,7 @@ export default function App() {
         {scoreModal}
         {modal?.type === "createLeague" && <Modal title="Create League" onClose={() => setModal(null)}><LeagueForm onSubmit={createLeague} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "editLeague" && <Modal title="Edit League" onClose={() => setModal(null)}><LeagueForm initial={modal.league} onSubmit={d => updateLeague(modal.league.id, d)} onCancel={() => setModal(null)} /></Modal>}
-        {modal?.type === "addPlayerToLeague" && <Modal title="Add Player to League" onClose={() => setModal(null)}><AddPlayerToLeague players={players} leagueId={modal.leagueId} existing={getLeagueRegs(modal.leagueId).map(r => r.playerId)} onRegister={registerForLeague} onCreatePlayer={createPlayer} onClose={() => setModal(null)} /></Modal>}
+        {modal?.type === "addPlayerToLeague" && <Modal title="Add Player to League" onClose={() => setModal(null)}><AddPlayerToLeague players={players} leagueId={modal.leagueId} leagueGender={db.leagues[modal.leagueId]?.gender || "Mixed"} existing={getLeagueRegs(modal.leagueId).map(r => r.playerId)} onRegister={registerForLeague} onCreatePlayer={createPlayer} onClose={() => setModal(null)} /></Modal>}
         {modal?.type === "createPlayer" && <Modal title="Create Player" onClose={() => setModal(null)}><PlayerForm onSubmit={createPlayer} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "editPlayer" && <Modal title="Edit Player" onClose={() => setModal(null)}><PlayerForm initial={modal.player} onSubmit={d => updatePlayer(modal.player.id, d)} onCancel={() => setModal(null)} /></Modal>}
         {modal?.type === "seedPlayers" && (
@@ -1144,7 +1144,7 @@ export default function App() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 4 }}>
                           <p style={{ margin: 0, fontWeight: 600 }}>{formatPlayerName(p)}</p>
-                          {p.gender && <span style={{ ...S.badge("info"), fontSize: 10 }}>{p.gender}</span>}
+                          {p.gender && <span style={{ ...genderBadgeStyle(p.gender), fontSize: 10 }}>{p.gender}</span>}
                           {p.cscMember && <span style={{ ...S.badge("success"), fontSize: 10 }}>CSC Member</span>}
                           {/* Per-league payment summary. No badge if the
                               player isn't in any live leagues. */}
@@ -1206,15 +1206,12 @@ export default function App() {
     const myLeagues = sortLeagues(
       myRegs.map(r => db.leagues[r.leagueId]).filter(l => l && !isTrashed(l))
     );
-    const playerGender = currentPlayer.gender;
     const unregistered = leagues.filter(l => {
       if (myRegs.find(r => r.leagueId === l.id)) return false;
       if ((l.status || "open") !== "open") return false;
-      const leagueGender = l.gender || "Mixed";
-      if (leagueGender === "Mixed") return true;
-      if (leagueGender === "Men's") return playerGender === "Male";
-      if (leagueGender === "Women's") return playerGender === "Female";
-      return false;
+      // Shared with the commissioner's add-player flow so both surfaces
+      // apply the same gender rule.
+      return playerFitsLeagueGender(currentPlayer.gender, l.gender);
     }).sort((a, b) => {
       // Earliest start date first. Leagues missing a startDate go last so the
       // common case (well-formed leagues) reads top-to-bottom chronologically.

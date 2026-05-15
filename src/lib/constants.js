@@ -11,7 +11,7 @@
 //   - Major (x.0.0): reserved for the 1.0 milestone (per Ross's direction)
 // Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "0.12.4",
+  version: "0.12.5",
   createdBy: "Ross Lazar",
   // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
   // modal don't have to decode the acronym.

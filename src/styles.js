@@ -51,8 +51,21 @@ export const S = {
     // Subtle hover hint for the inactive tabs on devices that hover
     transition: "background-color 120ms ease, color 120ms ease",
   }),
-  badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"], purple: ["#EEEDFE","#534AB7"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: `2px ${SPACE.sm}px`, fontSize: 11, fontWeight: 600, display: "inline-block" }; },
+  badge: (type) => { const m = { success: ["#EAF3DE","#3B6D11"], warning: ["#FAEEDA","#854F0B"], danger: ["#FCEBEB","#A32D2D"], info: ["#E6F1FB","#185FA5"], purple: ["#EEEDFE","#534AB7"], pink: ["#FCE7F0","#A03968"] }; const [bg, c] = m[type] || m.info; return { background: bg, color: c, borderRadius: 999, padding: `2px ${SPACE.sm}px`, fontSize: 11, fontWeight: 600, display: "inline-block" }; },
   // Modal styles moved to index.css (.modal-overlay, .modal-sheet, .modal-handle).
   // The Modal component in ui.jsx applies those classes so the bottom-sheet
   // behavior on mobile comes from media queries rather than JS branching.
 };
+
+// ─── Gender badge ─────────────────────────────────────────────────────────
+// Returns the badge style for a player's gender — Male reads as blue (info),
+// Female as pink. Centralized so all three places that render the badge
+// (commissioner player list, add-to-league modal, in-league player list)
+// stay in sync. Falls back to the neutral info-blue style for any unknown
+// gender value so the badge still renders cleanly on legacy/malformed
+// records. Callers should still gate on `p.gender` truthiness — this only
+// handles "set but unrecognized."
+export function genderBadgeStyle(gender) {
+  if (gender === "Female") return S.badge("pink");
+  return S.badge("info");
+}
