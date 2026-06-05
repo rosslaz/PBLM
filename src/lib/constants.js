@@ -11,7 +11,7 @@
 // Surfaced in the About modal (accessible from the avatar menu). Update on
 // every release. Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "1.2.0",
+  version: "1.3.0",
   createdBy: "Ross Lazar",
   // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
   // modal don't have to decode the acronym.

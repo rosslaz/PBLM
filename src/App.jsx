@@ -18,6 +18,7 @@ import {
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
   dbToggleLockWeek, dbSetCheckIn,
   dbAddClubAdmin, dbRemoveClubAdmin, dbCreateMembership, dbCreateClub,
+  dbUpdateClub,
 } from "./lib/supabase.js";
 import {
   distributePlayersToCourts, seededShuffle, singlesMatches, doublesMatches,
@@ -34,6 +35,8 @@ import { AddPlayerToLeague } from "./components/AddPlayerToLeague.jsx";
 import { LeagueContactsModal } from "./components/LeagueContactsModal.jsx";
 import { LeagueDetail } from "./components/LeagueDetail.jsx";
 import { AdminsTab } from "./components/AdminsTab.jsx";
+import { ClubSettingsTab } from "./components/ClubSettingsTab.jsx";
+import { ClubSwitcher } from "./components/ClubSwitcher.jsx";
 import { TrashTab } from "./components/TrashTab.jsx";
 import { SchedulePreview } from "./components/SchedulePreview.jsx";
 import { HomeView } from "./components/HomeView.jsx";
@@ -265,6 +268,28 @@ export default function App() {
   const clubMemberIds = activeClubId
     ? getClubMemberIds(db.memberships || {}, activeClubId)
     : new Set();
+
+  // Phase 4 / v1.3.0 — list of clubs accessible to the current session,
+  // used by the club switcher in the header. Combines membership clubs
+  // (for players) with owner/admin clubs (for commissioners). A user who
+  // is both a member and an admin of the same club only appears once.
+  // Deleted clubs are filtered out by the underlying helpers.
+  const accessibleClubs = (() => {
+    const out = [];
+    if (currentPlayer) {
+      getClubsForPlayer(db.memberships || {}, db.clubs || {}, currentPlayer.id)
+        .forEach(c => out.push(c));
+    }
+    if (adminEmail) {
+      getClubsWhereAdmin(db.clubs || {}, adminEmail).forEach(c => {
+        if (!out.find(x => x.id === c.id)) out.push(c);
+      });
+    }
+    // Stable display order: alphabetical by name. Matches the player's
+    // mental model better than createdAt, since they'll be picking by
+    // name, not by when the club was made.
+    return out.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  })();
 
   const leagues = allLeagues.filter(l =>
     !isTrashed(l) && (!activeClubId || l.clubId === activeClubId)
@@ -898,6 +923,59 @@ export default function App() {
   // enforce the per-role permissions (any admin can add, only owner can
   // remove). These wrappers are passed to AdminsTab, which is already
   // scoped to the current club by the time it's mounted.
+  // ─── Phase 4 / v1.3.0: club switcher + settings ─────────────────────────
+  // Switch the active club. Used by the header dropdown in both admin and
+  // player views. Caller is responsible for passing a clubId that's
+  // actually accessible to the current user; we defensively validate by
+  // re-checking against memberships / admin-clubs here, since a stale
+  // dropdown could otherwise switch to a club the user no longer belongs
+  // to (e.g. their admin access was revoked from another device).
+  //
+  // Side effects:
+  //   - clears selectedLeague so we don't leave the admin staring at a
+  //     league that doesn't belong to the new club
+  //   - clears the modal in case a club-scoped action was mid-flight
+  //   - the session-persist effect picks up the new activeClubId
+  //     automatically on the next render
+  function switchClub(clubId) {
+    if (!clubId || clubId === activeClubId) return;
+    // Validate the user can actually access this club.
+    const accessible = [];
+    if (currentPlayer) {
+      getClubsForPlayer(db.memberships || {}, db.clubs || {}, currentPlayer.id)
+        .forEach(c => accessible.push(c));
+    }
+    if (adminEmail) {
+      getClubsWhereAdmin(db.clubs || {}, adminEmail).forEach(c => {
+        if (!accessible.find(x => x.id === c.id)) accessible.push(c);
+      });
+    }
+    if (!accessible.find(c => c.id === clubId)) {
+      showToast("That club is no longer available.", "error");
+      return;
+    }
+    setSelectedLeague(null);
+    setModal(null);
+    setActiveClubId(clubId);
+    // Toast tells the user the switch happened — important since the
+    // dropdown closes immediately and they might second-guess that the
+    // click landed.
+    const club = db.clubs[clubId];
+    if (club) showToast(`Switched to ${club.name}.`);
+  }
+
+  // Rename the active club. Admin-gated by the UI (ClubSettingsTab).
+  async function renameClub(newName) {
+    if (!activeClubId) { showToast("No active club selected.", "error"); return; }
+    const trimmed = (newName || "").trim();
+    if (trimmed.length < 2 || trimmed.length > 60) {
+      showToast("Club name must be between 2 and 60 characters.", "error");
+      return;
+    }
+    if (trimmed === db.clubs[activeClubId]?.name) return; // no-op
+    await action(() => dbUpdateClub(activeClubId, { name: trimmed }), `Club renamed to "${trimmed}".`);
+  }
+
   async function addAdminEmail(email) {
     if (!email.trim()) return;
     if (!activeClubId) { showToast("No active club.", "error"); return; }
@@ -1222,7 +1300,13 @@ export default function App() {
         <div style={S.header(league ? c.bg : undefined)} className="pwa-safe-top pwa-safe-x">
           <div style={S.row}>
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
-            <h1 style={S.logo}>{league ? league.name : "Commissioner Panel"}</h1>
+            {league
+              ? <h1 style={S.logo}>{league.name}</h1>
+              : <ClubSwitcher
+                  clubs={accessibleClubs.filter(cl => isClubAdmin(cl, adminEmail))}
+                  activeClubId={activeClubId}
+                  onSwitch={switchClub}
+                  subtitle="Commissioner Panel" />}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span>
@@ -1262,7 +1346,7 @@ export default function App() {
         ) : (
           <>
             <div style={S.tabBar}>
-              {[["leagues","Leagues"],["players","Players"],["admins","Commissioners"],["trash","Trash"]].map(([k,label]) => {
+              {[["leagues","Leagues"],["players","Players"],["admins","Commissioners"],["settings","Settings"],["trash","Trash"]].map(([k,label]) => {
                 const showCount = k === "trash" && (trashedLeagues.length + trashedPlayers.length) > 0;
                 return (
                   <button key={k} style={S.tab(adminTab===k)} onClick={() => setAdminTab(k)}>
@@ -1391,6 +1475,14 @@ export default function App() {
                 onRemove={removeAdminEmail}
               />
             )}
+            {adminTab === "settings" && (
+              <ClubSettingsTab
+                club={activeClub}
+                isAdmin={isClubAdmin(activeClub, adminEmail)}
+                isOwner={isClubOwner(activeClub, adminEmail)}
+                onRename={renameClub}
+              />
+            )}
             {adminTab === "trash" && (
               <TrashTab
                 trashedLeagues={trashedLeagues}
@@ -1442,7 +1534,10 @@ export default function App() {
     });
     return (
       <ActionPendingProvider value={currentActionId}>
-        <PlayerView db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
+        <PlayerView key={activeClubId || "no-club"}
+          db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
+          accessibleClubs={getClubsForPlayer(db.memberships || {}, db.clubs || {}, currentPlayer.id)}
+          activeClubId={activeClubId} onSwitchClub={switchClub}
           playerTab={playerTab} setPlayerTab={setPlayerTab} modal={modal} setModal={setModal} toast={toast}
           getLeagueSchedule={getLeagueSchedule} getScore={getScore} getPlayerName={getPlayerName}
           getStandings={getStandings} registerForLeague={registerForLeague} submitScore={submitScore} submitScoreInline={submitScoreInline}
