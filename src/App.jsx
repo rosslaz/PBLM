@@ -297,8 +297,18 @@ export default function App() {
   // A player belongs to the active club iff there's a live membership row.
   // Players without a club membership are filtered out of the roster but
   // still resolvable via db.players[id].
+  //
+  // BUGFIX (v1.3.0): when no club is active (home screen, pre-login), we
+  // fall back to ALL non-trashed players. Without this, `players` is empty
+  // on the home screen and HomeView's email-login lookup fails for every
+  // address — which is the symptom that showed up as "No player found with
+  // that email" right after Phase 2 shipped. The fallback parallels how
+  // `leagues` above gracefully includes everything when activeClubId is
+  // null. Once the user logs in, activeClubId becomes set and we narrow
+  // back to the active club's roster, which is correct for the
+  // commissioner Players tab.
   const players = allPlayers.filter(p =>
-    !isTrashed(p) && clubMemberIds.has(p.id)
+    !isTrashed(p) && (!activeClubId || clubMemberIds.has(p.id))
   );
   // Trash views are scoped to the active club too — a CSC admin doesn't
   // see BTC's trashed leagues or players.
