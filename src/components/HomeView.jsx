@@ -5,8 +5,10 @@ import { formatDate, playerFullName, playerInitial, todayISO } from "../lib/form
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
 import { Toast, Modal, VersionFooter, PWAInstallBanner } from "./ui.jsx";
 import { PlayerForm } from "./PlayerForm.jsx";
+import { CreateClubModal } from "./CreateClubModal.jsx";
+import { JoinClubModal } from "./JoinClubModal.jsx";
 
-export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, toast, modal, setModal, registerForLeague }) {
+export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, onCreateClub, onJoinClub, toast, modal, setModal, registerForLeague }) {
   // Pre-fill the email input with the last-used email on this device. Even
   // after explicit logout this remains, so coming back to log in is at most
   // one tap if the saved email matches a player.
@@ -74,6 +76,21 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
           <PlayerForm
             initial={loginEmail ? { email: loginEmail } : undefined}
             onSubmit={handleCreatePlayer}
+            onCancel={() => setModal(null)} />
+        </Modal>
+      )}
+      {modal?.type === "createClub" && (
+        <Modal title="Create a Club" onClose={() => setModal(null)}>
+          <CreateClubModal
+            onSubmit={({ clubName, playerData }) => onCreateClub({ clubName, playerData })}
+            onCancel={() => setModal(null)} />
+        </Modal>
+      )}
+      {modal?.type === "joinClub" && (
+        <Modal title="Join with a Code" onClose={() => setModal(null)}>
+          <JoinClubModal
+            db={db}
+            onSubmit={(payload) => onJoinClub(payload)}
             onCancel={() => setModal(null)} />
         </Modal>
       )}
@@ -166,7 +183,7 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
               }}>
                 <p style={{ margin: 0 }}>No player found with that email.</p>
                 <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12 }}>
-                  Ask your club's commissioner to add you, or to share the club's join code.
+                  Got a join code from your club? Use the link below to join.
                 </p>
               </div>
             )}
@@ -175,6 +192,50 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
             </div>
           </div>
         )}
+
+        {/* Compact "Create / Join" affordance. Sits below the login card
+            and above any leagues list. The intentionally subdued styling
+            keeps it from competing with the primary login path for the
+            99%-case (existing CSC players signing in), while still being
+            present for the two real cases it serves:
+            1. A brand-new visitor with no account anywhere.
+            2. An existing player who got invited to a second club and
+               needs to join it (after logging out). */}
+        <div style={{
+          padding: `${SPACE.md}px ${SPACE.lg}px`,
+          marginBottom: SPACE.lg,
+          background: "var(--color-background-primary)",
+          border: "0.5px solid var(--color-border-tertiary)",
+          borderRadius: 8,
+          textAlign: "center",
+          fontSize: 13,
+          color: "var(--color-text-secondary)",
+        }}>
+          <span>New here? </span>
+          <button
+            type="button"
+            onClick={() => setModal({ type: "createClub" })}
+            style={{
+              background: "none", border: "none", padding: 0,
+              color: CSC.blue, textDecoration: "underline",
+              cursor: "pointer", fontFamily: "inherit", fontSize: 13,
+              fontWeight: 600,
+            }}>
+            Create a club
+          </button>
+          <span style={{ margin: `0 ${SPACE.xs}px`, color: "var(--color-text-tertiary)" }}>·</span>
+          <button
+            type="button"
+            onClick={() => setModal({ type: "joinClub" })}
+            style={{
+              background: "none", border: "none", padding: 0,
+              color: CSC.blue, textDecoration: "underline",
+              cursor: "pointer", fontFamily: "inherit", fontSize: 13,
+              fontWeight: 600,
+            }}>
+            Join with a code
+          </button>
+        </div>
 
         {leagues.length > 0 && (
           <div>

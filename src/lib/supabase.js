@@ -459,6 +459,42 @@ export async function dbHardDeletePlayer(playerId) {
 // only the owner can REMOVE admins. This prevents a malicious admin
 // from kicking other admins (or the owner) out.
 
+// Phase 3 / v1.2.0 — public club creation. Takes a club name + owner
+// info + a join code (caller generates it client-side so it can show
+// the code in the UI before/after creation). Bumps next_id.club. Returns
+// the new clubId. Does NOT create the owner's player record or their
+// membership — the caller is responsible for sequencing those, because
+// the owner may already exist (e.g. some future "let an existing player
+// create a second club" flow).
+export async function dbCreateClub({ name, ownerEmail, joinCode }) {
+  if (!name?.trim()) throw new Error("dbCreateClub: name is required");
+  if (!ownerEmail?.trim()) throw new Error("dbCreateClub: ownerEmail is required");
+  if (!joinCode?.trim()) throw new Error("dbCreateClub: joinCode is required");
+
+  // Read+bump next_id.club. Same pattern as dbCreatePlayer for player IDs.
+  const nextId = await getCurrentNextId();
+  const clubCounter = nextId.club || 1;
+  const id = `club_${clubCounter}`;
+  const newNextId = { ...nextId, club: clubCounter + 1 };
+
+  const club = {
+    id,
+    name: name.trim(),
+    ownerEmail: ownerEmail.trim().toLowerCase(),
+    adminEmails: [],
+    joinCode: joinCode.trim(),
+    createdAt: new Date().toISOString(),
+  };
+
+  const { error: cErr } = await supabase.from("pb_clubs").upsert({ id, data: club });
+  if (cErr) throw cErr;
+  const { error: nErr } = await supabase
+    .from("pb_config").update({ next_id: newNextId }).eq("id", 1);
+  if (nErr) throw nErr;
+
+  return id;
+}
+
 export async function dbUpdateClub(id, patch) {
   const { data: existing, error: e1 } = await supabase
     .from("pb_clubs").select("data").eq("id", id).single();

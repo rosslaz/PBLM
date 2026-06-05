@@ -74,6 +74,52 @@ export function getClubMemberIds(memberships, clubId) {
   return ids;
 }
 
+// ─── Join-code helpers ───────────────────────────────────────────────────
+// Codes are shared verbally/in emails, so input is permissive: case is
+// folded, whitespace and hyphens are stripped. Storage format is the
+// canonical one we generated (e.g. "CSC-2026-2Q2H"), but the lookup
+// compares the normalized form on both sides.
+
+// Unambiguous alphabet for codes. Excludes I/L/O/0/1 (hand-transcription
+// hazards). Used by generateJoinCode below.
+const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+// Generate a fresh random join code. Format: PREFIX-YEAR-XXXX where XXXX
+// is 4 random chars from the unambiguous alphabet. The prefix is derived
+// from the club name (first 3 alphanumeric chars, uppercased). e.g.
+// "Birmingham Tennis" → "BIR-2026-K7P3"
+export function generateJoinCode(clubName) {
+  const year = new Date().getFullYear();
+  const prefix = (clubName || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 3)
+    .toUpperCase() || "CLB";
+  // 4-char suffix, ~1M unique values per prefix-year. Collision risk is
+  // ignorable at the scale this app expects; if it ever matters we can
+  // add a uniqueness retry loop.
+  let suffix = "";
+  for (let i = 0; i < 4; i++) {
+    const r = Math.floor(Math.random() * JOIN_CODE_ALPHABET.length);
+    suffix += JOIN_CODE_ALPHABET[r];
+  }
+  return `${prefix}-${year}-${suffix}`;
+}
+
+export function normalizeJoinCode(raw) {
+  if (!raw) return "";
+  return String(raw).replace(/[\s-]+/g, "").toUpperCase();
+}
+
+// Find the club whose joinCode matches the given input (permissively).
+// Returns the club record or null. Excludes soft-deleted clubs.
+export function findClubByCode(clubs, code) {
+  const target = normalizeJoinCode(code);
+  if (!target) return null;
+  return Object.values(clubs).find(c =>
+    c && !c.deletedAt && normalizeJoinCode(c.joinCode) === target
+  ) || null;
+}
+
 // ─── Active-club resolution ──────────────────────────────────────────────
 // On login (or session restore), pick which club's data to show first.
 // Priority:

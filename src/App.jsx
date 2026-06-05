@@ -6,7 +6,7 @@ import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail } fro
 import {
   isClubOwner, isClubAdmin,
   getClubsForPlayer, getClubsWhereAdmin, getClubMemberIds,
-  resolveActiveClub,
+  resolveActiveClub, generateJoinCode,
 } from "./lib/clubs.js";
 import {
   supabase, loadDB, defaultDB,
@@ -17,7 +17,7 @@ import {
   dbRegisterForLeague, dbRemovePlayerFromLeague, dbToggleRegPaid,
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
   dbToggleLockWeek, dbSetCheckIn,
-  dbAddClubAdmin, dbRemoveClubAdmin, dbCreateMembership,
+  dbAddClubAdmin, dbRemoveClubAdmin, dbCreateMembership, dbCreateClub,
 } from "./lib/supabase.js";
 import {
   distributePlayersToCourts, seededShuffle, singlesMatches, doublesMatches,
@@ -748,6 +748,92 @@ export default function App() {
     setModal(null);
   }
 
+  // ─── Phase 3 / v1.2.0: home-screen flows ────────────────────────────────
+  // The createClub + joinClub flows are different from createPlayer in that
+  // they run *before* the user has any session — no activeClubId is set yet.
+  // They write all the necessary records (player, club, membership) and
+  // then immediately log the user in and set the active club.
+
+  // Home-screen "Create a Club" — creates the club + the owner's player
+  // record + their membership, then signs the new owner in to their new
+  // club. On any DB error mid-sequence, we surface the error and abort;
+  // partial state (e.g. a player created but no club) is recoverable on
+  // retry (the orphaned player just lives in db.players with no club, and
+  // the next attempt will create everything fresh).
+  async function createClub({ clubName, playerData }) {
+    const joinCode = generateJoinCode(clubName);
+    let newPlayerId = null;
+    let newClubId = null;
+    await action(async () => {
+      // Order matters: create the player first so we have their email
+      // confirmed in storage before we attach them as the club's owner.
+      // If club-create fails after this, the player exists but is in no
+      // club — they'd hit the "no clubs" empty state on next login.
+      newPlayerId = await dbCreatePlayer(playerData);
+      newClubId = await dbCreateClub({
+        name: clubName,
+        ownerEmail: playerData.email,
+        joinCode,
+      });
+      await dbCreateMembership(newClubId, newPlayerId);
+    });
+    if (!newPlayerId || !newClubId) {
+      // Toast already surfaced the error via the action wrapper.
+      return;
+    }
+    showToast(`Welcome to ${clubName}! Your join code is ${joinCode} — find it any time in the Commissioners tab.`);
+    // Log them in immediately. reload() inside `action` already happened,
+    // so db now contains the new records.
+    if (playerData.email) saveLastEmail(playerData.email);
+    setActiveClubId(newClubId);
+    setCurrentPlayer({ ...playerData, id: newPlayerId });
+    setView("player");
+    setModal(null);
+  }
+
+  // Home-screen "Join with Code" — two paths:
+  //   - existing: the player already has a record. Just add a new
+  //     membership in the joined club and log them in.
+  //   - new: create a new player record + membership and log in.
+  async function joinClub(payload) {
+    if (!payload?.clubId) return;
+    const club = db.clubs?.[payload.clubId];
+    if (!club) { showToast("That club is no longer available.", "error"); return; }
+
+    if (payload.kind === "existing") {
+      const existing = payload.player;
+      // Edge case: they're already in this club. Re-create-membership is
+      // a clean upsert (resets joinedAt and clears any deletedAt), which
+      // is fine semantically — "re-joining" returns them to live status.
+      await action(async () => {
+        await dbCreateMembership(payload.clubId, existing.id);
+      });
+      showToast(`Welcome back! You've joined ${club.name}.`);
+      if (existing.email) saveLastEmail(existing.email);
+      setActiveClubId(payload.clubId);
+      setCurrentPlayer(existing);
+      setView("player");
+      setModal(null);
+      return;
+    }
+
+    if (payload.kind === "new") {
+      let newPlayerId = null;
+      await action(async () => {
+        newPlayerId = await dbCreatePlayer(payload.playerData);
+        await dbCreateMembership(payload.clubId, newPlayerId);
+      });
+      if (!newPlayerId) return;
+      showToast(`Welcome to ${club.name}!`);
+      if (payload.playerData.email) saveLastEmail(payload.playerData.email);
+      setActiveClubId(payload.clubId);
+      setCurrentPlayer({ ...payload.playerData, id: newPlayerId });
+      setView("player");
+      setModal(null);
+      return;
+    }
+  }
+
   // "Delete" from the players list → soft-delete (moves to trash). The
   // commissioner can restore within 30 days, or hard-delete from the trash UI.
   async function deletePlayer(playerId) {
@@ -909,7 +995,10 @@ export default function App() {
             setCurrentPlayer(p);
             setView("player");
           }}
-          onCreatePlayer={createPlayer} toast={toast} modal={modal} setModal={setModal}
+          onCreatePlayer={createPlayer}
+          onCreateClub={createClub}
+          onJoinClub={joinClub}
+          toast={toast} modal={modal} setModal={setModal}
           registerForLeague={registerForLeague} />
         </PullToRefresh>
       </ActionPendingProvider>

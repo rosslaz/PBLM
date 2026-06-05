@@ -34,6 +34,15 @@ export function AdminsTab({ club, currentAdminEmail, isOwner, isAdmin, onAdd, on
   const ownerEmail = club.ownerEmail || "";
   const adminEmails = club.adminEmails || [];
   const meLower = (currentAdminEmail || "").toLowerCase();
+  const joinCode = club.joinCode || "";
+
+  function copyJoinCode() {
+    if (!joinCode) return;
+    navigator.clipboard.writeText(joinCode).then(
+      () => alert(`Copied: ${joinCode}`),
+      () => alert("Could not copy to clipboard.")
+    );
+  }
 
   return (
     <div style={S.section}>
@@ -43,6 +52,35 @@ export function AdminsTab({ club, currentAdminEmail, isOwner, isAdmin, onAdd, on
       <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-secondary)" }}>
         These accounts can manage <b>{club.name || "this club"}</b>. The owner has full control and is the only person who can remove other admins.
       </p>
+
+      {/* Phase 3 / v1.2.0 — surface the club's join code so the owner/admins
+          can share it. Visible to any admin of the club (they need to be
+          able to invite new players). A "Regenerate" button is intentionally
+          NOT in this phase — that's a Phase 4 club-settings feature, since
+          regeneration invalidates outstanding invitations and warrants its
+          own confirmation step. */}
+      {joinCode && (
+        <div style={{ ...S.card, marginBottom: 16, padding: "12px 16px", background: "var(--color-background-secondary)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Club join code
+              </p>
+              <p style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.5px", color: CSC.blueDark, wordBreak: "break-all" }}>
+                {joinCode}
+              </p>
+            </div>
+            <button
+              style={{ ...S.btnSm("primary"), background: CSC.blue, fontSize: 12, flexShrink: 0 }}
+              onClick={copyJoinCode}>
+              Copy
+            </button>
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
+            Share this with anyone joining your club — they'll enter it on the home screen.
+          </p>
+        </div>
+      )}
 
       {isAdmin && (
         <div style={{ ...S.card, marginBottom: 16, padding: "12px 16px" }}>

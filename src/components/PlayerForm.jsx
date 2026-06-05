@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { S } from "../styles.js";
-import { CSC } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 import { isValidPhone, digitsOnly } from "../lib/format.js";
 
+// Phase 3 / v1.2.0: the CSC-specific `cscMember` checkbox was removed.
+// Multi-tenant signups can't ask club-specific questions, so this form
+// is now generic across all clubs. Existing players' `cscMember=true`
+// stored values are preserved on edit (the field round-trips through
+// the App-level updatePlayer wrapper via the JSONB merge); the form
+// just stops exposing it. If per-club custom fields are needed later,
+// they'll be modeled at the club level rather than hardcoded here.
 export function PlayerForm({ onSubmit, onCancel, initial }) {
   const isMobile = useIsMobile();
   // Backward-compat: if editing a legacy player with only `name`, split it
@@ -19,7 +25,6 @@ export function PlayerForm({ onSubmit, onCancel, initial }) {
     email: initial?.email || "",
     phone: initial?.phone || "",
     gender: initial?.gender || "",
-    cscMember: initial?.cscMember || false,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   function handleSubmit() {
@@ -56,15 +61,6 @@ export function PlayerForm({ onSubmit, onCancel, initial }) {
           <option value="Male">Male</option>
           <option value="Female">Female</option>
         </select>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 12px", background: "var(--color-background-secondary)", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", cursor: "pointer" }} onClick={() => set("cscMember", !form.cscMember)}>
-        <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${form.cscMember ? CSC.blue : "var(--color-border-secondary)"}`, background: form.cscMember ? CSC.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          {form.cscMember && <span style={{ color: "#fff", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>}
-        </div>
-        <div>
-          <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 500 }}>CSC Member</p>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)" }}>I am a current Cranbrook Swim Club member</p>
-        </div>
       </div>
       <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
         <button style={S.btn("secondary")} onClick={onCancel}>Cancel</button>
