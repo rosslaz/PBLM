@@ -3,7 +3,7 @@
 // Supabase first (awaited). The caller is responsible for re-fetching state
 // after a successful write so React never shows data that isn't in the DB.
 import { createClient } from "@supabase/supabase-js";
-import { SUPER_ADMIN, LEAGUE_COLORS, TRASH_RETENTION_DAYS } from "./constants.js";
+import { LEAGUE_COLORS, TRASH_RETENTION_DAYS } from "./constants.js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -81,9 +81,14 @@ async function loadDBSnapshot() {
     supabase.from("pb_locked_weeks").select("*"),
     supabase.from("pb_config").select("*").eq("id", 1),
     supabase.from("pb_checkins").select("*"),
+    // Phase 2 / v1.1.0 — multi-tenancy. Clubs are the top-level scope;
+    // memberships are the many-to-many link between players and clubs.
+    supabase.from("pb_clubs").select("*"),
+    supabase.from("pb_memberships").select("*"),
   ]);
 
-  const [leaguesRes, playersRes, regsRes, schedRes, scoresRes, locksRes, configRes, checkinsRes] = tables;
+  const [leaguesRes, playersRes, regsRes, schedRes, scoresRes, locksRes, configRes, checkinsRes,
+         clubsRes, membershipsRes] = tables;
 
   // Fail loud if any table errors — better than silently returning empty data
   for (const r of tables) {
@@ -95,11 +100,9 @@ async function loadDBSnapshot() {
 
   const cfg = configRes.data?.[0] || {};
   const nextId = cfg.next_id || { league: 1, player: 1 };
-  const adminEmails = (Array.isArray(cfg.admin_emails) && cfg.admin_emails.length)
-    ? cfg.admin_emails
-    : [SUPER_ADMIN];
 
   const leagueMap = {}, playerMap = {}, regMap = {}, scheduleMap = {}, scoreMap = {}, lockedMap = {}, checkInMap = {};
+  const clubMap = {}, membershipMap = {};
   leaguesRes.data.forEach(r => { leagueMap[r.id] = r.data; });
   playersRes.data.forEach(r => { playerMap[r.id] = r.data; });
   regsRes.data.forEach(r => { regMap[r.key] = r.data; });
@@ -107,17 +110,22 @@ async function loadDBSnapshot() {
   scoresRes.data.forEach(r => { scoreMap[r.key] = r.data; });
   locksRes.data.forEach(r => { lockedMap[r.key] = true; });
   (checkinsRes.data || []).forEach(r => { checkInMap[r.key] = r.data; });
+  (clubsRes.data || []).forEach(r => { clubMap[r.id] = r.data; });
+  (membershipsRes.data || []).forEach(r => { membershipMap[r.key] = r.data; });
 
   console.log(
     `[loadDB] players=${playersRes.data.length} leagues=${leaguesRes.data.length}`,
-    `regs=${regsRes.data.length} checkins=${checkinsRes.data?.length || 0} nextId=`, nextId
+    `regs=${regsRes.data.length} checkins=${checkinsRes.data?.length || 0}`,
+    `clubs=${clubsRes.data?.length || 0} memberships=${membershipsRes.data?.length || 0}`,
+    `nextId=`, nextId
   );
 
   return {
     leagues: leagueMap, players: playerMap, registrations: regMap,
     schedules: scheduleMap, scores: scoreMap, lockedWeeks: lockedMap,
     checkIns: checkInMap,
-    adminEmails, nextId,
+    clubs: clubMap, memberships: membershipMap,
+    nextId,
   };
 }
 
@@ -159,11 +167,13 @@ export async function dbUpdatePlayer(id, patch) {
   if (error) throw error;
 }
 
-export async function dbCreateLeague(leagueData, colorIndex) {
+export async function dbCreateLeague(leagueData, colorIndex, clubId) {
+  if (!clubId) throw new Error("dbCreateLeague: clubId is required");
   const nextId = await getCurrentNextId();
   const id = `league_${nextId.league}`;
   const league = {
     ...leagueData, id,
+    clubId, // multi-tenancy: every league belongs to exactly one club
     color: LEAGUE_COLORS[colorIndex % LEAGUE_COLORS.length],
     createdAt: new Date().toISOString(),
   };
@@ -442,39 +452,110 @@ export async function dbHardDeletePlayer(playerId) {
   if (e1 || e2 || e3) throw (e1 || e2 || e3);
 }
 
-export async function dbAddAdmin(email) {
-  const { data: cfg, error: e1 } = await supabase
-    .from("pb_config").select("admin_emails").eq("id", 1).single();
+// ─── Club operations ────────────────────────────────────────────────────
+// Phase 2 / v1.1.0 — multi-tenancy. Clubs are the top-level scope. Each
+// has exactly one owner (irrevocable except by transfer in Phase 4) and
+// an admin list. Per the access rules: any admin can ADD admins, but
+// only the owner can REMOVE admins. This prevents a malicious admin
+// from kicking other admins (or the owner) out.
+
+export async function dbUpdateClub(id, patch) {
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_clubs").select("data").eq("id", id).single();
   if (e1) throw e1;
-  const list = cfg.admin_emails || [SUPER_ADMIN];
-  const lower = email.trim().toLowerCase();
-  if (list.map(x => x.toLowerCase()).includes(lower)) {
+  const updated = { ...existing.data, ...patch };
+  const { error } = await supabase.from("pb_clubs").upsert({ id, data: updated });
+  if (error) throw error;
+}
+
+// Any admin (or the owner) can add another admin. Returns
+//   { ok: true } on success
+//   { ok: false, reason: "already_admin" } when the email is already on
+//     the list, or is already the owner (which makes them implicitly an
+//     admin anyway).
+export async function dbAddClubAdmin(clubId, email) {
+  const lower = (email || "").trim().toLowerCase();
+  if (!lower) return { ok: false, reason: "empty_email" };
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_clubs").select("data").eq("id", clubId).single();
+  if (e1) throw e1;
+  const club = existing.data;
+  if ((club.ownerEmail || "").toLowerCase() === lower) {
+    return { ok: false, reason: "already_admin" }; // owner is already implicit admin
+  }
+  const list = club.adminEmails || [];
+  if (list.map(x => (x || "").toLowerCase()).includes(lower)) {
     return { ok: false, reason: "already_admin" };
   }
-  const { error } = await supabase
-    .from("pb_config").update({ admin_emails: [...list, lower] }).eq("id", 1);
+  const updated = { ...club, adminEmails: [...list, lower] };
+  const { error } = await supabase.from("pb_clubs").upsert({ id: clubId, data: updated });
   if (error) throw error;
   return { ok: true };
 }
 
-export async function dbRemoveAdmin(email) {
-  if (email.toLowerCase() === SUPER_ADMIN.toLowerCase()) {
-    return { ok: false, reason: "super_admin" };
-  }
-  const { data: cfg, error: e1 } = await supabase
-    .from("pb_config").select("admin_emails").eq("id", 1).single();
+// Only the owner can remove an admin. The owner cannot be removed via
+// this path — that's a separate "transfer ownership" flow (Phase 4).
+// The caller (App.jsx) is also responsible for checking that the
+// invoker is the owner before calling; this DB-side check is defensive,
+// not the authority.
+export async function dbRemoveClubAdmin(clubId, email, invokerEmail) {
+  const lower = (email || "").toLowerCase();
+  if (!lower) return { ok: false, reason: "empty_email" };
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_clubs").select("data").eq("id", clubId).single();
   if (e1) throw e1;
-  const list = (cfg.admin_emails || [SUPER_ADMIN]).filter(
-    e => e.toLowerCase() !== email.toLowerCase()
+  const club = existing.data;
+  const ownerLower = (club.ownerEmail || "").toLowerCase();
+  if (lower === ownerLower) {
+    return { ok: false, reason: "is_owner" };
+  }
+  if ((invokerEmail || "").toLowerCase() !== ownerLower) {
+    return { ok: false, reason: "not_owner" };
+  }
+  const list = (club.adminEmails || []).filter(
+    e => (e || "").toLowerCase() !== lower
   );
-  const { error } = await supabase
-    .from("pb_config").update({ admin_emails: list }).eq("id", 1);
+  const updated = { ...club, adminEmails: list };
+  const { error } = await supabase.from("pb_clubs").upsert({ id: clubId, data: updated });
   if (error) throw error;
   return { ok: true };
+}
+
+// ─── Membership operations ──────────────────────────────────────────────
+// A membership links a player to a club. Identity is global; club presence
+// is a per-club membership row. Soft-delete via `deletedAt` so we can
+// distinguish "left the club" from "never joined" without losing the join
+// history. (Phase 2 doesn't use the deleted-membership concept yet, but
+// the dbRemove function is here so the storage layer is complete for
+// Phase 4 to use.)
+
+export async function dbCreateMembership(clubId, playerId) {
+  if (!clubId || !playerId) throw new Error("dbCreateMembership: clubId and playerId required");
+  const key = `${clubId}_${playerId}`;
+  const data = {
+    clubId, playerId,
+    joinedAt: new Date().toISOString(),
+  };
+  // Upsert so a re-join after a soft-delete cleanly resets joinedAt.
+  const { error } = await supabase.from("pb_memberships").upsert({ key, data });
+  if (error) throw error;
+}
+
+export async function dbRemoveMembership(clubId, playerId) {
+  const key = `${clubId}_${playerId}`;
+  // Read existing first to preserve joinedAt etc on the soft-delete record.
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_memberships").select("data").eq("key", key).maybeSingle();
+  if (e1) throw e1;
+  if (!existing) return; // no-op if nothing to remove
+  const updated = { ...existing.data, deletedAt: new Date().toISOString() };
+  const { error } = await supabase.from("pb_memberships").upsert({ key, data: updated });
+  if (error) throw error;
 }
 
 export const defaultDB = () => ({
   leagues: {}, players: {}, registrations: {}, schedules: {},
-  scores: {}, lockedWeeks: {}, checkIns: {}, adminEmails: [SUPER_ADMIN],
+  scores: {}, lockedWeeks: {}, checkIns: {},
+  clubs: {}, memberships: {},
   nextId: { league: 1, player: 1 },
 });

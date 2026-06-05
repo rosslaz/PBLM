@@ -1,24 +1,22 @@
 // ─── App-wide constants ─────────────────────────────────────────────────────
-// Brand palette, color themes, court sizing rules, check-in options, and the
-// hardcoded primary commissioner email. These are pure data with no React
-// dependencies — safe to import anywhere.
+// Brand palette, color themes, court sizing rules, check-in options.
+// These are pure data with no React dependencies — safe to import anywhere.
+//
+// Note (Phase 2 / v1.1.0): the previous SUPER_ADMIN constant has been
+// removed. Admin status is now club-scoped — see lib/clubs.js for the
+// isClubAdmin/isClubOwner helpers. Each club's owner+admins are stored
+// on the pb_clubs row.
 
 // ─── App metadata ──────────────────────────────────────────────────────────
 // Surfaced in the About modal (accessible from the avatar menu). Update on
-// every release. Versioning follows semver:
-//   - Patch (0.9.x): UX tweaks, bug fixes, single-feature polish
-//   - Minor (0.x.0): new features affecting workflow
-//   - Major (x.0.0): reserved for the 1.0 milestone (per Ross's direction)
-// Keep this in sync with `version` in package.json.
+// every release. Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "1.0.1",
+  version: "1.1.0",
   createdBy: "Ross Lazar",
   // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
   // modal don't have to decode the acronym.
   description: "League Manager for CSC Pickleball at Cranbrook Swim Club — schedules, scoring, standings.",
 };
-
-export const SUPER_ADMIN = "ross.lazar@gmail.com";
 
 // Court sizing rules
 export const MAX_COURTS = 8;

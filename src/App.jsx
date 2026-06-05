@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 
-import { SUPER_ADMIN, COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
+import { COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
 import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender, formatPhone } from "./lib/format.js";
 import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail } from "./lib/session.js";
+import {
+  isClubOwner, isClubAdmin,
+  getClubsForPlayer, getClubsWhereAdmin, getClubMemberIds,
+  resolveActiveClub,
+} from "./lib/clubs.js";
 import {
   supabase, loadDB, defaultDB,
   dbCreateLeague, dbUpdateLeague,
@@ -12,7 +17,7 @@ import {
   dbRegisterForLeague, dbRemovePlayerFromLeague, dbToggleRegPaid,
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
   dbToggleLockWeek, dbSetCheckIn,
-  dbAddAdmin, dbRemoveAdmin,
+  dbAddClubAdmin, dbRemoveClubAdmin, dbCreateMembership,
 } from "./lib/supabase.js";
 import {
   distributePlayersToCourts, seededShuffle, singlesMatches, doublesMatches,
@@ -73,6 +78,11 @@ export default function App() {
   const [currentActionId, setCurrentActionId] = useState(null);
   const saving = currentActionId !== null;
   const [adminEmail, setAdminEmail] = useState(null);
+  // Phase 2 / v1.1.0 — multi-tenancy. The "active club" determines what
+  // leagues, rosters, and admin permissions the rest of the UI sees.
+  // It's resolved at session restore (or login) from saved state +
+  // memberships, and the player can switch later (Phase 3 club switcher).
+  const [activeClubId, setActiveClubId] = useState(null);
   const [sessionRestored, setSessionRestored] = useState(false);
 
   const showToast = (msg, type = "success") => {
@@ -84,6 +94,7 @@ export default function App() {
     setCurrentPlayer(null);
     setAdminEmail(null);
     setSelectedLeague(null);
+    setActiveClubId(null);
     setView("home");
     saveSession(null);
     showToast("Logged out");
@@ -112,29 +123,58 @@ export default function App() {
     })();
   }, []);
 
-  // Restore login session once db is loaded
+  // Restore login session once db is loaded.
+  // For Phase 2 the admin check is club-scoped: a saved adminEmail is
+  // accepted only if it's an owner/admin of at least one club. The active
+  // club is then resolved from saved id + accessible clubs.
   useEffect(() => {
     if (!db || sessionRestored) return;
-    const adminEmailSetLowerLocal = new Set((db.adminEmails || [SUPER_ADMIN]).map(e => e.toLowerCase()));
     const sess = loadSession();
     // Block session restore for trashed players — they shouldn't log back in
     // just because a saved session is still in localStorage.
     const savedPlayer = sess.playerId ? db.players[sess.playerId] : null;
     const playerIsLive = savedPlayer && !savedPlayer.deletedAt;
+
+    // Compute which clubs are accessible to this restored session so we
+    // can pick an active club.
+    const candidates = [];
+    if (playerIsLive) {
+      getClubsForPlayer(db.memberships, db.clubs, savedPlayer.id)
+        .forEach(c => candidates.push(c));
+    }
+    if (sess.adminEmail) {
+      // Admin clubs may overlap with member clubs — dedupe by id.
+      const adminClubs = getClubsWhereAdmin(db.clubs, sess.adminEmail);
+      adminClubs.forEach(c => {
+        if (!candidates.find(x => x.id === c.id)) candidates.push(c);
+      });
+    }
+    const resolved = resolveActiveClub(sess.activeClubId, candidates);
+
     if (sess.playerId && playerIsLive) {
       setCurrentPlayer(savedPlayer);
-      if (sess.adminEmail && adminEmailSetLowerLocal.has(sess.adminEmail.toLowerCase())) {
+      // Admin-email-on-player session: accept it only if that email actually
+      // has admin/owner rights in some accessible club. Otherwise drop back
+      // to plain player view.
+      const adminClubs = sess.adminEmail
+        ? getClubsWhereAdmin(db.clubs, sess.adminEmail)
+        : [];
+      if (sess.adminEmail && adminClubs.length > 0) {
         setAdminEmail(sess.adminEmail);
         setView(sess.view === "admin" ? "admin" : "player");
       } else {
         setView("player");
       }
     } else if (sess.adminEmail) {
-      if (adminEmailSetLowerLocal.has(sess.adminEmail.toLowerCase())) {
+      // Admin-only session (no player record). Restore only if there's at
+      // least one club where this email is owner/admin.
+      const adminClubs = getClubsWhereAdmin(db.clubs, sess.adminEmail);
+      if (adminClubs.length > 0) {
         setAdminEmail(sess.adminEmail);
         setView("admin");
       }
     }
+    setActiveClubId(resolved?.id || null);
     setSessionRestored(true);
   }, [db, sessionRestored]);
 
@@ -144,12 +184,13 @@ export default function App() {
       saveSession({
         playerId: currentPlayer?.id || null,
         adminEmail: adminEmail || null,
+        activeClubId: activeClubId || null,
         view,
       });
     } else {
       saveSession(null);
     }
-  }, [currentPlayer, adminEmail, view, sessionRestored]);
+  }, [currentPlayer, adminEmail, activeClubId, view, sessionRestored]);
 
   const dbPlayers = db?.players;
   useEffect(() => {
@@ -208,10 +249,40 @@ export default function App() {
   const isTrashed = r => !!r?.deletedAt;
   const allLeagues = Object.values(db.leagues);
   const allPlayers = Object.values(db.players);
-  const leagues = allLeagues.filter(l => !isTrashed(l));
-  const players = allPlayers.filter(p => !isTrashed(p));
-  const trashedLeagues = allLeagues.filter(isTrashed);
-  const trashedPlayers = allPlayers.filter(isTrashed);
+
+  // Phase 2 / v1.1.0 — multi-tenancy. The "active club" determines which
+  // leagues and players the rest of the UI sees. Everything below `leagues`
+  // and `players` (rosters, standings, the commissioner panel) reads from
+  // the filtered view. `allLeagues` and `allPlayers` are still available
+  // for places that need cross-club visibility (currently only TrashTab,
+  // which is scoped to live records in the active club too — see below).
+  //
+  // `db.players[id]` is a *global* identity lookup — getPlayerName et al.
+  // must work for any player ID that appears in old scores/schedules, even
+  // if that player isn't in the active club anymore. So we don't filter the
+  // lookup itself, just the roster used for listing/filtering UIs.
+  const activeClub = activeClubId ? db.clubs?.[activeClubId] : null;
+  const clubMemberIds = activeClubId
+    ? getClubMemberIds(db.memberships || {}, activeClubId)
+    : new Set();
+
+  const leagues = allLeagues.filter(l =>
+    !isTrashed(l) && (!activeClubId || l.clubId === activeClubId)
+  );
+  // A player belongs to the active club iff there's a live membership row.
+  // Players without a club membership are filtered out of the roster but
+  // still resolvable via db.players[id].
+  const players = allPlayers.filter(p =>
+    !isTrashed(p) && clubMemberIds.has(p.id)
+  );
+  // Trash views are scoped to the active club too — a CSC admin doesn't
+  // see BTC's trashed leagues or players.
+  const trashedLeagues = allLeagues.filter(l =>
+    isTrashed(l) && (!activeClubId || l.clubId === activeClubId)
+  );
+  const trashedPlayers = allPlayers.filter(p =>
+    isTrashed(p) && clubMemberIds.has(p.id)
+  );
   const sortedLeagues = sortLeagues(leagues);
 
   // Pre-index registrations so league/player lookups are O(1). Single pass
@@ -324,7 +395,8 @@ export default function App() {
 
   // ─── Action wrappers — each writes to DB then reloads ─────────────────────
   async function createLeague(data) {
-    await action(() => dbCreateLeague(data, leagues.length), `League "${data.name}" created!`);
+    if (!activeClubId) { showToast("No active club selected.", "error"); return; }
+    await action(() => dbCreateLeague(data, leagues.length, activeClubId), `League "${data.name}" created!`);
     setModal(null);
   }
   async function updateLeague(id, data) {
@@ -657,8 +729,15 @@ export default function App() {
   async function createPlayer(data) {
     let newId = null;
     const displayName = data.firstName ? `${data.firstName} ${data.lastName || ""}`.trim() : data.name;
+    // Auto-join the active club. createPlayer is only called from admin
+    // flows (commissioner panel + AddPlayerToLeague modal); both are
+    // by-definition scoped to the active club. The home-screen "New
+    // Account" button is disabled in v1.1.0 until the dedicated join-by-
+    // code flow ships in Phase 3.
+    if (!activeClubId) { showToast("No active club selected.", "error"); return null; }
     await action(async () => {
       newId = await dbCreatePlayer(data);
+      await dbCreateMembership(activeClubId, newId);
     }, `Player "${displayName}" created!`);
     setModal(null);
     return newId;
@@ -729,23 +808,32 @@ export default function App() {
 
   const isWeekLocked = (leagueId, week) => !!(db.lockedWeeks?.[`${leagueId}_w${week}`]);
 
+  // Add/remove admins on the currently active club. The DB-layer functions
+  // enforce the per-role permissions (any admin can add, only owner can
+  // remove). These wrappers are passed to AdminsTab, which is already
+  // scoped to the current club by the time it's mounted.
   async function addAdminEmail(email) {
     if (!email.trim()) return;
+    if (!activeClubId) { showToast("No active club.", "error"); return; }
     let res;
-    await action(async () => { res = await dbAddAdmin(email); });
+    await action(async () => { res = await dbAddClubAdmin(activeClubId, email); });
     if (res?.ok) showToast(`${email.trim().toLowerCase()} added as commissioner.`);
     else if (res?.reason === "already_admin") showToast("Already a commissioner.", "error");
+    else if (res?.reason === "empty_email") showToast("Please enter an email.", "error");
   }
 
   async function removeAdminEmail(email) {
+    if (!activeClubId) { showToast("No active club.", "error"); return; }
     let res;
-    await action(async () => { res = await dbRemoveAdmin(email); });
+    await action(async () => { res = await dbRemoveClubAdmin(activeClubId, email, adminEmail); });
     if (res?.ok) showToast(`${email} removed.`);
-    else if (res?.reason === "super_admin") showToast("Cannot remove the primary commissioner.", "error");
+    else if (res?.reason === "is_owner") showToast("Cannot remove the club owner.", "error");
+    else if (res?.reason === "not_owner") showToast("Only the club owner can remove admins.", "error");
   }
 
   // Test data seeder — creates Test1..Test20 players (skips any that exist)
   async function seedTestPlayers() {
+    if (!activeClubId) { showToast("No active club selected.", "error"); return; }
     const existingEmails = new Set(players.map(p => p.email?.toLowerCase()).filter(Boolean));
     let added = 0, skipped = 0;
     setCurrentActionId("seed-test-players");
@@ -753,7 +841,7 @@ export default function App() {
       for (let i = 1; i <= 20; i++) {
         const email = `test${i}@test.com`;
         if (existingEmails.has(email)) { skipped++; continue; }
-        await dbCreatePlayer({
+        const newId = await dbCreatePlayer({
           firstName: `Test${i}`,
           lastName: "Player",
           name: `Test${i} Player`,
@@ -765,6 +853,9 @@ export default function App() {
           gender: i % 2 === 0 ? "Female" : "Male",
           cscMember: false,
         });
+        // Auto-join the active club so the new test player is visible
+        // in the commissioner's roster + can be added to leagues.
+        await dbCreateMembership(activeClubId, newId);
         added++;
       }
       await reload();
@@ -794,11 +885,27 @@ export default function App() {
       <ActionPendingProvider value={currentActionId}>
         <PullToRefresh onRefresh={refresh} isRefreshing={currentActionId === "refresh"}>
         <HomeView leagues={leagues} players={players} db={db}
-          onAdmin={(email) => { setAdminEmail(email); setView("admin"); }}
+          onAdmin={(email) => {
+            // Admin-only sign-in: pick the first club where this email is
+            // owner/admin. If none, leave activeClubId null — the
+            // commissioner panel will surface an empty state.
+            const adminClubs = getClubsWhereAdmin(db.clubs || {}, email);
+            const club = adminClubs[0];
+            setActiveClubId(club?.id || null);
+            setAdminEmail(email);
+            setView("admin");
+          }}
           onPlayerLogin={p => {
             // Remember this email on this device for next time, even if the
             // user later logs out. The login screen will pre-fill it.
             if (p?.email) saveLastEmail(p.email);
+            // Pick the player's first club as active. If they have none
+            // (rare today — every existing player has a CSC membership —
+            // but possible after Phase 3 when new signups land first), the
+            // player view will render the empty state.
+            const myClubs = getClubsForPlayer(db.memberships || {}, db.clubs || {}, p.id);
+            const club = resolveActiveClub(null, myClubs);
+            setActiveClubId(club?.id || null);
             setCurrentPlayer(p);
             setView("player");
           }}
@@ -1187,9 +1294,10 @@ export default function App() {
             )}
             {adminTab === "admins" && (
               <AdminsTab
-                adminEmails={db.adminEmails || [SUPER_ADMIN]}
+                club={activeClub}
                 currentAdminEmail={adminEmail}
-                isSuperAdmin={adminEmail?.toLowerCase() === SUPER_ADMIN.toLowerCase()}
+                isOwner={isClubOwner(activeClub, adminEmail)}
+                isAdmin={isClubAdmin(activeClub, adminEmail)}
                 onAdd={addAdminEmail}
                 onRemove={removeAdminEmail}
               />
@@ -1216,10 +1324,15 @@ export default function App() {
   // ─── PLAYER ───────────────────────────────────────────────────────────────
   if (view === "player") {
     const myRegs = Object.values(db.registrations).filter(r => r.playerId === currentPlayer.id);
-    // Hide trashed leagues from the player view entirely — if a commissioner
-    // accidentally deleted a league, players shouldn't see it half-broken.
+    // Filter to leagues in the active club only. A player who's in
+    // multiple clubs sees only the leagues of the club they're currently
+    // viewing — switching clubs (Phase 3) will surface the other ones.
+    // Trashed leagues are excluded entirely; players shouldn't see half-
+    // deleted state.
     const myLeagues = sortLeagues(
-      myRegs.map(r => db.leagues[r.leagueId]).filter(l => l && !isTrashed(l))
+      myRegs.map(r => db.leagues[r.leagueId]).filter(l =>
+        l && !isTrashed(l) && (!activeClubId || l.clubId === activeClubId)
+      )
     );
     const unregistered = leagues.filter(l => {
       if (myRegs.find(r => r.leagueId === l.id)) return false;
@@ -1246,7 +1359,7 @@ export default function App() {
           getStandings={getStandings} registerForLeague={registerForLeague} submitScore={submitScore} submitScoreInline={submitScoreInline}
           isWeekLocked={isWeekLocked}
           getCheckIn={getCheckIn} setCheckIn={setCheckIn}
-          adminEmails={db.adminEmails || [SUPER_ADMIN]}
+          canSwitchToAdmin={isClubAdmin(activeClub, currentPlayer.email)}
           onSwitchToAdmin={() => { setAdminEmail(currentPlayer.email.toLowerCase()); setView("admin"); }}
           onLogout={logout} scoreModal={scoreModal}
           onRefresh={refresh} isRefreshing={currentActionId === "refresh"} />

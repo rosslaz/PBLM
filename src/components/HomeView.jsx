@@ -166,24 +166,12 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
               }}>
                 <p style={{ margin: 0 }}>No player found with that email.</p>
                 <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12 }}>
-                  Want to register?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setModal({ type: "newPlayer" })}
-                    style={{
-                      background: "none", border: "none", padding: 0,
-                      color: "#854F0B", textDecoration: "underline",
-                      cursor: "pointer", fontFamily: "inherit", fontSize: 12,
-                      fontWeight: 600,
-                    }}>
-                    Create an account with this email
-                  </button>
+                  Ask your club's commissioner to add you, or to share the club's join code.
                 </p>
               </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button style={{ ...S.btn("primary"), flex: 1 }} onClick={handlePlayerLogin}>Log In as Player</button>
-              <button style={S.btn("secondary")} onClick={() => setModal({ type: "newPlayer" })}>New Account</button>
             </div>
           </div>
         )}

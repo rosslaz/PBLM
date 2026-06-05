@@ -137,7 +137,7 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
-export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, submitScoreInline, isWeekLocked, getCheckIn, setCheckIn, adminEmails, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
+export function PlayerView({ db, player, myLeagues, unregistered, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, submitScoreInline, isWeekLocked, getCheckIn, setCheckIn, canSwitchToAdmin, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   // Even if the commissioner soft-deletes a league while the player is
   // looking at it, don't render the stale data — treat it as null.
@@ -274,8 +274,9 @@ export function PlayerView({ db, player, myLeagues, unregistered, playerTab, set
             initial={playerInitial(player)}
             ariaLabel={`Menu for ${playerFullName(player)}`}
             items={[
-              // Commissioner Mode — only for users in the admin allowlist
-              ...(adminEmails.map(e => e.toLowerCase()).includes(player.email.toLowerCase())
+              // Commissioner Mode — only for users who are admin/owner of
+              // the active club. The parent computes this via isClubAdmin.
+              ...(canSwitchToAdmin
                 ? [{ label: "Commissioner Mode", icon: "⚙", onClick: onSwitchToAdmin }]
                 : []),
               { label: "Join a League", icon: "＋", onClick: () => setModal({ type: "joinLeague" }) },
