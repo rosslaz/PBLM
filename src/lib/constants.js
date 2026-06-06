@@ -11,7 +11,7 @@
 // Surfaced in the About modal (accessible from the avatar menu). Update on
 // every release. Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "1.3.0",
+  version: "1.4.0",
   createdBy: "Ross Lazar",
   // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
   // modal don't have to decode the acronym.
@@ -76,9 +76,9 @@ export const SESSION_KEY = "pickleball_session_v1";
 // or when the browser clears localStorage entirely.
 export const LAST_EMAIL_KEY = "pickleball_last_email_v1";
 
-// How long soft-deleted leagues/players stay in the trash before auto-purge.
-// Records carrying `data.deletedAt` older than this are hard-deleted (with
-// full cascade) on the next loadDB.
+// How long soft-deleted leagues/players/clubs stay in the trash before
+// auto-purge. Records carrying `data.deletedAt` older than this are
+// hard-deleted (with full cascade) on the next loadDB.
 export const TRASH_RETENTION_DAYS = 30;
 
 // ─── Spacing scale ──────────────────────────────────────────────────────────

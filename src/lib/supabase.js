@@ -17,7 +17,7 @@ export const supabase = createClient(SUPABASE_URL || "", SUPABASE_ANON_KEY || ""
 });
 
 // ─── Full snapshot loader ───────────────────────────────────────────────────
-// Also runs the 30-day trash auto-purge: any league or player whose
+// Also runs the 30-day trash auto-purge: any league, player, or club whose
 // `data.deletedAt` is older than TRASH_RETENTION_DAYS gets hard-deleted (with
 // full cascade) before the snapshot is built. This makes purge opportunistic —
 // it happens on the next loadDB after the retention window passes, with no
@@ -27,9 +27,15 @@ export async function loadDB() {
   return loadDBSnapshot();
 }
 
-// Find every league/player in the trash whose retention window has passed,
-// hard-delete them (cascading their dependent rows). Returns true if anything
-// was purged. Tolerant of errors per row — one failure doesn't block others.
+// Find every league/player/club in the trash whose retention window has
+// passed, hard-delete them (cascading their dependent rows). Returns true if
+// anything was purged. Tolerant of errors per row — one failure doesn't block
+// others.
+//
+// Order matters: purge clubs first so their leagues are removed in bulk via
+// dbHardDeleteClub's cascade. Whatever leagues remain (i.e. soft-deleted in
+// a still-live club) are processed individually. Players go last and are
+// independent of either (identity is global).
 async function purgeExpiredTrash() {
   const cutoffMs = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const expired = (record) => {
@@ -39,26 +45,41 @@ async function purgeExpiredTrash() {
     return Number.isFinite(t) && t < cutoffMs;
   };
 
-  const [leagues, players] = await Promise.all([
+  const [clubs, leagues, players] = await Promise.all([
+    supabase.from("pb_clubs").select("id, data"),
     supabase.from("pb_leagues").select("id, data"),
     supabase.from("pb_players").select("id, data"),
   ]);
-  if (leagues.error || players.error) {
-    console.error("[purgeExpiredTrash] skipped:", leagues.error || players.error);
+  if (clubs.error || leagues.error || players.error) {
+    console.error("[purgeExpiredTrash] skipped:",
+      clubs.error || leagues.error || players.error);
     return false;
   }
 
+  const expiredClubs = (clubs.data || []).filter(expired);
   const expiredLeagues = (leagues.data || []).filter(expired);
   const expiredPlayers = (players.data || []).filter(expired);
-  if (expiredLeagues.length === 0 && expiredPlayers.length === 0) return false;
+  if (expiredClubs.length === 0
+      && expiredLeagues.length === 0
+      && expiredPlayers.length === 0) {
+    return false;
+  }
 
   console.log(
-    `[purgeExpiredTrash] purging ${expiredLeagues.length} leagues, ${expiredPlayers.length} players`
+    `[purgeExpiredTrash] purging ${expiredClubs.length} clubs,`,
+    `${expiredLeagues.length} leagues, ${expiredPlayers.length} players`
   );
 
   // Cascade each one (intentionally not wrapped in Promise.all so a single
-  // failure doesn't block the rest). Errors are logged but swallowed; whatever
-  // didn't purge today will try again tomorrow.
+  // failure doesn't block the rest). Errors are logged but swallowed;
+  // whatever didn't purge today will try again tomorrow.
+  //
+  // Process clubs first — their cascade handles any leagues + memberships
+  // for that club, so the leagues loop below has less to do.
+  for (const row of expiredClubs) {
+    try { await dbHardDeleteClub(row.id); }
+    catch (e) { console.error(`[purgeExpiredTrash] club ${row.id}:`, e); }
+  }
   for (const row of expiredLeagues) {
     try { await dbHardDeleteLeague(row.id); }
     catch (e) { console.error(`[purgeExpiredTrash] league ${row.id}:`, e); }
@@ -454,10 +475,9 @@ export async function dbHardDeletePlayer(playerId) {
 
 // ─── Club operations ────────────────────────────────────────────────────
 // Phase 2 / v1.1.0 — multi-tenancy. Clubs are the top-level scope. Each
-// has exactly one owner (irrevocable except by transfer in Phase 4) and
-// an admin list. Per the access rules: any admin can ADD admins, but
-// only the owner can REMOVE admins. This prevents a malicious admin
-// from kicking other admins (or the owner) out.
+// has exactly one owner and an admin list. Per the access rules: any admin
+// can ADD admins, but only the owner can REMOVE admins. This prevents a
+// malicious admin from kicking other admins (or the owner) out.
 
 // Phase 3 / v1.2.0 — public club creation. Takes a club name + owner
 // info + a join code (caller generates it client-side so it can show
@@ -530,7 +550,7 @@ export async function dbAddClubAdmin(clubId, email) {
 }
 
 // Only the owner can remove an admin. The owner cannot be removed via
-// this path — that's a separate "transfer ownership" flow (Phase 4).
+// this path — that's the dbTransferOwnership flow.
 // The caller (App.jsx) is also responsible for checking that the
 // invoker is the owner before calling; this DB-side check is defensive,
 // not the authority.
@@ -557,13 +577,158 @@ export async function dbRemoveClubAdmin(clubId, email, invokerEmail) {
   return { ok: true };
 }
 
+// Phase 4 / v1.4.0 — transfer ownership of a club to one of its current
+// admins. The new owner must already be in `adminEmails` (the UI gates this);
+// we still verify on the DB side. The previous owner becomes a regular admin
+// so they retain access. No-op if the target is already the owner.
+//
+// Returns { ok: true } on success, or { ok: false, reason } if the target
+// isn't currently an admin of the club.
+export async function dbTransferOwnership(clubId, newOwnerEmail) {
+  const lower = (newOwnerEmail || "").trim().toLowerCase();
+  if (!lower) return { ok: false, reason: "empty_email" };
+
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_clubs").select("data").eq("id", clubId).single();
+  if (e1) throw e1;
+  const club = existing.data;
+  const oldOwnerLower = (club.ownerEmail || "").toLowerCase();
+
+  if (lower === oldOwnerLower) {
+    // Already owner — no-op, but successful.
+    return { ok: true };
+  }
+
+  const oldAdmins = (club.adminEmails || []).map(e => (e || "").toLowerCase());
+  if (!oldAdmins.includes(lower)) {
+    return { ok: false, reason: "not_admin" };
+  }
+
+  // Promote: remove the new owner from adminEmails, demote the old owner
+  // into adminEmails so they retain access. Edge case: if the old owner
+  // happened to also be in adminEmails (shouldn't, but defend), dedupe.
+  const newAdmins = oldAdmins.filter(e => e !== lower && e !== oldOwnerLower);
+  if (oldOwnerLower) newAdmins.push(oldOwnerLower);
+
+  const updated = { ...club, ownerEmail: lower, adminEmails: newAdmins };
+  const { error } = await supabase.from("pb_clubs").upsert({ id: clubId, data: updated });
+  if (error) throw error;
+  return { ok: true };
+}
+
+// Phase 4 / v1.4.0 — soft-delete a club. Cascades to its leagues and
+// memberships (sets deletedAt on each). Identity records (pb_players) are
+// NOT touched — they're global and may belong to other clubs.
+//
+// After TRASH_RETENTION_DAYS, dbHardDeleteClub will fully purge everything
+// via the auto-purge on next loadDB.
+//
+// We deliberately don't expose an in-app restore for clubs. If a user
+// regrets the deletion within the retention window, support can clear the
+// `deletedAt` field on pb_clubs, pb_leagues (where data.clubId matches),
+// and pb_memberships (where key starts with the clubId prefix) manually.
+export async function dbSoftDeleteClub(clubId) {
+  if (!clubId) throw new Error("dbSoftDeleteClub: clubId is required");
+  const now = new Date().toISOString();
+
+  // 1. Stamp the club itself
+  const { data: existing, error: e1 } = await supabase
+    .from("pb_clubs").select("data").eq("id", clubId).single();
+  if (e1) throw e1;
+  if (existing.data.deletedAt) {
+    // Already trashed — nothing to do
+    return;
+  }
+  const clubUpdated = { ...existing.data, deletedAt: now };
+  const { error: e2 } = await supabase
+    .from("pb_clubs").upsert({ id: clubId, data: clubUpdated });
+  if (e2) throw e2;
+
+  // 2. Cascade to all of this club's leagues. We pull all leagues and
+  // filter in JS rather than relying on a LIKE pattern, because the clubId
+  // is embedded in the JSON `data.clubId` field, not the row id.
+  const { data: allLeagues, error: e3 } = await supabase
+    .from("pb_leagues").select("id, data");
+  if (e3) throw e3;
+  const clubLeagues = (allLeagues || []).filter(l =>
+    l.data?.clubId === clubId && !l.data?.deletedAt
+  );
+  for (const l of clubLeagues) {
+    const lUpdated = { ...l.data, deletedAt: now };
+    const { error } = await supabase
+      .from("pb_leagues").upsert({ id: l.id, data: lUpdated });
+    if (error) throw error;
+  }
+
+  // 3. Cascade to memberships. Filter by key prefix in JS rather than
+  // SQL LIKE so we don't hit the underscore-as-wildcard quirk (e.g.
+  // "club_1_%" would also match "club_10_...").
+  const { data: allMemberships, error: e4 } = await supabase
+    .from("pb_memberships").select("key, data");
+  if (e4) throw e4;
+  const clubMemberships = (allMemberships || []).filter(m =>
+    m.key.startsWith(`${clubId}_`) && !m.data?.deletedAt
+  );
+  for (const m of clubMemberships) {
+    const mUpdated = { ...m.data, deletedAt: now };
+    const { error } = await supabase
+      .from("pb_memberships").upsert({ key: m.key, data: mUpdated });
+    if (error) throw error;
+  }
+}
+
+// Phase 4 / v1.4.0 — hard-delete a club and everything that belongs to it.
+// Called only by the 30-day auto-purge. Not exposed to the UI — the only
+// in-app delete path is the soft-delete above.
+//
+// Order of operations:
+//   1. Hard-delete each league in the club (cascades to its scores,
+//      registrations, schedules, locked_weeks, checkins via the existing
+//      dbHardDeleteLeague).
+//   2. Delete all memberships for the club.
+//   3. Delete the club row itself.
+//
+// Player rows (pb_players) are global identity and are NOT touched here —
+// players may belong to other clubs, and even if they don't, they can
+// re-join a different club later.
+export async function dbHardDeleteClub(clubId) {
+  if (!clubId) throw new Error("dbHardDeleteClub: clubId is required");
+
+  // 1. Cascade leagues. Filter in JS by data.clubId.
+  const { data: allLeagues, error: e1 } = await supabase
+    .from("pb_leagues").select("id, data");
+  if (e1) throw e1;
+  const clubLeagueIds = (allLeagues || [])
+    .filter(l => l.data?.clubId === clubId)
+    .map(l => l.id);
+  for (const lid of clubLeagueIds) {
+    await dbHardDeleteLeague(lid);
+  }
+
+  // 2. Delete memberships. Filter by key prefix in JS to dodge the LIKE
+  // underscore quirk.
+  const { data: allMemberships, error: e2 } = await supabase
+    .from("pb_memberships").select("key");
+  if (e2) throw e2;
+  const clubMembershipKeys = (allMemberships || [])
+    .filter(m => m.key.startsWith(`${clubId}_`))
+    .map(m => m.key);
+  if (clubMembershipKeys.length > 0) {
+    const { error } = await supabase
+      .from("pb_memberships").delete().in("key", clubMembershipKeys);
+    if (error) throw error;
+  }
+
+  // 3. Delete the club row.
+  const { error: e3 } = await supabase.from("pb_clubs").delete().eq("id", clubId);
+  if (e3) throw e3;
+}
+
 // ─── Membership operations ──────────────────────────────────────────────
 // A membership links a player to a club. Identity is global; club presence
 // is a per-club membership row. Soft-delete via `deletedAt` so we can
 // distinguish "left the club" from "never joined" without losing the join
-// history. (Phase 2 doesn't use the deleted-membership concept yet, but
-// the dbRemove function is here so the storage layer is complete for
-// Phase 4 to use.)
+// history.
 
 export async function dbCreateMembership(clubId, playerId) {
   if (!clubId || !playerId) throw new Error("dbCreateMembership: clubId and playerId required");

@@ -18,7 +18,7 @@ import {
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
   dbToggleLockWeek, dbSetCheckIn,
   dbAddClubAdmin, dbRemoveClubAdmin, dbCreateMembership, dbCreateClub,
-  dbUpdateClub,
+  dbUpdateClub, dbTransferOwnership, dbSoftDeleteClub,
 } from "./lib/supabase.js";
 import {
   distributePlayersToCourts, seededShuffle, singlesMatches, doublesMatches,
@@ -61,6 +61,40 @@ function buildScoreToast(match, homeScore, awayScore, currentPlayer) {
   return myWin
     ? "🎉 Nice win! Score submitted."
     : "Score submitted — get 'em next time!";
+}
+
+// ─── Type-to-confirm helper for Delete Club ────────────────────────────────
+// The "Delete Club" modal renders this so the user must type the word
+// "delete" (case-insensitive) before the destructive button activates.
+// We use a short fixed word rather than the club name because club names
+// can be long ("Birmingham Country Club Pickleball League"); typing the
+// whole thing on mobile is friction without a meaningful safety gain.
+function DeleteClubConfirm({ onConfirm, onCancel, saving }) {
+  const [typed, setTyped] = useState("");
+  const matches = typed.trim().toLowerCase() === "delete";
+  return (
+    <>
+      <label style={S.label}>Type <b>delete</b> below to confirm</label>
+      <input
+        style={{ ...S.input, marginBottom: 16 }}
+        type="text"
+        value={typed}
+        onChange={e => setTyped(e.target.value)}
+        placeholder="delete"
+        autoFocus
+        autoComplete="off"
+      />
+      <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
+        <button style={S.btn("secondary")} onClick={onCancel} disabled={saving}>Cancel</button>
+        <button
+          style={{ ...S.btn("primary"), background: "#A32D2D", minWidth: 150, opacity: matches ? 1 : 0.5 }}
+          onClick={onConfirm}
+          disabled={!matches || saving}>
+          {saving ? <><Spinner /> Deleting…</> : "Delete forever"}
+        </button>
+      </div>
+    </>
+  );
 }
 
 export default function App() {
@@ -986,6 +1020,132 @@ export default function App() {
     await action(() => dbUpdateClub(activeClubId, { name: trimmed }), `Club renamed to "${trimmed}".`);
   }
 
+  // ─── Phase 4 / v1.4.0: regenerate code, transfer, delete ────────────────
+
+  // Regenerate the active club's join code. Any admin (or the owner) can do
+  // this; the old code stops working immediately. The new code is generated
+  // client-side via generateJoinCode (same helper used by createClub) so
+  // the prefix stays consistent with the current club name even after a
+  // rename.
+  async function regenerateJoinCode() {
+    if (!activeClubId) { showToast("No active club.", "error"); return; }
+    const newCode = generateJoinCode(activeClub?.name || "");
+    await action(
+      () => dbUpdateClub(activeClubId, { joinCode: newCode }),
+      `New join code: ${newCode}`
+    );
+    setModal(null);
+  }
+
+  // Transfer ownership to one of the current admins. The DB layer validates
+  // that the target is actually an admin; the UI gates this too via the
+  // dropdown's admin list. On success, the next render automatically
+  // updates isClubOwner/isClubAdmin for the current user since both check
+  // against the freshly-loaded club.
+  async function transferOwnership(newOwnerEmail) {
+    if (!activeClubId) { showToast("No active club.", "error"); return; }
+    if (!newOwnerEmail) { showToast("Select an admin to transfer to.", "error"); return; }
+    let res;
+    await action(async () => {
+      res = await dbTransferOwnership(activeClubId, newOwnerEmail);
+    });
+    if (res?.ok) {
+      showToast(`Ownership transferred to ${newOwnerEmail}. You're now a regular admin.`);
+    } else if (res?.reason === "not_admin") {
+      showToast("That user is no longer an admin of this club.", "error");
+    } else if (res?.reason === "empty_email") {
+      showToast("Please choose an admin to transfer to.", "error");
+    }
+    setModal(null);
+  }
+
+  // Soft-delete the active club. Cascades to its leagues + memberships
+  // via dbSoftDeleteClub. After the delete, the deleted club is no longer
+  // accessible, so we compute the post-delete accessible-clubs list and
+  // either switch to a remaining club or log the user out.
+  //
+  // We don't use the standard `action()` wrapper here because we need to
+  // compute the post-delete accessible-clubs list from FRESH db state
+  // (after the cascade), and synchronous post-action state isn't available
+  // through the wrapper. Instead we manage the spinner + reload + toast
+  // inline.
+  async function deleteClub() {
+    if (!activeClubId) { showToast("No active club.", "error"); return; }
+    const deletedClubId = activeClubId;
+    const deletedClubName = activeClub?.name || "the club";
+
+    setCurrentActionId("delete-club");
+    try {
+      await dbSoftDeleteClub(deletedClubId);
+      const fresh = await loadDB();
+      setDB(fresh);
+
+      // Recompute accessible clubs from fresh state. Deleted clubs are
+      // already filtered out by getClubsForPlayer/getClubsWhereAdmin (both
+      // check !c.deletedAt).
+      const accessible = [];
+      if (currentPlayer) {
+        getClubsForPlayer(fresh.memberships || {}, fresh.clubs || {}, currentPlayer.id)
+          .forEach(c => accessible.push(c));
+      }
+      if (adminEmail) {
+        getClubsWhereAdmin(fresh.clubs || {}, adminEmail).forEach(c => {
+          if (!accessible.find(x => x.id === c.id)) accessible.push(c);
+        });
+      }
+
+      setSelectedLeague(null);
+      setModal(null);
+
+      if (accessible.length > 0) {
+        // Switch to the first remaining accessible club. Alphabetical
+        // sort matches the switcher's display order so the choice is
+        // predictable to the user.
+        const sorted = [...accessible].sort(
+          (a, b) => (a.name || "").localeCompare(b.name || "")
+        );
+        const next = sorted[0];
+        setActiveClubId(next.id);
+
+        // If they were in admin view but aren't an admin of the new club,
+        // drop to player view (if they're a player there) or log out
+        // (if they're admin-only with no remaining admin role).
+        if (view === "admin") {
+          const stillAdminHere = isClubAdmin(next, adminEmail);
+          if (!stillAdminHere) {
+            if (currentPlayer) {
+              setView("player");
+            } else {
+              // Admin-only session with no admin role in any remaining
+              // club. Log them out — they have no commissioner role left.
+              setCurrentPlayer(null);
+              setAdminEmail(null);
+              setActiveClubId(null);
+              setView("home");
+              saveSession(null);
+              showToast(`${deletedClubName} deleted. Logged out — you no longer have admin access anywhere.`);
+              return;
+            }
+          }
+        }
+        showToast(`${deletedClubName} deleted. Switched to ${next.name}. Contact support within 30 days to recover.`);
+      } else {
+        // No remaining clubs — fully log out.
+        setCurrentPlayer(null);
+        setAdminEmail(null);
+        setActiveClubId(null);
+        setView("home");
+        saveSession(null);
+        showToast(`${deletedClubName} deleted. Contact support within 30 days to recover.`);
+      }
+    } catch (e) {
+      console.error("[deleteClub] failed:", e);
+      showToast(e.message || "Failed to delete club", "error");
+    } finally {
+      setCurrentActionId(null);
+    }
+  }
+
   async function addAdminEmail(email) {
     if (!email.trim()) return;
     if (!activeClubId) { showToast("No active club.", "error"); return; }
@@ -1307,6 +1467,94 @@ export default function App() {
           </Modal>
         )}
 
+        {/* ─── Phase 4 / v1.4.0: Settings tab modals ─────────────────────── */}
+        {modal?.type === "confirmRegenerateCode" && (
+          <Modal title="Regenerate Join Code" onClose={() => setModal(null)}>
+            <p style={{ fontSize: 14, margin: "0 0 12px" }}>
+              Regenerate the join code for <b>{activeClub?.name}</b>?
+            </p>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 16px" }}>
+              The current code{" "}
+              <code style={{ fontFamily: "ui-monospace, Menlo, monospace", padding: "2px 6px", background: "var(--color-background-secondary)", borderRadius: 4, fontSize: 12 }}>
+                {activeClub?.joinCode || "—"}
+              </code>{" "}
+              will stop working immediately. Anyone who tries to join your club will need the new code.
+            </p>
+            <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)} disabled={currentActionId === "_generic"}>Cancel</button>
+              <button
+                style={{ ...S.btn("primary"), background: "#854F0B", minWidth: 160 }}
+                onClick={regenerateJoinCode}
+                disabled={currentActionId === "_generic"}>
+                {currentActionId === "_generic" ? <><Spinner /> Regenerating…</> : "Regenerate code"}
+              </button>
+            </div>
+          </Modal>
+        )}
+        {modal?.type === "confirmTransferOwnership" && (
+          <Modal title="Transfer Ownership" onClose={() => setModal(null)}>
+            <p style={{ fontSize: 14, margin: "0 0 12px" }}>
+              Transfer ownership of <b>{activeClub?.name}</b> to <b>{modal.newOwnerEmail}</b>?
+            </p>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "0 0 16px" }}>
+              You'll become a regular admin. <b>{modal.newOwnerEmail}</b> will be able to remove other admins, transfer ownership again, or delete the club. This can be undone only by the new owner transferring back to you.
+            </p>
+            <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
+              <button style={S.btn("secondary")} onClick={() => setModal(null)} disabled={currentActionId === "_generic"}>Cancel</button>
+              <button
+                style={{ ...S.btn("primary"), background: "#854F0B", minWidth: 170 }}
+                onClick={() => transferOwnership(modal.newOwnerEmail)}
+                disabled={currentActionId === "_generic"}>
+                {currentActionId === "_generic" ? <><Spinner /> Transferring…</> : "Transfer ownership"}
+              </button>
+            </div>
+          </Modal>
+        )}
+        {modal?.type === "confirmDeleteClub" && (() => {
+          // Compute cascade impact for the warning. Both counts reflect
+          // what's currently live in the club — anything already in the
+          // trash doesn't count toward the "new" damage.
+          const clubLiveLeagues = allLeagues.filter(l =>
+            l.clubId === activeClubId && !l.deletedAt
+          );
+          const clubLiveMembershipCount = Object.values(db.memberships || {})
+            .filter(m => m.clubId === activeClubId && !m.deletedAt)
+            .length;
+          return (
+            <Modal title="Delete Club" onClose={() => setModal(null)}>
+              <p style={{ fontSize: 14, margin: "0 0 12px" }}>
+                Delete <b>{activeClub?.name}</b>?
+              </p>
+              <div style={{
+                padding: "12px 14px", marginBottom: 12,
+                background: "var(--color-background-secondary)",
+                border: "0.5px solid var(--color-border-tertiary)",
+                borderRadius: 8, fontSize: 13,
+              }}>
+                <p style={{ margin: "0 0 6px", fontWeight: 600 }}>This will move to trash:</p>
+                <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                  <li style={{ marginBottom: 4 }}>The club itself</li>
+                  <li style={{ marginBottom: 4 }}>
+                    {clubLiveLeagues.length} league{clubLiveLeagues.length !== 1 ? "s" : ""}
+                    {clubLiveLeagues.length > 0 ? " (with all schedules, scores, registrations)" : ""}
+                  </li>
+                  <li>
+                    {clubLiveMembershipCount} player membership{clubLiveMembershipCount !== 1 ? "s" : ""}
+                    {" "}<span style={{ color: "var(--color-text-secondary)" }}>(player accounts themselves are preserved)</span>
+                  </li>
+                </ul>
+              </div>
+              <p style={{ fontSize: 13, color: "#A32D2D", margin: "0 0 16px" }}>
+                After 30 days, everything is permanently deleted. <b>Restore is not available in-app</b> — if you change your mind during the 30-day window, contact support.
+              </p>
+              <DeleteClubConfirm
+                onConfirm={deleteClub}
+                onCancel={() => setModal(null)}
+                saving={currentActionId === "delete-club"} />
+            </Modal>
+          );
+        })()}
+
         <div style={S.header(league ? c.bg : undefined)} className="pwa-safe-top pwa-safe-x">
           <div style={S.row}>
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
@@ -1491,6 +1739,9 @@ export default function App() {
                 isAdmin={isClubAdmin(activeClub, adminEmail)}
                 isOwner={isClubOwner(activeClub, adminEmail)}
                 onRename={renameClub}
+                onRegenerateRequest={() => setModal({ type: "confirmRegenerateCode" })}
+                onTransferRequest={(newOwnerEmail) => setModal({ type: "confirmTransferOwnership", newOwnerEmail })}
+                onDeleteRequest={() => setModal({ type: "confirmDeleteClub" })}
               />
             )}
             {adminTab === "trash" && (
