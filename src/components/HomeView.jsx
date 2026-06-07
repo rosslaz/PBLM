@@ -16,6 +16,25 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
   const [loginEmail, setLoginEmail] = useState(initialEmail);
   const [loginError, setLoginError] = useState("");
 
+  // ─── Active Leagues visibility (v1.4.1) ──────────────────────────────────
+  // The home screen shows an "Active Leagues" list to give visitors a peek at
+  // what's running. But `leagues` is the unscoped, no-active-club view: when
+  // nobody is logged in, App.jsx hands us every non-trashed league across ALL
+  // clubs. For a single-club deployment (CSC today) that's exactly right. The
+  // moment a second, unrelated club exists, showing both clubs' leagues to an
+  // anonymous visitor is a cross-club leak.
+  //
+  // Gate: only render the section when there's exactly one live club in the
+  // whole DB. Single-club deployments keep their current experience; multi-
+  // club deployments hide the section entirely (a logged-out visitor has no
+  // "active club" context to scope it to anyway). If we later want a public
+  // club-discovery surface, that's a deliberate feature, not this fallback.
+  const liveClubCount = useMemo(
+    () => Object.values(db.clubs || {}).filter(c => c && !c.deletedAt).length,
+    [db.clubs]
+  );
+  const showActiveLeagues = liveClubCount === 1;
+
   // Resolve the remembered email to a player record if possible. If we have
   // one, show a prominent "Continue as Jane Smith" button as the primary
   // login path. Otherwise fall back to the email-input form.
@@ -237,7 +256,11 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
           </button>
         </div>
 
-        {leagues.length > 0 && (
+        {/* Active Leagues — only shown for single-club deployments. See the
+            `showActiveLeagues` derivation at the top of this component for
+            the rationale (avoids cross-club leakage when multiple clubs
+            exist and nobody's logged in). */}
+        {showActiveLeagues && leagues.length > 0 && (
           <div>
             <h3 style={{ margin: "0 0 12px", fontSize: 15, color: "var(--color-text-secondary)" }}>Active Leagues</h3>
             {sortLeagues(leagues.filter(l => l.status !== "archived")).map(l => {

@@ -16,6 +16,33 @@ export const supabase = createClient(SUPABASE_URL || "", SUPABASE_ANON_KEY || ""
   auth: { persistSession: false }, // app handles its own auth
 });
 
+// ─── Key-prefix matching helper ──────────────────────────────────────────────
+// Compound keys in this app look like `${leagueId}_...` or `${clubId}_...`
+// where the prefix ID itself contains an underscore (e.g. "league_1",
+// "club_2"). SQL `LIKE "league_1_%"` is WRONG for matching these: in LIKE,
+// `_` matches any single character, so "league_1_%" also matches
+// "league_10_...", "league_11_...", etc. That bug (present in older cascade
+// code) could over-delete child rows belonging to a different league/club.
+//
+// The safe approach used throughout the cascade functions below: pull the
+// candidate keys and filter in JS with a literal `startsWith(`${id}_`)`.
+// `startsWith` treats the underscore literally, so "league_1_" never matches
+// "league_10_". See dbHardDeleteLeague / dbHardDeleteClub.
+function keysWithPrefix(rows, id) {
+  const prefix = `${id}_`;
+  return (rows || []).map(r => r.key).filter(k => k.startsWith(prefix));
+}
+
+// Same idea for keys where the ID is a SUFFIX, e.g. registration keys
+// `${leagueId}_${playerId}` or check-in keys `${leagueId}_w${week}_${playerId}`.
+// `endsWith(`_${playerId}`)` matches "..._player_5" but NOT "..._player_55"
+// (the leading underscore in the suffix prevents the false match). This is
+// why we never need to worry about player_5 vs player_50 collisions here.
+function keysWithSuffix(rows, id) {
+  const suffix = `_${id}`;
+  return (rows || []).map(r => r.key).filter(k => k.endsWith(suffix));
+}
+
 // ─── Full snapshot loader ───────────────────────────────────────────────────
 // Also runs the 30-day trash auto-purge: any league, player, or club whose
 // `data.deletedAt` is older than TRASH_RETENTION_DAYS gets hard-deleted (with
@@ -242,15 +269,41 @@ export async function dbRestoreLeague(id) {
 
 // Hard-delete cascade: the original `dbDeleteLeague`. Used by the trash UI's
 // "Delete Forever" button and the 30-day auto-purge.
+//
+// v1.4.1: switched from SQL `LIKE "${id}_%"` to JS-side prefix filtering.
+// The old LIKE patterns had the underscore-as-wildcard bug — deleting
+// "league_1" would match child keys for "league_10", "league_11", etc.,
+// over-deleting rows that belong to OTHER leagues. We now pull candidate
+// keys and filter with a literal `startsWith` (see keysWithPrefix), then
+// delete by explicit key list. `pb_leagues` (by id) and `pb_schedules`
+// (by league_id column) are unaffected by the quirk and stay as direct
+// equality deletes.
 export async function dbHardDeleteLeague(id) {
-  const results = await Promise.all([
+  const [regsRes, scoresRes, locksRes, checkinsRes] = await Promise.all([
+    supabase.from("pb_registrations").select("key"),
+    supabase.from("pb_scores").select("key"),
+    supabase.from("pb_locked_weeks").select("key"),
+    supabase.from("pb_checkins").select("key"),
+  ]);
+  for (const r of [regsRes, scoresRes, locksRes, checkinsRes]) {
+    if (r.error) throw r.error;
+  }
+
+  const regKeys = keysWithPrefix(regsRes.data, id);
+  const scoreKeys = keysWithPrefix(scoresRes.data, id);
+  const lockKeys = keysWithPrefix(locksRes.data, id);
+  const checkinKeys = keysWithPrefix(checkinsRes.data, id);
+
+  const ops = [
     supabase.from("pb_leagues").delete().eq("id", id),
     supabase.from("pb_schedules").delete().eq("league_id", id),
-    supabase.from("pb_registrations").delete().like("key", `${id}_%`),
-    supabase.from("pb_scores").delete().like("key", `${id}_%`),
-    supabase.from("pb_locked_weeks").delete().like("key", `${id}_%`),
-    supabase.from("pb_checkins").delete().like("key", `${id}_%`),
-  ]);
+  ];
+  if (regKeys.length > 0) ops.push(supabase.from("pb_registrations").delete().in("key", regKeys));
+  if (scoreKeys.length > 0) ops.push(supabase.from("pb_scores").delete().in("key", scoreKeys));
+  if (lockKeys.length > 0) ops.push(supabase.from("pb_locked_weeks").delete().in("key", lockKeys));
+  if (checkinKeys.length > 0) ops.push(supabase.from("pb_checkins").delete().in("key", checkinKeys));
+
+  const results = await Promise.all(ops);
   const firstError = results.find(r => r.error)?.error;
   if (firstError) throw firstError;
 }
@@ -383,6 +436,15 @@ export async function dbRebalanceWeek(leagueId, weekNum, newCourts) {
   // scores for that week (because match IDs are deterministic — w{N}_c{C}_m{M}
   // — and would otherwise be silently re-attributed to different matches with
   // the same ID after the rebuild).
+  //
+  // NOTE on the scores delete below: the `${leagueId}_${weekNum}_%` LIKE
+  // pattern has the same theoretical underscore-wildcard quirk as the old
+  // cascade code (e.g. league_1 week 1 could match league_1 week 10's keys:
+  // "league_1_1_%" matches "league_1_10_..."). This is a pre-existing issue
+  // scoped to rebalance and is NOT addressed in v1.4.1 (which only touches the
+  // hard-delete cascades). Flagged for a future fix. In practice the blast
+  // radius is limited to the same league's other weeks and rebalance already
+  // rewrites that week's matches, but it should still be tightened later.
   const { data, error: e1 } = await supabase
     .from("pb_schedules").select("data").eq("league_id", leagueId).single();
   if (e1) throw e1;
@@ -463,14 +525,39 @@ export async function dbRestorePlayer(playerId) {
 
 // Hard-delete cascade: the original `dbDeletePlayer`. Used by the trash UI's
 // "Delete Forever" button and the 30-day auto-purge.
+//
+// v1.4.1: two fixes here.
+//   1. Now also cascades to pb_memberships — previously a hard-deleted player
+//      left orphaned membership rows pointing at a player_id that no longer
+//      exists.
+//   2. Switched from SQL `LIKE "%_${playerId}"` to JS-side suffix filtering.
+//      Although the suffix form is less collision-prone than the prefix form,
+//      `LIKE "%_player_5"` still matches "..._player_5" only by luck of the
+//      leading "_"; we make it explicit + safe with `endsWith(`_${playerId}`)`
+//      (see keysWithSuffix). This also dodges the case where a stray key could
+//      contain the player ID mid-string.
 export async function dbHardDeletePlayer(playerId) {
-  // Cascade: delete the player + all their registrations + check-ins
-  const [{ error: e1 }, { error: e2 }, { error: e3 }] = await Promise.all([
-    supabase.from("pb_players").delete().eq("id", playerId),
-    supabase.from("pb_registrations").delete().like("key", `%_${playerId}`),
-    supabase.from("pb_checkins").delete().like("key", `%_${playerId}`),
+  const [regsRes, checkinsRes, memsRes] = await Promise.all([
+    supabase.from("pb_registrations").select("key"),
+    supabase.from("pb_checkins").select("key"),
+    supabase.from("pb_memberships").select("key"),
   ]);
-  if (e1 || e2 || e3) throw (e1 || e2 || e3);
+  for (const r of [regsRes, checkinsRes, memsRes]) {
+    if (r.error) throw r.error;
+  }
+
+  const regKeys = keysWithSuffix(regsRes.data, playerId);
+  const checkinKeys = keysWithSuffix(checkinsRes.data, playerId);
+  const memKeys = keysWithSuffix(memsRes.data, playerId);
+
+  const ops = [supabase.from("pb_players").delete().eq("id", playerId)];
+  if (regKeys.length > 0) ops.push(supabase.from("pb_registrations").delete().in("key", regKeys));
+  if (checkinKeys.length > 0) ops.push(supabase.from("pb_checkins").delete().in("key", checkinKeys));
+  if (memKeys.length > 0) ops.push(supabase.from("pb_memberships").delete().in("key", memKeys));
+
+  const results = await Promise.all(ops);
+  const firstError = results.find(r => r.error)?.error;
+  if (firstError) throw firstError;
 }
 
 // ─── Club operations ────────────────────────────────────────────────────
