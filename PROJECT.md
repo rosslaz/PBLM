@@ -1,36 +1,46 @@
 # Pickleball League Manager — Project Reference
 
-**Last updated:** as of v1.4.0 deployment (Phase 4 Session 2 complete)
+**Last updated:** v1.5.0 deployed. Docs refreshed against the live code.
 
-This document is the canonical handoff for any future Claude session. Read this first. The companion doc `NEXT-UP.md` covers the next two planned releases (v1.4.1 + v1.5.0).
+This is the canonical handoff for any future session. Read this first, then
+`NEXT-UP.md` for planned work. `SETUP.md` covers standing up a fresh instance.
+
+> **A note on trusting this document.** A previous version of these docs drifted
+> from reality and actively misled the next session — it claimed there was no
+> service worker (there was), pointed at a manifest filename that didn't exist,
+> and undercounted an orphan-row audit. **When the docs and the code disagree,
+> the code wins.** Read the actual files before acting on anything here.
 
 ---
 
 ## 1. What this is
 
-A multi-tenant web app for running pickleball leagues at clubs. Built originally for Ross Lazar's home club (CSC Pickleball at Cranbrook Swim Club) and now generalized so any club can sign up via a public join-code flow.
+A multi-tenant web app for running pickleball leagues at clubs. Built for Ross
+Lazar's club (CSC Pickleball at Cranbrook Swim Club) and generalized so any club
+can sign up via a public join-code flow.
 
-Users see one of three views:
+Three views:
 
 - **Home** — pre-login. Email login, "Create a club", "Join with a code".
-- **Player** — what registered players see. Their leagues, schedules, scores, standings, check-ins.
-- **Commissioner** (a.k.a. admin) — full management. Leagues, players, commissioners, club settings, trash.
+- **Player** — their leagues, schedules, scores, standings, weekly check-ins.
+- **Commissioner** (admin) — leagues, players, commissioners, club settings, trash.
 
-Real users today: ~31 players in one club (CSC). The app has been used to run real seasons.
+Real usage today: **10 players, 1 club (CSC), 2 live leagues** (Men's and Women's
+Summer, both `open`, neither started). The app has run real seasons.
 
 ---
 
 ## 2. Tech stack
 
-- **React 18** (functional components, hooks, no router — view state is a simple string in `App.jsx`)
-- **Vite 5** for dev/build
-- **Supabase Postgres + RLS (anon policy)** for storage
-- **`@supabase/supabase-js`** client; the app handles its own auth (email-only — see Known Issues)
-- **Vercel** for hosting (auto-deploys from GitHub `main`)
-- **No backend code** — pure SPA + DB. All "business logic" runs in `App.jsx` and helpers.
-- **PWA** — installable, has a manifest, currently no service worker
-
-Inline styles via a `styles.js` module rather than CSS-in-JS framework. CSS variables drive color themes (light/dark via `prefers-color-scheme`).
+- **React 18** — functional components + hooks. No router: `view` is a string in `App.jsx`.
+- **Vite 5** — dev/build. No plugins beyond `@vitejs/plugin-react`.
+- **Supabase Postgres** — RLS on, permissive `anon_all` policy.
+- **Vercel** — auto-deploys from GitHub `main`. No staging.
+- **PWA** — installable, hand-written caching service worker (no `vite-plugin-pwa`).
+- **No backend code.** Pure SPA + DB. All logic lives in `App.jsx` and `src/lib/`.
+- **Styling:** inline styles via `styles.js` (`S.*` objects). CSS variables drive
+  light/dark via `prefers-color-scheme`. No CSS framework.
+- **Dependencies:** `@supabase/supabase-js`, `react`, `react-dom`. That's it.
 
 ---
 
@@ -38,38 +48,37 @@ Inline styles via a `styles.js` module rather than CSS-in-JS framework. CSS vari
 
 | Resource | Identifier |
 |---|---|
-| **GitHub repo** | `rosslaz/PBLM` |
-| **Vercel project** | `pblm` (id `prj_JjBT11hq8ONMUUzCDwATU2OaWLkL`) |
+| **Local path** | `C:\Users\rossl\Projects\PBLM\pickleball-deploy\` |
+| **GitHub** | `rosslaz/PBLM` |
+| **Vercel project** | `pblm` (`prj_JjBT11hq8ONMUUzCDwATU2OaWLkL`) |
 | **Vercel team** | `team_5fZejjoHm5i4299zoa2MYheI` |
 | **Supabase project_id** | `uarbvnraljoktlkugchd` |
 | **Supabase URL** | `https://uarbvnraljoktlkugchd.supabase.co` |
-| **Production URL** | (Vercel default — check Vercel project for current) |
-| **Local Windows path** | `C:\Users\rossl\Desktop\AI Projects\PBLM\pickleball-deploy\` |
 
-Deploy flow: commit + push to `main` → Vercel detects and builds → live in 1-2 min. There is no staging.
+Env vars (Vercel + `.env.local`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
-### Env vars (in Vercel + `.env.local`)
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+Deploy: commit → push to `main` → Vercel builds → live in ~1–2 min.
 
 ---
 
-## 4. Tooling for the next Claude
+## 4. Tooling notes for the next session
 
-The active tool environment in recent sessions:
+- **Filesystem MCP** — read/write on Ross's Windows machine. **No `str_replace`**:
+  every edit is a full-file overwrite. `App.jsx` is ~85KB — the heaviest write. If
+  a write times out, restart the MCP server and retry.
+- **Supabase MCP** — full DB access.
+- **Vercel MCP** — deployment state.
 
-- **Filesystem MCP** — direct read/write on Ross's Windows machine. `Filesystem:read_file` and `Filesystem:write_file`. Allowed dirs are `C:\Users\rossl\Desktop\AI Projects`, `pungctual`, `PBLM`. **No `str_replace` available** — full-file overwrites only.
-- **Supabase MCP** — full DB access for reads and writes.
-- **Vercel MCP** — deploy + read deployment state.
-- **Google Drive MCP** — available but unused so far.
+**Verify the allowed directories at the start of a session** by attempting a read,
+not by trusting a cached listing. A previous session got a stale
+`list_allowed_directories` result pointing at `C:\Users\rossl\Desktop\AI Projects\...`
+and briefly believed its edits had gone to the wrong tree. The real root is
+`C:\Users\rossl\Projects\`.
 
-What's missing vs. earlier sessions:
+**No sandbox / bash tool.** Can't run `npm run build`. Ross builds and tests
+locally and reports back. Don't claim tests pass without him saying so.
 
-- **No sandbox / bash tool** — can't run `npm run build` or `npm install` here. Ross does that locally.
-- **No view tool for files** — use `Filesystem:read_file` instead.
-- **No `str_replace`** — every edit means re-writing the whole file. App.jsx is ~80KB; this is the heaviest write. If a write times out, restart the Filesystem MCP server and retry.
-
-Ross's machine: Windows, PowerShell. Don't paste bash one-liners.
+Ross is on **Windows / PowerShell**. Don't paste bash.
 
 ---
 
@@ -77,345 +86,371 @@ Ross's machine: Windows, PowerShell. Don't paste bash one-liners.
 
 ```
 pickleball-deploy/
-├── package.json                 (version source of truth)
-├── .env.local                   (Supabase creds — never commit)
-├── index.html
-├── vite.config.js
+├── index.html                ← entry + SW registration + update handshake
+├── vite.config.js            ← minimal: just @vitejs/plugin-react
+├── package.json              ← version source of truth
+├── schema.sql                ← the 10 tables (run in Supabase SQL editor)
+├── migration_add_checkins.sql
+├── test_players_20.sql       ← (in repo root, one level up)
+├── .env.example / .env.local
+├── PROJECT.md  NEXT-UP.md  SETUP.md
 ├── public/
-│   ├── csc-pickleball.png       (logo)
-│   ├── manifest.json            (PWA manifest)
-│   └── icons/                   (PWA icons)
+│   ├── sw.js                 ← caching service worker (v1.5.0+)
+│   ├── manifest.webmanifest  ← NOTE: .webmanifest, not manifest.json
+│   ├── csc-pickleball.png    ← logo   ├── csc-mark.png   ├── favicon.png
+│   └── icons/                ← icon-192, icon-512, icon-512-maskable, apple-touch-icon
 └── src/
     ├── main.jsx
-    ├── App.jsx                  (~80KB — ALL routing + actions + modals live here)
-    ├── styles.js                (S.* style objects, genderBadgeStyle)
-    ├── index.css                (CSS variables, base resets, PWA safe-area)
+    ├── App.jsx               ← ~85KB — ALL routing, actions, modals
+    ├── styles.js             ← S.* style objects, genderBadgeStyle
+    ├── index.css             ← CSS vars, resets, PWA safe-area classes
     ├── lib/
-    │   ├── constants.js         (CSC palette, COLORS, MIN/MAX_PER_COURT, SPACE, APP_INFO version)
-    │   ├── clubs.js             (isClubOwner, isClubAdmin, getClubsForPlayer, generateJoinCode, ...)
-    │   ├── format.js            (formatPlayerName, formatPhone, formatDate, playerFitsLeagueGender)
-    │   ├── session.js           (localStorage helpers, useIsMobile, sortLeagues)
-    │   ├── scheduling.js        (distributePlayersToCourts, doublesMatches, generateCourtSchedule, laddderRotate, ...)
-    │   └── supabase.js          (~30KB — supabase client + all dbXxx functions + loadDB)
+    │   ├── constants.js      ← APP_INFO.version, CSC palette, COLORS, SPACE,
+    │   │                        MIN/MAX_PER_COURT, storage keys, TRASH_RETENTION_DAYS
+    │   ├── clubs.js          ← isClubOwner/isClubAdmin, getClubsForPlayer,
+    │   │                        getClubsWhereAdmin, generateJoinCode, resolveActiveClub
+    │   ├── format.js         ← formatPlayerName, formatDate, formatPhone,
+    │   │                        formatRelativeTime, playerFitsLeagueGender, todayISO
+    │   ├── session.js        ← localStorage session, useIsMobile, sortLeagues
+    │   ├── scheduling.js     ← distributePlayersToCourts, doublesMatches,
+    │   │                        generateCourtSchedule, laddderRotate, buildLadderWeek
+    │   └── supabase.js       ← client + ALL dbXxx functions + loadDB + snapshot cache
     └── components/
-        ├── ui.jsx               (Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh, AvatarMenu, PWAInstallBanner)
-        ├── Spinner.jsx          (Spinner + ActionPendingProvider context)
-        ├── PlayerForm.jsx
-        ├── LeagueForm.jsx
-        ├── EditWeekForm.jsx
-        ├── ScoreForm.jsx
-        ├── AddPlayerToLeague.jsx
-        ├── CheckInRow.jsx
-        ├── CheckInSummary.jsx
-        ├── CourtWeekCard.jsx
-        ├── StandingsTable.jsx
-        ├── LeagueRegistrationCard.jsx
-        ├── LeagueContactsModal.jsx
-        ├── LeagueDetail.jsx
-        ├── SchedulePreview.jsx
-        ├── AdminsTab.jsx
-        ├── ClubSettingsTab.jsx   (Rename + Regenerate + Transfer + Delete sections)
-        ├── ClubSwitcher.jsx      (header dropdown)
-        ├── CreateClubModal.jsx
-        ├── JoinClubModal.jsx
-        ├── TrashTab.jsx
-        ├── HomeView.jsx
-        └── PlayerView.jsx
+        ├── ui.jsx            ← Modal, Toast, EmptyState, VersionFooter,
+        │                        RefreshButton, PullToRefresh, AvatarMenu, PWAInstallBanner
+        ├── StatusBanners.jsx ← UpdateBanner + OfflineBanner (v1.5.0)
+        ├── Spinner.jsx       ← Spinner + ActionPendingProvider
+        ├── HomeView.jsx  PlayerView.jsx  LeagueDetail.jsx
+        ├── PlayerForm.jsx  LeagueForm.jsx  EditWeekForm.jsx  ScoreForm.jsx
+        ├── AddPlayerToLeague.jsx  LeagueContactsModal.jsx
+        ├── CheckInRow.jsx  CheckInSummary.jsx  CourtWeekCard.jsx
+        ├── StandingsTable.jsx  LeagueRegistrationCard.jsx  SchedulePreview.jsx
+        ├── AdminsTab.jsx  ClubSettingsTab.jsx  ClubSwitcher.jsx  TrashTab.jsx
+        └── CreateClubModal.jsx  JoinClubModal.jsx
 ```
 
-### Where things live
+**Where things live:**
 
-- **All app-level state** is `useState` in `App.jsx`. There's no Redux/Zustand/context store. The single source is the in-memory `db` object that mirrors a snapshot from Supabase.
-- **All `dbXxx` functions** are in `src/lib/supabase.js`. They never call React; they're pure async DB ops.
-- **All modals** are rendered from `App.jsx` (conditional on `modal?.type === "..."`). Components trigger them via callback props.
-- **The action wrapper** in `App.jsx` (`async function action(fn, successMsg, actionId)`) wraps every write — sets a spinner ID, runs the write, calls `reload()` to re-fetch state, shows toast. Always use it unless you need fresh DB state mid-flow (the `deleteClub` action is the only exception today).
+- **All app state** is `useState` in `App.jsx`. No Redux/context store. The single
+  source of truth is the in-memory `db` object mirroring a Supabase snapshot.
+- **All `dbXxx` functions** are in `src/lib/supabase.js`. Pure async DB ops, no React.
+- **All modals** render from `App.jsx`, gated on `modal?.type === "..."`. Components
+  trigger them via callback props.
+- **The `action()` wrapper** in `App.jsx` wraps writes: sets a spinner ID → runs the
+  write → `reload()` → toast. Use it unless you need fresh DB state mid-flow.
 
 ---
 
 ## 6. Data model
 
-10 tables in Supabase. Every table follows the same convention: a **string PK column** (`id` or `key`) and a **JSONB `data` column**. The full record lives in `data`. Top-level columns exist only to make queries cheap.
+10 tables. Every one: **string PK** (`id` or `key`) + **JSONB `data`** holding the
+full record. Top-level columns exist only to make queries cheap.
 
-### Tables
-
-| Table | PK | Joins on | Holds |
-|---|---|---|---|
-| `pb_config` | `id` (always `1`) | — | Counters: `next_id.club/league/player` |
-| `pb_clubs` | `id` (e.g. `club_1`) | — | Club name, owner email, admin emails, join code, deletedAt |
-| `pb_memberships` | `key` = `${clubId}_${playerId}` | — | Player ↔ club join. Has deletedAt for soft-removal. |
-| `pb_players` | `id` (e.g. `player_1`) | — | Global identity. First/last/email/phone/gender. deletedAt for trash. |
-| `pb_leagues` | `id` (e.g. `league_1`) | `data.clubId` | League settings, weeks, color, deletedAt. |
-| `pb_schedules` | `league_id` (col, not in JSON) | → pb_leagues.id | Whole season schedule (`{weeks: [...]}`). |
-| `pb_registrations` | `key` = `${leagueId}_${playerId}` | — | Player registered in a league. Has `paid` bool. |
-| `pb_scores` | `key` = `${leagueId}_${week}_${matchId}` | — | Match score (homeScore, awayScore, submittedAt). |
-| `pb_locked_weeks` | `key` = `${leagueId}_w${week}` | — | Existence = locked. No data needed. |
-| `pb_checkins` | `key` = `${leagueId}_w${week}_${playerId}` | — | Player's "in / maybe / sub / out" RSVP per week. |
+| Table | PK | Holds |
+|---|---|---|
+| `pb_config` | `id` (always `1`) | `next_id.club/league/player` counters |
+| `pb_clubs` | `id` (`club_1`) | name, ownerEmail, adminEmails[], joinCode, deletedAt |
+| `pb_memberships` | `${clubId}_${playerId}` | player ↔ club link, deletedAt |
+| `pb_players` | `id` (`player_1`) | global identity: name, email, phone, gender, deletedAt |
+| `pb_leagues` | `id` (`league_1`) | settings, weeks, format, colour, `data.clubId`, deletedAt |
+| `pb_schedules` | `league_id` (column) | `{ weeks: [...] }` for one league |
+| `pb_registrations` | `${leagueId}_${playerId}` | registration + `paid` |
+| `pb_scores` | `${leagueId}_${week}_${matchId}` | homeScore, awayScore |
+| `pb_locked_weeks` | `${leagueId}_w${week}` | existence = locked (no payload) |
+| `pb_checkins` | `${leagueId}_w${week}_${playerId}` | in / maybe / sub / out |
 
 ### Identity model
 
-- **Players are global.** One row in `pb_players` regardless of how many clubs the player belongs to. Identity is by `id`, lookup is by email.
-- **Clubs are top-level scope.** Leagues, scores, schedules, etc. all reference the league which references the club.
-- **Memberships are the many-to-many link** between players and clubs. A player joining a second club gets a second `pb_memberships` row, not a new player record.
-- **Roles per club:**
-  - **Owner** — `pb_clubs.data.ownerEmail`. Exactly one. Can rename, regenerate code, transfer ownership, delete club, add/remove admins.
-  - **Admin** — `pb_clubs.data.adminEmails[]`. Owner is implicitly an admin (`isClubAdmin` returns true for the owner too). Admins can do everything except remove other admins, transfer ownership, delete the club.
-  - **Member** — a player with a live membership row. Sees the player view scoped to that club.
+- **Players are global.** One `pb_players` row per human, regardless of how many
+  clubs they're in. `db.players[id]` lookups are **never** club-filtered — historical
+  scores must still resolve names for players who've left.
+- **Clubs are the top-level scope.** Leagues carry `data.clubId`.
+- **Memberships** are the many-to-many link. Joining a second club adds a membership
+  row, not a new player.
+- **Roles (per club):**
+  - **Owner** — `ownerEmail`. Exactly one. Can rename, regenerate code, add/remove
+    admins, transfer ownership, delete the club.
+  - **Admin** — in `adminEmails[]`. The owner is *implicitly* an admin
+    (`isClubAdmin` returns true for them). Admins can do everything except remove
+    admins, transfer ownership, or delete the club.
+  - **Member** — has a live membership row.
 
-### Production snapshot (verified at v1.4.0 deploy)
+### ⚠️ The compound-key underscore trap
 
-- **Clubs:** 2 total, 1 live (`club_1` = CSC Pickleball; `club_2` is the soft-deleted test club from Session 2 smoke testing — will auto-purge after 30 days)
-- **Players:** 32 total, 32 live
-- **Leagues:** 2 total, 2 live (`league_7` = "CSC Summer League - Men's", `league_8` = "CSC Summer League - Women's", both status `open`)
-- **Memberships:** 32 total, 31 live
-- **Registrations:** 1
-- **Scores:** 0 (leagues haven't started)
-- **Locked weeks:** 4
-- **Check-ins:** 2
-- **next_id:** `{club: 3, league: 13, player: 34}`
-- **Orphan rows from pre-v1.0 cascade gaps:** 2 checkins for `league_1`, locked_weeks for `league_1/2/3` (4 rows total). Harmless — see `NEXT-UP.md` for cleanup plan.
+IDs contain underscores (`league_1`, `club_2`, `player_7`), and compound keys
+concatenate them. **SQL `LIKE 'league_1_%'` is wrong** — in `LIKE`, `_` matches any
+single character, so it also matches `league_10_...`, `league_11_...`.
+
+This caused a real (if never-triggered) bug in the hard-delete cascades, fixed in
+v1.4.1. The correct approach, used throughout `supabase.js` now: pull candidate keys
+and filter in JS with `startsWith` / `endsWith` (see `keysWithPrefix` /
+`keysWithSuffix`). **Any new code touching compound keys must do the same.**
+
+One `LIKE` pattern survives on purpose: `dbRebalanceWeek`'s score delete. It's
+documented in-code as out of scope — blast radius is limited to the same league's
+other weeks, and rebalance rewrites that week anyway. Worth tightening eventually.
+
+### Production snapshot (verified at v1.5.0 + cleanup)
+
+| | |
+|---|---|
+| Clubs | 1 live (`club_1` CSC Pickleball) |
+| Players | **10 live**, all real, no duplicate emails; 2 trashed (dedup strays) |
+| Leagues | 2 live (`league_7` Men's, `league_8` Women's — both `open`); 2 trashed ("Test" ×2) |
+| Memberships | 10 live |
+| Registrations | 1 |
+| Scores / locked weeks / check-ins | 0 (seasons haven't started) |
+| `next_id` | `{club: 3, league: 15, player: 34}` |
+
+Orphan rows: **none.** 6 legacy orphans (leagues 1–3) were cleaned out post-v1.4.1.
 
 ---
 
-## 7. Core architectural patterns
+## 7. Core patterns
 
-These are load-bearing. Anything new should follow them.
+These are load-bearing. New code should follow them.
 
 ### Write-first / read-back
 
-Every state-changing operation:
-1. Awaits a DB write (`dbXxx`)
-2. Calls `loadDB()` to fetch a fresh snapshot
-3. Stores the new snapshot in `setDB(fresh)`
+Every mutation: await the DB write → `loadDB()` → `setDB(fresh)`. No optimistic
+updates, no diffing, no local mutation. React never shows data that isn't in
+Postgres. Costs a round-trip; buys correctness across tabs and devices.
 
-The `action(fn, successMsg, actionId)` wrapper in `App.jsx` does this automatically. No optimistic updates, no diffing, no caching — React never shows data that isn't already in the DB. This makes the app trivially correct across tabs/devices and worth the latency cost.
+### Action IDs
 
-### Action IDs and pending state
+`currentActionId` is a string (or `null`). `action(fn, successMsg, actionId)` sets it
+before the write, clears it after. Buttons check it via `useIsActionPending` to show
+their own inline spinner. Omit the ID (`"_generic"`) for background ops that only
+need the header's "Saving…" indicator.
 
-`currentActionId` is a string identifier (or `null` when idle). The `action` wrapper sets it before the write and clears it after. Specific buttons can show their own per-button spinner by checking the ID via `useIsActionPending(actionId)`. Pass an explicit `actionId` to `action()` for any visible action; pass nothing (defaults to `"_generic"`) for background ops that just drive the global "Saving…" indicator in the header.
+**Three functions deliberately bypass `action()`** because they manage their own
+spinner/reload: `deleteClub()`, `seedTestPlayers()`, and the schedule-commit path.
+If you add a guard to `action()`, check whether these need it too — the v1.5.0
+offline block had to be added in three places for exactly this reason.
 
-### Soft-delete pattern
+### Soft delete + auto-purge
 
-The trash works the same way for everything that can be trashed (leagues, players, clubs):
+1. **Soft delete** stamps `data.deletedAt`. The UI filters on `!deletedAt`; the record
+   vanishes but stays queryable by ID.
+2. **Trash tab** offers Restore or Delete Forever.
+3. **Auto-purge** runs at the top of every `loadDB()`. Anything soft-deleted longer
+   than `TRASH_RETENTION_DAYS` (30) is hard-deleted with full cascade. No cron job —
+   it's opportunistic, on the next load after expiry.
 
-1. **Soft delete** sets `data.deletedAt = new Date().toISOString()` on the row. The UI filters by `!deletedAt`, so soft-deleted records vanish from views but stay queryable by ID.
-2. **Trash tab** shows the soft-deleted records and offers Restore or Delete Forever.
-3. **Auto-purge** runs at the top of every `loadDB()`. Any soft-deleted record older than `TRASH_RETENTION_DAYS` (currently 30) is hard-deleted via the appropriate cascade function.
+Cascade order in `purgeExpiredTrash`: **clubs first** (their cascade sweeps their
+leagues + memberships in bulk), then leftover leagues, then players.
 
-The cascade functions (`dbHardDeleteLeague`, `dbHardDeletePlayer`, `dbHardDeleteClub`) wipe dependent rows. The newer `dbHardDeleteClub` and `dbSoftDeleteClub` (v1.4.0) use **JS-side `startsWith` prefix filtering** rather than SQL `LIKE` to avoid the underscore-as-wildcard quirk; older functions use `LIKE` patterns which has a known bug (see Known Issues).
+Clubs have **no in-app restore** — deliberate. The confirmation modal says so and
+directs the user to contact support. Recovery is a manual `deletedAt` clear via SQL.
 
-### Multi-tenancy
-
-Every action that creates a league or player needs an `activeClubId`. The `action` wrappers in `App.jsx` enforce this with a "No active club selected" toast if `activeClubId` is null.
-
-Filtering rule of thumb (from `App.jsx` lines ~310-340):
+### Multi-tenancy scoping
 
 ```js
-// Live leagues — fall back to all when no active club (home screen)
+// Live leagues — fall back to ALL when no active club (home screen)
 const leagues = allLeagues.filter(l =>
   !isTrashed(l) && (!activeClubId || l.clubId === activeClubId)
 );
 
-// Players — same pattern. THIS IS LOAD-BEARING for home screen login.
-// Without the (!activeClubId || ...) fallback, login lookup returns
-// empty array on home screen. v1.3.0 bug fix.
+// Players — SAME PATTERN. This fallback is LOAD-BEARING.
 const players = allPlayers.filter(p =>
   !isTrashed(p) && (!activeClubId || clubMemberIds.has(p.id))
 );
 ```
 
-Global identity is preserved via `db.players[id]` lookups, which never filter. This means `getPlayerName(pid)` works even for players who left the active club — important for historical scores.
+Without the `!activeClubId ||` fallback on `players`, the home screen has no active
+club → `players` is `[]` → **the email login lookup fails for everyone.** That bug
+shipped in v1.1.0 and lived in production until v1.3.0. Don't reintroduce it.
 
 ### Session restore
 
-Lives in two `useEffect`s in `App.jsx`. On boot:
-
-1. Load DB snapshot
-2. Read saved session from localStorage (`loadSession()`)
-3. Validate: if saved player is trashed, drop them. If saved admin email isn't owner/admin of any club, drop the admin role.
-4. Compute candidate accessible clubs, run `resolveActiveClub(savedId, candidates)`.
-5. Set view based on what the user had access to.
-
-The "Continue as Jane Smith" card on the home screen reads `loadLastEmail()` and finds the matching player.
+Two `useEffect`s in `App.jsx`. On boot: load DB → read saved session → validate
+(trashed player? admin email still an admin anywhere?) → resolve the active club →
+set the view. The "Continue as…" card on the home screen reads `loadLastEmail()`.
 
 ### Modals
 
-There is no modal library. Conditional rendering of a `<Modal>` component in `App.jsx`:
-
-```jsx
-{modal?.type === "confirmDelete" && (
-  <Modal title="Move League to Trash" onClose={() => setModal(null)}>
-    ...
-  </Modal>
-)}
-```
-
-Components trigger by calling props like `onDelete={() => setModal({ type: "confirmDelete", league })}`. The data needed for the modal goes in the modal state object.
+No library. `{modal?.type === "x" && <Modal>…</Modal>}` in `App.jsx`. Components
+trigger via `setModal({ type: "x", ...data })`. The payload carries whatever the
+modal needs.
 
 ---
 
-## 8. UI / design conventions
+## 8. PWA architecture (v1.5.0)
 
-### Brand palette (CSC Pickleball)
+**Read this before touching anything PWA-related.** It's hand-written — there is no
+`vite-plugin-pwa`. Earlier docs got this wrong and nearly caused a needless rewrite.
 
-```js
-CSC.blue        = "#1B6CC1"   // primary
-CSC.blueDark    = "#0E3A6B"   // titles
-CSC.blueLight   = "#E5F0FA"   // soft backgrounds
-CSC.green       = "#7FC93D"   // accent (logo swoosh)
-CSC.greenDark   = "#4F8C1B"   // accessible green for text
-CSC.yellow      = "#FFE82E"   // pickleball ball
-```
+### The three moving parts
 
-Five color themes for leagues (`COLORS.csc`, `green`, `coral`, `purple`, `amber`) — color is auto-assigned on league creation based on creation order.
+1. **`public/manifest.webmanifest`** — static file. Name, icons, standalone display,
+   theme colour. Complete; needs no changes.
 
-### Typography
+2. **`public/sw.js`** — hand-written caching service worker:
+   - Versioned cache (`CACHE_VERSION`); `activate` deletes non-matching caches.
+   - Precaches the app shell on install (HTML, manifest, icons, logo).
+   - **Network-first** for navigations/HTML → new deploys land immediately; falls
+     back to the cached shell offline.
+   - **Cache-first** for `/assets/*` → Vite content-hashes these, so the bytes at a
+     given URL never change. New builds emit new hashes → natural cache miss.
+   - **Ignores everything cross-origin.** Supabase never touches the SW.
+   - **Never intercepts non-GET.** Writes always hit the network.
 
-Body font: `Georgia, "Times New Roman", serif`. Yes, serif. It's intentional — feels club-like.
+3. **`index.html`** — registration + the update handshake (kept out of the React
+   bundle so it works even when the bundle is what's updating).
 
-### Spacing
+### The update flow — and why `skipWaiting()` is absent
 
-Use the `SPACE` scale in `lib/constants.js` (xs=4, sm=8, md=12, lg=16, xl=20, xxl=24, xxxl=32) for new code. Existing code mixes ad-hoc values (6, 10, 14) — the scale is a default, not a straitjacket.
+`sw.js` deliberately does **not** call `skipWaiting()` on install:
 
-### Buttons
+1. New SW installs → precaches → **waits**.
+2. `index.html` detects it → dispatches `pwa:update-ready`.
+3. `<UpdateBanner>` renders: *"A new version is available · Reload / Later"*.
+4. Reload → `window.__pwaApplyUpdate()` → posts `SKIP_WAITING` to the worker.
+5. Worker activates → `controllerchange` → page reloads.
 
-`S.btn(variant, color)` and `S.btnSm(variant, color)` in `styles.js`. Variants are `"primary"` and `"secondary"`. Most destructive actions use `background: "#A32D2D"`, warnings use `"#854F0B"`, success uses `"#3B6D11"`.
+The pre-v1.5.0 worker *did* call `skipWaiting()`, with a comment saying it was
+"safe because we're not caching anything." True then. **Fatal once you cache:** an
+immediately-activating worker can serve new assets to a page running old code
+(version skew), and it makes the update banner meaningless. Don't add it back.
 
-### Dark mode
+### Offline behaviour
 
-Inherited from `prefers-color-scheme`. Color tokens are in CSS variables (`--color-background-primary`, `--color-text-primary`, etc.). Brand colors stay constant.
+- **Data cache is separate from the SW.** Every successful `loadDB()` writes the
+  snapshot + a timestamp to localStorage (`DB_CACHE_KEY`). On boot, if the live fetch
+  fails, `App.jsx` falls back to that snapshot and sets `snapshotAge`.
+- `<OfflineBanner>` shows *"Offline — showing data from X ago"*. Staleness is
+  **visible by design** — a silently-stale cache is worse than no cache.
+- **Writes are hard-blocked offline** (`navigator.onLine` check). Toast, no request.
+- On the `online` event, the app auto-refreshes back to live data.
 
-### Layout
+**Why block instead of queue:** write-first/read-back means a write is only real once
+the server confirms it. Queueing would show changes that haven't happened, then need
+conflict resolution and ordering guarantees this app doesn't have. Offline is
+strictly read-only. That matches actual usage — a player on court wants to *see*
+their court assignment; they'll enter scores when they have signal.
 
-- Mobile-first. The `useIsMobile()` hook (returns true under 768px) is available but rarely used — most layouts just work responsively.
-- The page is constrained to ~520px max-width on the home screen; full-width elsewhere.
-- Header is sticky with PWA safe-area padding (`pwa-safe-top` class for the notch).
+### Testing
 
----
-
-## 9. Version history
-
-| Version | Phase | What landed |
-|---|---|---|
-| v1.0.0 | Phase 1 | Hide season-progress banner pre-start; LeagueRegistrationCard descriptions |
-| v1.0.1 | Phase 1 | League description visible on schedule tab pre-start |
-| v1.1.0 | **Phase 2** | **Multi-tenancy**. `pb_clubs` + `pb_memberships` tables, `activeClubId` scoping, club-aware filtering. (Latent bug: home-screen login broke — fixed in v1.3.0.) |
-| v1.2.0 | **Phase 3** | **Public club creation + join-by-code**. CreateClubModal, JoinClubModal. Join code in AdminsTab. `cscMember` dropped from PlayerForm. |
-| v1.3.0 | **Phase 4 Session 1** | **Club switcher** header dropdown, **Settings tab** with Rename. Fixed v1.1.0 player-login bug + v1.2.0 PlayerView header bug. |
-| v1.4.0 | **Phase 4 Session 2** | **Regenerate code + Transfer ownership + Delete club**. New DB functions: `dbTransferOwnership`, `dbSoftDeleteClub`, `dbHardDeleteClub`. Cascade-aware auto-purge. |
-
-Version bump policy (Ross's stated rule):
-- **Patch** (x.y.Z): UX tweaks, fixes
-- **Minor** (x.Y.0): new features
-- **Major** (X.0.0): milestones
-
-Each session in a phase has been a minor bump.
-
----
-
-## 10. Known issues and tech debt
-
-### Active
-
-1. **No real auth** — login is email-only with no password. Anyone who knows a user's email can log in as them. Acceptable in trusted-club mode for v1.x. Phase 5 candidate: Supabase Auth.
-
-2. **`LIKE` underscore-as-wildcard bug in legacy cascade functions** — `dbHardDeleteLeague`, `dbHardDeletePlayer` use SQL `LIKE "${id}_%"` patterns. The `_` matches "any single char" in SQL, so deleting `league_1` would also match keys for `league_10`, `league_11`, etc. **No evidence this has bitten production data so far** (audited at v1.4.0 deploy — see Section 6), but it's a real latent bug. v1.4.0's new club cascade functions correctly use JS-side `startsWith` instead. v1.4.1 will fix the legacy functions to match.
-
-3. **`dbHardDeletePlayer` doesn't clean up memberships** — when a player is auto-purged after 30 days, their `pb_memberships` rows are left orphaned. Players don't reference back to memberships so the orphans are harmless from a query standpoint, but they shouldn't be there. v1.4.1 will fix.
-
-4. **Home screen "Active Leagues" shows ALL clubs' leagues** — when no club is active (home screen), the leagues filter falls back to "all non-trashed leagues across all clubs". Fine while CSC is the only real club; latent leak if/when multi-club traffic grows. v1.4.1 will tighten.
-
-5. **Orphan child rows from earlier cascade versions** — 4 rows total: 2 in `pb_checkins` for `league_1`, locked_weeks for `league_1`/`league_2`/`league_3`. These leagues no longer exist. Pre-existing artifacts, not from the LIKE bug. v1.4.1 can include a one-time SQL cleanup.
-
-### Architectural
-
-6. **`App.jsx` is huge (~80KB)** — has slowly accumulated. No structural problem, but every edit means a full-file overwrite via Filesystem MCP. Refactoring it into smaller files would be a multi-day project. Not urgent.
-
-7. **No offline support** — closing the tab while offline shows a browser error. v1.5.0 will add a service worker + cached DB snapshot.
-
-8. **No push notifications** — players have to open the app to see check-in reminders. Out of scope for now (real 1-2 week project; needs VAPID keys + push endpoint + permission flow).
+Service workers don't work under `npm run dev`. Use `npm run build && npm run preview`.
+The update banner can't be tested from a single build — temporarily bump
+`CACHE_VERSION`, rebuild, and refresh once.
 
 ---
 
-## 11. Working with Ross
+## 9. UI conventions
 
-These are persistent preferences across sessions.
+**Palette** (`CSC` in constants.js): blue `#1B6CC1` (primary), blueDark `#0E3A6B`,
+blueLight `#E5F0FA`, green `#7FC93D`, greenDark `#4F8C1B`, yellow `#FFE82E`.
 
-- **OS:** Windows. PowerShell. Don't paste bash.
-- **Style:** No need to always be positive. Push back on suggestions if they're wrong, with solid reasoning.
-- **Versioning:** Patch / Minor / Major as above. Don't conflate fix releases with feature releases.
-- **DB writes:** Reads from Supabase MCP are unrestricted. **Writes require explicit "yes" per call.** Don't bundle.
-- **Smoke testing:** Ross runs `npm run build` and `npm run dev` locally. He'll report errors. Don't claim "tests pass" without him saying so.
-- **Deploy cadence:** Each release should sit in prod at least a session before piling more changes on, unless there's a known regression to fix.
-- **Tone:** Direct and useful. Avoid filler.
+Five per-league themes (`csc`, `green`, `coral`, `purple`, `amber`), auto-assigned by
+creation order.
+
+**Semantic colours:** destructive `#A32D2D`, warning `#854F0B`, success `#3B6D11`.
+
+**Typography:** `Georgia, "Times New Roman", serif`. Intentional — reads club-like.
+
+**Spacing:** use the `SPACE` scale (xs 4 · sm 8 · md 12 · lg 16 · xl 20 · xxl 24 ·
+xxxl 32). Older code has ad-hoc values; the scale is a default, not a straitjacket.
+
+**Buttons:** `S.btn(variant, color)` / `S.btnSm(...)`. Variants `"primary"` / `"secondary"`.
+
+**Dark mode:** via `prefers-color-scheme` and CSS variables. Brand colours are constant.
+
+**Layout:** mobile-first. Home screen caps at ~520px; other views are full-width.
+Sticky header with PWA safe-area padding (`pwa-safe-top`).
 
 ---
 
-## 12. Quick task reference
+## 10. Version history
 
-### Run locally
+| Version | What landed |
+|---|---|
+| v1.0.0 / v1.0.1 | Season-progress banner gating; league descriptions pre-start |
+| **v1.1.0** | **Multi-tenancy.** `pb_clubs` + `pb_memberships`, `activeClubId` scoping. *(Shipped the player-login bug.)* |
+| **v1.2.0** | **Public club creation + join-by-code.** CreateClub/JoinClub modals. |
+| **v1.3.0** | **Club switcher + Settings tab (rename).** Fixed the v1.1.0 login bug and a v1.2.0 header bug. |
+| **v1.4.0** | **Regenerate code · Transfer ownership · Delete club.** `dbTransferOwnership`, `dbSoftDeleteClub`, `dbHardDeleteClub`; cascade-aware auto-purge. |
+| **v1.4.1** | **Cascade fixes.** LIKE underscore bug in `dbHardDeleteLeague`; memberships added to `dbHardDeletePlayer`; Active Leagues gated to single-club. Plus a one-time cleanup of 6 orphan rows. |
+| **v1.5.0** | **PWA polish.** Caching SW (hand-upgraded, not `vite-plugin-pwa`); offline read from cached snapshot; hard write-block offline; update banner. |
 
+**Version policy:** patch = fixes/tweaks · minor = features · major = milestones.
+
+Bump **two** files: `package.json` and `src/lib/constants.js` (`APP_INFO.version`).
+
+---
+
+## 11. Known issues
+
+1. **No real auth.** Email-only, no password. Anyone knowing a member's email can
+   log in as them. Deliberate for trusted-club use; the leading Phase 5 candidate.
+
+2. **`dbRebalanceWeek` LIKE quirk.** Same underscore bug as the (fixed) cascades,
+   scoped to one league's own weeks. Documented in-code as out of scope. Low blast
+   radius, still real.
+
+3. **`App.jsx` is ~85KB.** Not broken, just heavy — every edit is a full-file
+   overwrite. Splitting it is a multi-day job with real regression risk. Not urgent.
+
+4. **No push notifications.** Genuinely a separate 1–2 week project (VAPID keys,
+   push endpoint, permission flow, scheduling).
+
+5. **Two trashed player records** (`player_29` Shannon dup, `player_33` "R L" stray)
+   sit in the Trash tab. They'll auto-purge after 30 days; harmless.
+
+---
+
+## 12. Working with Ross
+
+- **Windows / PowerShell.** No bash.
+- **Push back with reasoning** when a plan is wrong. No need to be relentlessly positive.
+- **DB reads:** unrestricted. **DB writes: require an explicit "yes" per call.** Don't bundle.
+- **Verify before destructive SQL.** Dry-run the SELECT, show what will change, then act.
+- **Ross builds and tests locally.** Don't claim a build passes.
+- **Let a release settle** before stacking the next one on top.
+- **Be direct.** Skip filler.
+
+---
+
+## 13. Quick reference
+
+**Run / build**
 ```powershell
-cd "C:\Users\rossl\Desktop\AI Projects\PBLM\pickleball-deploy"
-npm run dev      # localhost:5173
-npm run build    # verify production build
+cd "C:\Users\rossl\Projects\PBLM\pickleball-deploy"
+npm run dev                      # localhost:5173 (NO service worker)
+npm run build ; npm run preview  # required for any PWA testing
 ```
 
-### Deploy
-
+**Deploy**
 ```powershell
-git add -A
-git commit -m "vX.Y.Z - description"
-git push
+git add -A ; git commit -m "vX.Y.Z - description" ; git push
 ```
 
-Vercel auto-builds from `main` push.
+**Add a `dbXxx` function:** write it in `supabase.js` (read-then-write for updates so
+other fields survive) → export → import in `App.jsx` → wrap in `action()`.
 
-### Bump version
+**Add a modal:** conditional block in `App.jsx` → `setModal({ type, ...data })` from
+the triggering component.
 
-Edit two files:
-- `package.json` → `"version": "X.Y.Z"`
-- `src/lib/constants.js` → `APP_INFO.version: "X.Y.Z"`
-
-### Add a new dbXxx function
-
-1. Write the function in `src/lib/supabase.js` following the existing patterns. Always read-then-write for updates (preserves other fields).
-2. Export it.
-3. Import in `App.jsx`.
-4. Wrap usage with `action(() => dbXxx(...), successMsg, actionId)`.
-
-### Add a new modal
-
-1. In `App.jsx`, add a conditional `{modal?.type === "newThing" && <Modal>...</Modal>}` in the appropriate view block.
-2. In the component that triggers it, accept an `onRequest` prop and call `setModal({ type: "newThing", ...data })`.
-3. The action handler inside the modal calls the real `action()`-wrapped function.
-
-### Query Supabase directly
-
-Use the Supabase MCP. Example:
-
+**Query the DB:**
 ```sql
 SELECT id, data->>'name', data->>'deletedAt' FROM pb_clubs;
 ```
 
-For destructive queries, ask Ross first.
-
 ---
 
-## 13. Glossary
+## 14. Glossary
 
-- **Club** — top-level tenant. Has one owner, optional admins, players who join via membership.
-- **Membership** — row linking a player to a club. Can be soft-deleted ("left the club").
-- **League** — a competition inside a club. Has a format (Singles/Doubles/Mixed), a type (mixer/ladder), N weeks, courts, players registered.
-- **Mixer** — schedule generated upfront; courts rotate weekly to balance opponents.
-- **Ladder** — week-by-week schedule; courts redistributed based on previous week's results.
-- **Court** — 4 or 5 players play together on a court for a week. The roster rotates.
-- **Week** — one game day. Has a date, optional time, and per-court overrides.
-- **Locked week** — commissioner marked the week complete. Scores from locked weeks count toward standings; unlocked weeks don't.
-- **Check-in** — player's "in / maybe / sub / out" RSVP per week. Affects standings (sub/out players don't earn points for that week's matches).
-- **Trash** — soft-deleted records. Live for 30 days, then auto-purged on the next `loadDB()`.
-- **Soft delete vs hard delete** — soft = stamp `deletedAt`, recoverable. Hard = actual DELETE FROM, gone forever.
-- **Action ID** — string identifier for an in-flight write; lets specific buttons show their own spinner.
-
----
-
-End of project reference. See `NEXT-UP.md` for the planned v1.4.1 and v1.5.0 work.
+**Club** — top-level tenant. One owner, optional admins, members via memberships.
+**Membership** — player ↔ club link. Soft-deletable ("left the club").
+**League** — a competition inside a club. Format (Singles/Doubles/Mixed), type
+(mixer/ladder), N weeks, courts.
+**Mixer** — full schedule generated upfront; courts rotate weekly for variety.
+**Ladder** — generated a week at a time; courts redistributed from last week's results.
+**Court** — 4–5 players who play each other for a week. Groups rotate.
+**Week** — one game day. Has a date, optional time, per-court overrides.
+**Locked week** — commissioner marked it complete. **Only locked weeks count toward
+standings.**
+**Check-in** — weekly RSVP: in / maybe / sub / out. `sub` and `out` players earn no
+points for that week.
+**Trash** — soft-deleted records. 30 days, then auto-purged on the next `loadDB()`.
+**Action ID** — string identifying an in-flight write, so one button can show its own spinner.

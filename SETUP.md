@@ -1,98 +1,125 @@
-# Pickleball League Manager — Deployment Guide
-## Stack: React + Vite → Vercel | Supabase (Postgres)
+# Pickleball League Manager — Setup & Deployment
+
+**Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
+**Current version:** 1.5.0
+
+This guide covers standing up a fresh instance from scratch. If you're picking up
+the existing CSC deployment, you want `PROJECT.md` instead — this file is for
+first-time setup.
 
 ---
 
-## Step 1 — Set up Supabase (the database)
+## Step 1 — Supabase (the database)
 
-1. Go to **https://supabase.com** and create a free account
-2. Click **New project**, give it a name (e.g. `pickleball`), choose a region close to you, set a database password, click **Create project**
-3. Wait ~1 minute for it to spin up
+1. Go to **https://supabase.com**, create an account, click **New project**.
+2. Name it (e.g. `pickleball`), pick a nearby region, set a DB password, create.
+3. Wait ~1 minute for provisioning.
 
-### Create the database tables
+### Create the tables
 
-4. In your Supabase project, click **SQL Editor** in the left sidebar
-5. Open the file `schema.sql` included in this project, copy the entire contents, paste into the SQL editor and click **Run**
+4. In the project, open **SQL Editor** in the left sidebar.
+5. Copy the entire contents of `schema.sql` from this repo, paste it in, click **Run**.
 
-You should see "Success" — this creates 7 tables:
+That creates **10 tables**:
 
-| Table | Stores |
-|---|---|
-| `pb_leagues` | League definitions |
-| `pb_players` | Player profiles |
-| `pb_registrations` | Who is in which league + paid status |
-| `pb_schedules` | Weekly court assignments per league |
-| `pb_scores` | Individual match results |
-| `pb_locked_weeks` | Which weeks are locked by admin |
-| `pb_config` | Admin email list and ID counters |
+| Table | Primary key | Stores |
+|---|---|---|
+| `pb_config` | `id` (always `1`) | ID counters (`next_id.club/league/player`) |
+| `pb_clubs` | `id` (`club_1`) | Club name, owner email, admin emails, join code |
+| `pb_memberships` | `key` (`${clubId}_${playerId}`) | Which players belong to which clubs |
+| `pb_players` | `id` (`player_1`) | Player identity (name, email, phone, gender) |
+| `pb_leagues` | `id` (`league_1`) | League settings, weeks, format, colour |
+| `pb_schedules` | `league_id` | Whole-season schedule for one league |
+| `pb_registrations` | `key` (`${leagueId}_${playerId}`) | Who's in which league + paid status |
+| `pb_scores` | `key` (`${leagueId}_${week}_${matchId}`) | Match results |
+| `pb_locked_weeks` | `key` (`${leagueId}_w${week}`) | Which weeks are locked (row exists = locked) |
+| `pb_checkins` | `key` (`${leagueId}_w${week}_${playerId}`) | Weekly RSVP (in / maybe / sub / out) |
 
-Each table has its own rows — **no data is ever stored in a single JSON blob**. Refreshing the app or deploying new code never touches existing rows.
+Every table follows the same shape: a **string primary key** plus a **JSONB `data`
+column** holding the full record. Top-level columns exist only to make queries
+cheap. Each record is its own row — there is no single monolithic JSON blob, and
+deploying new code never rewrites existing rows.
 
 ### Get your API keys
 
-7. Go to **Settings → API** (gear icon in sidebar)
-8. Copy two values:
-   - **Project URL** — looks like `https://abcdefgh.supabase.co`
-   - **anon public** key — a long JWT string under "Project API keys"
+6. Go to **Settings → API**.
+7. Copy two values:
+   - **Project URL** — `https://<project-id>.supabase.co`
+   - **anon public** key — the long JWT under "Project API keys"
+
+The anon key is safe to ship in the client bundle. RLS is enabled on every table
+with a permissive `anon_all` policy — see the **Security** note at the bottom.
 
 ---
 
-## Step 2 — Configure the app locally
+## Step 2 — Configure locally
 
-1. In the project folder, duplicate `.env.example` and rename it `.env.local`
-2. Fill in your two values:
+1. Copy `.env.example` → `.env.local`
+2. Fill in:
 
 ```
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
+`.env.local` is gitignored. Never commit it.
+
 ---
 
-## Step 3 — Run locally to test
+## Step 3 — Run locally
 
-```bash
-# Install dependencies (only needed once)
-npm install
-
-# Start the dev server
-npm run dev
+```powershell
+npm install      # once
+npm run dev      # http://localhost:5173
 ```
 
-Open **http://localhost:5173** in your browser.  
-Test that data saves by creating a league — then refresh the page and confirm it's still there (it's now coming from Supabase).
+Create a club from the home screen, then refresh — if it's still there, Supabase
+is wired up correctly.
+
+**Note on the service worker:** `npm run dev` does not serve the service worker
+properly. To test PWA behaviour (offline mode, caching, the update banner) you
+must use a production build:
+
+```powershell
+npm run build
+npm run preview
+```
 
 ---
 
 ## Step 4 — Deploy to Vercel
 
-1. Push the project folder to a **GitHub repository**:
+1. Push to GitHub.
+2. **https://vercel.com** → sign in with GitHub → **Add New → Project**.
+3. Import the repo. Vercel auto-detects Vite; no build settings to change.
+4. Before deploying, open **Environment Variables** and add both:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+5. **Deploy.**
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/pickleball-league.git
-git push -u origin main
-```
-
-2. Go to **https://vercel.com** and sign in with GitHub
-3. Click **Add New → Project**
-4. Select your `pickleball-league` repository → click **Import**
-5. Vercel auto-detects Vite — no build settings to change
-6. Before clicking Deploy, click **Environment Variables** and add:
-   - `VITE_SUPABASE_URL` → your project URL
-   - `VITE_SUPABASE_ANON_KEY` → your anon key
-7. Click **Deploy**
-
-Vercel gives you a live URL like `https://pickleball-league.vercel.app` in ~30 seconds.
+Every subsequent push to `main` auto-deploys. There is no staging environment.
 
 ---
 
 ## Step 5 — Custom domain (optional)
 
-In Vercel → your project → **Settings → Domains**, add your own domain (e.g. `pickleball.yourclub.com`).  
-Vercel handles the SSL certificate automatically.
+Vercel → project → **Settings → Domains**. SSL is automatic.
+
+---
+
+## First run: creating your club
+
+The app has no seeded data. On first load:
+
+1. Home screen → **Create a club**
+2. Enter the club name and your own player details — you become the **owner**.
+3. You'll get a **join code** (e.g. `CSC-2026-2Q2H`). Share it with players so
+   they can self-register via **Join with a code**.
+4. Find the code any time under **Commissioners** (or **Settings** → Join code,
+   where you can also regenerate it).
+
+Owners can rename the club, regenerate the join code, add/remove admins, transfer
+ownership, and delete the club. Admins can do everything except the last three.
 
 ---
 
@@ -100,27 +127,100 @@ Vercel handles the SSL certificate automatically.
 
 ```
 pickleball-deploy/
-├── index.html          ← HTML entry point
-├── vite.config.js      ← Vite config
-├── package.json        ← Dependencies
-├── .env.example        ← Template for env vars (safe to commit)
-├── .env.local          ← Your actual keys (DO NOT commit this)
-├── .gitignore
+├── index.html                ← entry point + service-worker registration
+├── vite.config.js
+├── package.json              ← version source of truth
+├── schema.sql                ← run this in Supabase SQL Editor
+├── .env.example              ← template (safe to commit)
+├── .env.local                ← your keys (NEVER commit)
+├── PROJECT.md                ← architecture reference — read this first
+├── NEXT-UP.md                ← planned work
+├── SETUP.md                  ← this file
+├── public/
+│   ├── sw.js                 ← service worker (caching, v1.5.0+)
+│   ├── manifest.webmanifest  ← PWA manifest
+│   ├── csc-pickleball.png    ← logo
+│   ├── favicon.png
+│   └── icons/                ← PWA icons (192, 512, maskable, apple-touch)
 └── src/
-    ├── main.jsx        ← React root
-    ├── App.jsx         ← The full app
-    └── index.css       ← Global styles + CSS variables
+    ├── main.jsx
+    ├── App.jsx               ← ~85KB: all routing, actions, and modals
+    ├── styles.js             ← S.* style objects
+    ├── index.css             ← CSS variables, resets, PWA safe-area
+    ├── lib/                  ← constants, clubs, format, session,
+    │                            scheduling, supabase (all dbXxx functions)
+    └── components/           ← ~25 components (see PROJECT.md for the map)
 ```
 
 ---
 
-## How the database works
+## How data flows
 
-All app state (leagues, players, schedules, scores, etc.) is stored as a single JSON object in one Supabase Postgres row. This keeps the setup simple — no schema migrations needed when the app changes. The `saveDB()` function does a PATCH to that row on every change.
+**Write-first / read-back.** Every mutation:
 
-If you ever want to inspect or back up your data:
-- Supabase Dashboard → **Table Editor → app_config** — click the row to see the full JSON
-- Or run `SELECT data FROM app_config WHERE id = 1;` in the SQL editor
+1. Awaits a DB write (`dbXxx` in `src/lib/supabase.js`)
+2. Re-fetches a full snapshot via `loadDB()`
+3. Stores it in React state
+
+No optimistic updates. React never shows data that isn't already in Postgres.
+This costs a round-trip per write and buys correctness across tabs and devices.
+
+**Soft deletes.** Leagues, players, and clubs are trashed by stamping
+`data.deletedAt`, not by deleting rows. They vanish from the UI, stay recoverable
+from the **Trash** tab for 30 days, then get hard-deleted (with full cascade)
+automatically on the next `loadDB()`.
+
+To inspect data directly: Supabase → **Table Editor**, or the SQL editor, e.g.
+
+```sql
+SELECT id, data->>'name', data->>'deletedAt' FROM pb_clubs;
+```
+
+---
+
+## PWA
+
+The app installs to a home screen and launches without browser chrome.
+
+- **iPhone (Safari):** Share → Add to Home Screen
+- **Android (Chrome):** ⋮ → Install app
+- **Desktop Chrome/Edge:** install icon in the address bar
+
+Requires HTTPS — Vercel provides it. iOS Safari needs real HTTPS even for testing,
+so you can't fully verify install behaviour from `localhost`.
+
+### What works offline (v1.5.0+)
+
+The service worker caches the app shell, and every successful load caches the last
+DB snapshot to localStorage. If you open the app with no connection:
+
+- The app **boots and renders** from cache (rather than showing a network error)
+- You can **read** your schedule, courts, standings, and roster
+- An amber banner says **"Offline — showing data from X ago"**
+- **Writes are blocked** with a clear toast — offline is strictly read-only
+
+This is deliberate. The data layer is write-first/read-back: a write only counts
+once the server confirms it. Queueing mutations offline would mean showing changes
+that haven't happened, then reconciling later — that needs conflict resolution and
+ordering guarantees this app doesn't have. A blocked write is honest; a silently
+lost one is not.
+
+**Not included:** push notifications (needs VAPID keys, a push endpoint, and a
+permission flow — a genuinely separate project).
+
+### Updates after a deploy
+
+Handled properly as of v1.5.0. A new build's service worker installs, precaches,
+and then **waits** — it does not take over mid-session. The app detects it and
+shows a blue **"A new version is available · Reload"** banner. Only when the user
+clicks Reload does the new worker activate and the page refresh.
+
+This is why `sw.js` deliberately does **not** call `skipWaiting()` on install:
+activating immediately could serve new assets to a page still running old code,
+and would make the banner pointless.
+
+If a user ever gets genuinely stuck on an old build, uninstalling and reinstalling
+the PWA clears the cache.
 
 ---
 
@@ -128,43 +228,23 @@ If you ever want to inspect or back up your data:
 
 | Problem | Fix |
 |---|---|
-| Blank page on load | Check browser console for errors; verify env vars are set in Vercel |
-| Data not saving | Check Supabase → Table Editor to confirm the row exists; re-run the SQL setup |
-| "Failed to fetch" errors | Confirm your Supabase URL has no trailing slash and the anon key is correct |
-| Changes not showing after deploy | Vercel auto-deploys on every git push to `main` |
+| Blank page | Check the browser console; confirm env vars are set in Vercel |
+| "Could not load data" | Verify `VITE_SUPABASE_URL` (no trailing slash) and the anon key |
+| Data not saving | Confirm `schema.sql` ran; check the tables exist in Table Editor |
+| Service worker not registering | You're on `npm run dev` — use `npm run build && npm run preview` |
+| Changes not live after deploy | Vercel deploys on push to `main`; check the Deployments tab |
+| Stuck on an old version in the PWA | Uninstall and reinstall from the home screen |
 
 ---
 
-## Installing as an app (PWA)
+## Security note
 
-The app is installable on phones and desktops — it gets a home-screen / desktop icon and launches fullscreen without browser chrome.
+There is **no real authentication.** Login is email-only with no password: enter an
+email that matches a player record and you're in. Anyone who knows a member's email
+can sign in as them.
 
-**On iPhone (Safari):** Open the deployed URL → tap the Share button → "Add to Home Screen" → Add.
+This is a deliberate trade-off for a trusted single-club context, not an oversight.
+RLS is enabled but the policy is permissive (`anon_all`), so the anon key grants
+full read/write on all tables. Do not put anything sensitive in this database.
 
-**On Android (Chrome):** Open the deployed URL → tap the menu (⋮) → "Install app" (or "Add to Home Screen"). On some Android setups Chrome will prompt automatically after a couple of visits.
-
-**On desktop Chrome / Edge:** Visit the deployed URL → look for the install icon (⊕ or computer-with-down-arrow) on the right side of the address bar → Install.
-
-The PWA needs HTTPS, which Vercel provides automatically. Installation does NOT work from `http://localhost` (browsers require HTTPS for service workers, with localhost as the only exception — but iOS Safari requires real HTTPS even for testing).
-
-### What's included
-
-- Installable on iOS, Android, desktop
-- CSC logo as the home-screen icon (with Android maskable variant so it crops cleanly into circles/squircles)
-- Launches in standalone mode (no browser chrome)
-- Theme color matches the brand
-
-### What's NOT included
-
-- **Offline support.** The app needs an active internet connection. We don't cache the JS bundle, so refreshing while offline shows a network error (same as a regular website). Adding real offline support requires caching the app shell + queueing writes for when connectivity returns — meaningful work, not included.
-- **Push notifications.** Would require server-side keys and permission flows.
-
-### After a deploy: forcing PWA to update
-
-Service workers can cache an old version even after you deploy new code. If players install the PWA and then you ship an update they don't see:
-
-- They can pull-to-refresh inside the installed app
-- Or close + relaunch the app
-- As a last resort: uninstall and reinstall from the home screen
-
-Our service worker doesn't actually cache anything yet, so this is rarely an issue today — but worth knowing if we add caching later.
+Adding real auth (Supabase Auth) is the leading candidate for the next major phase.
