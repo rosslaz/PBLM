@@ -11,7 +11,7 @@
 // Surfaced in the About modal (accessible from the avatar menu). Update on
 // every release. Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "1.4.1",
+  version: "1.5.0",
   createdBy: "Ross Lazar",
   // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
   // modal don't have to decode the acronym.
@@ -75,6 +75,16 @@ export const SESSION_KEY = "pickleball_session_v1";
 // Cleared only when explicitly cleared via the "Use a different email" link
 // or when the browser clears localStorage entirely.
 export const LAST_EMAIL_KEY = "pickleball_last_email_v1";
+
+// v1.5.0 — offline snapshot cache. Holds the last successful loadDB() result
+// plus the epoch-ms timestamp it was fetched at, so a boot with no network can
+// render the app read-only from the last-known state. Written on every
+// successful load (see lib/supabase.js), read only when the live fetch fails.
+//
+// Versioned key: if the snapshot's shape ever changes incompatibly, bump the
+// suffix rather than writing migration code — a missing cache is harmless
+// (the app just has no offline fallback until the next successful online load).
+export const DB_CACHE_KEY = "pickleball_db_snapshot_v1";
 
 // How long soft-deleted leagues/players/clubs stay in the trash before
 // auto-purge. Records carrying `data.deletedAt` older than this are

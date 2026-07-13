@@ -61,6 +61,48 @@ export function formatDateTime(iso, hhmm) {
   return datePart || timePart || "";
 }
 
+// ─── Relative time ──────────────────────────────────────────────────────────
+// v1.5.0. Renders "how long ago" for the offline banner, which shows the age
+// of the cached DB snapshot ("Offline — showing data from 20 minutes ago").
+//
+// Takes an epoch-milliseconds timestamp (what Date.now() returns, which is
+// what we store alongside the cached snapshot). Deliberately coarse: the
+// exact second doesn't matter, and rounding to friendly buckets reads better
+// than "from 1847 seconds ago".
+export function formatRelativeTime(ms) {
+  if (!ms) return "an unknown time ago";
+  const diff = Date.now() - ms;
+
+  // Clock skew, or a timestamp from the future — don't render nonsense.
+  if (diff < 0) return "just now";
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 45) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return minutes <= 1 ? "a minute ago" : `${minutes} minutes ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return "a week ago";
+  if (weeks < 5) return `${weeks} weeks ago`;
+
+  // Beyond a month the snapshot is so stale that precision is pointless —
+  // the message the user needs is "this is really old", not the exact date.
+  const months = Math.floor(days / 30);
+  return months === 1 ? "a month ago" : `${months} months ago`;
+}
+
 // ─── Court name + time resolution ───────────────────────────────────────────
 // Three-tier cascade for resolving the displayed name and time for a court:
 //   1. Per-week override on the court (court.customName / court.time)

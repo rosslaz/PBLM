@@ -9,7 +9,7 @@ import {
   resolveActiveClub, generateJoinCode,
 } from "./lib/clubs.js";
 import {
-  supabase, loadDB, defaultDB,
+  supabase, loadDB, loadCachedDB, defaultDB,
   dbCreateLeague, dbUpdateLeague,
   dbSoftDeleteLeague, dbRestoreLeague, dbHardDeleteLeague,
   dbCreatePlayer, dbUpdatePlayer,
@@ -27,6 +27,7 @@ import {
 import { S, genderBadgeStyle } from "./styles.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
+import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
 import { PlayerForm } from "./components/PlayerForm.jsx";
 import { LeagueForm } from "./components/LeagueForm.jsx";
 import { EditWeekForm } from "./components/EditWeekForm.jsx";
@@ -121,6 +122,13 @@ export default function App() {
   // memberships, and the player can switch later (Phase 3 club switcher).
   const [activeClubId, setActiveClubId] = useState(null);
   const [sessionRestored, setSessionRestored] = useState(false);
+  // v1.5.0 — offline mode. null when we're showing live data; an epoch-ms
+  // timestamp when we're rendering the cached localStorage snapshot because
+  // the live fetch failed. Drives <OfflineBanner /> and nothing else — the
+  // write block is a separate, independent check on navigator.onLine, so a
+  // stale snapshot can never be the basis for a mutation even if this state
+  // somehow got out of sync.
+  const [snapshotAge, setSnapshotAge] = useState(null);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -137,28 +145,70 @@ export default function App() {
     showToast("Logged out");
   }
 
+  // Re-fetch live state. On success we're definitionally back online, so
+  // clear the offline flag. On failure we keep whatever we're already showing
+  // (live or cached) rather than blanking the UI — a failed refresh shouldn't
+  // destroy the data the user is looking at.
   const reload = useCallback(async () => {
     try {
       const fresh = await loadDB();
       setDB(fresh);
+      setSnapshotAge(null);
     } catch (e) {
       console.error("[reload] failed:", e);
       showToast("Database error — see console", "error");
     }
   }, []);
 
+  // Initial load. Three outcomes:
+  //   1. Live fetch works                  → render live data
+  //   2. Live fetch fails, cache exists    → render cached snapshot + banner
+  //   3. Live fetch fails, no cache        → empty state + error toast
+  //
+  // Case 2 is the offline path: the service worker served the app shell from
+  // cache, React booted, but Supabase is unreachable. We show the last known
+  // state read-only rather than an infinite spinner.
   useEffect(() => {
     (async () => {
       try {
         const fresh = await loadDB();
         setDB(fresh);
+        setSnapshotAge(null);
       } catch (e) {
         console.error("[initial load] failed:", e);
-        setDB(defaultDB());
-        showToast("Could not load data — check Supabase credentials", "error");
+        const cached = loadCachedDB();
+        if (cached) {
+          console.log("[initial load] falling back to cached snapshot from", new Date(cached.cachedAt));
+          setDB(cached.snapshot);
+          setSnapshotAge(cached.cachedAt);
+        } else {
+          setDB(defaultDB());
+          showToast("Could not load data — check your connection", "error");
+        }
       }
     })();
   }, []);
+
+  // When the browser regains connectivity, quietly try to get back to live
+  // data. No toast on failure — this fires on flaky networks and nagging the
+  // user about every blip is worse than silently staying on the snapshot.
+  useEffect(() => {
+    function onOnline() {
+      if (snapshotAge === null) return; // already live
+      (async () => {
+        try {
+          const fresh = await loadDB();
+          setDB(fresh);
+          setSnapshotAge(null);
+          showToast("Back online — data refreshed.");
+        } catch (e) {
+          console.warn("[online] refresh failed, staying on snapshot:", e);
+        }
+      })();
+    }
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [snapshotAge]);
 
   // Restore login session once db is loaded.
   // For Phase 2 the admin check is club-scoped: a saved adminEmail is
@@ -247,7 +297,28 @@ export default function App() {
   // know "this is my action running" — they read it via useIsActionPending
   // and render their own inline spinner. If omitted, the action still drives
   // the global "Saving…" indicator in the header.
+  //
+  // v1.5.0 — OFFLINE HARD BLOCK. Every mutation funnels through here, so this
+  // one guard covers the entire app. If we're offline we refuse the write
+  // outright rather than letting it fail at the network layer.
+  //
+  // Why block instead of queue: this app is write-first/read-back — a write is
+  // only real once the server confirms it and we re-read. Queueing mutations
+  // would mean showing the user a change that hasn't happened yet, then
+  // reconciling later, which needs conflict resolution and ordering guarantees
+  // that don't exist here. A clear "you're offline, this didn't save" is
+  // honest; an optimistic write that silently loses is not. Offline is
+  // read-only, by design.
+  //
+  // navigator.onLine is a coarse signal (true can still mean "no route to
+  // Supabase"), which is fine: it's a UX guard, not a security boundary. When
+  // it's wrong in the optimistic direction the write proceeds and the existing
+  // catch below surfaces the real network error.
   async function action(fn, successMsg, actionId) {
+    if (!navigator.onLine) {
+      showToast("You're offline — changes can't be saved right now.", "error");
+      return;
+    }
     setCurrentActionId(actionId || "_generic");
     try {
       await fn();
@@ -266,6 +337,10 @@ export default function App() {
   // the same user from another device become visible. Reuses the saving
   // indicator state so any in-flight refresh is naturally serialized with
   // other writes.
+  //
+  // Note this is NOT blocked when offline: retrying is exactly what you want
+  // to do when you think you're back on the network, and reload() handles the
+  // failure case gracefully by keeping the current data.
   async function refresh() {
     if (currentActionId) return; // already busy
     setCurrentActionId("refresh");
@@ -277,6 +352,17 @@ export default function App() {
   }
 
   if (!db) return <div style={{ display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,color:"var(--color-text-secondary)",fontSize:18 }}>Loading…</div>;
+
+  // Status bars rendered at the top of every view. Both no-op when irrelevant.
+  const statusBanners = (
+    <>
+      <UpdateBanner />
+      <OfflineBanner
+        cachedAt={snapshotAge}
+        onRetry={refresh}
+        isRetrying={currentActionId === "refresh"} />
+    </>
+  );
 
   // Split records by whether they've been soft-deleted. `leagues`/`players`
   // are the live ones every existing view reads from; trashed records are only
@@ -1069,7 +1155,16 @@ export default function App() {
   // (after the cascade), and synchronous post-action state isn't available
   // through the wrapper. Instead we manage the spinner + reload + toast
   // inline.
+  //
+  // v1.5.0: because this bypasses `action()`, it also bypasses that
+  // function's offline guard — so we repeat the check here. Every mutation
+  // path must be blocked when offline, not just the ones that happen to go
+  // through the wrapper.
   async function deleteClub() {
+    if (!navigator.onLine) {
+      showToast("You're offline — changes can't be saved right now.", "error");
+      return;
+    }
     if (!activeClubId) { showToast("No active club.", "error"); return; }
     const deletedClubId = activeClubId;
     const deletedClubName = activeClub?.name || "the club";
@@ -1166,7 +1261,14 @@ export default function App() {
   }
 
   // Test data seeder — creates Test1..Test20 players (skips any that exist)
+  //
+  // v1.5.0: like deleteClub, this bypasses `action()` (it loops many writes
+  // and manages its own spinner), so it needs its own offline guard.
   async function seedTestPlayers() {
+    if (!navigator.onLine) {
+      showToast("You're offline — changes can't be saved right now.", "error");
+      return;
+    }
     if (!activeClubId) { showToast("No active club selected.", "error"); return; }
     const existingEmails = new Set(players.map(p => p.email?.toLowerCase()).filter(Boolean));
     let added = 0, skipped = 0;
@@ -1218,6 +1320,7 @@ export default function App() {
     return (
       <ActionPendingProvider value={currentActionId}>
         <PullToRefresh onRefresh={refresh} isRefreshing={currentActionId === "refresh"}>
+        {statusBanners}
         <HomeView leagues={leagues} players={players} db={db}
           onAdmin={(email) => {
             // Admin-only sign-in: pick the first club where this email is
@@ -1555,6 +1658,8 @@ export default function App() {
           );
         })()}
 
+        {statusBanners}
+
         <div style={S.header(league ? c.bg : undefined)} className="pwa-safe-top pwa-safe-x">
           <div style={S.row}>
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
@@ -1795,6 +1900,7 @@ export default function App() {
     });
     return (
       <ActionPendingProvider value={currentActionId}>
+        {statusBanners}
         <PlayerView key={activeClubId || "no-club"}
           db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
           accessibleClubs={getClubsForPlayer(db.memberships || {}, db.clubs || {}, currentPlayer.id)}

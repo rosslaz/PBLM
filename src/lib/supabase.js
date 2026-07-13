@@ -3,7 +3,7 @@
 // Supabase first (awaited). The caller is responsible for re-fetching state
 // after a successful write so React never shows data that isn't in the DB.
 import { createClient } from "@supabase/supabase-js";
-import { LEAGUE_COLORS, TRASH_RETENTION_DAYS } from "./constants.js";
+import { LEAGUE_COLORS, TRASH_RETENTION_DAYS, DB_CACHE_KEY } from "./constants.js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -43,15 +43,65 @@ function keysWithSuffix(rows, id) {
   return (rows || []).map(r => r.key).filter(k => k.endsWith(suffix));
 }
 
+// ─── Offline snapshot cache (v1.5.0) ────────────────────────────────────────
+// Every successful loadDB() persists its snapshot to localStorage. If a later
+// boot can't reach Supabase (offline), App.jsx falls back to this snapshot and
+// renders it read-only behind an "Offline — showing data from X ago" banner.
+//
+// This is the RIGHT layer for offline data — deliberately not the service
+// worker. The SW caches the app shell; caching Supabase *responses* there
+// would serve stale data invisibly, with no way for the UI to know it was
+// stale or to tell the user. Here, staleness is explicit: we store a timestamp
+// alongside the data, the app knows it's showing a cached snapshot, and it
+// says so.
+//
+// Writes are hard-blocked while offline (see `action()` in App.jsx), so a
+// stale snapshot can never be the basis for a mutation. Read-only, honest.
+
+function cacheSnapshot(snapshot) {
+  try {
+    localStorage.setItem(DB_CACHE_KEY, JSON.stringify({
+      snapshot,
+      cachedAt: Date.now(),
+    }));
+  } catch (e) {
+    // Quota exceeded, private mode, storage disabled — all non-fatal. The app
+    // works fine without a cache; it just won't have an offline fallback.
+    console.warn("[loadDB] could not cache snapshot:", e);
+  }
+}
+
+// Returns { snapshot, cachedAt } or null if there's nothing usable cached.
+export function loadCachedDB() {
+  try {
+    const raw = localStorage.getItem(DB_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Guard against a malformed / half-written entry.
+    if (!parsed?.snapshot || !parsed?.cachedAt) return null;
+    return { snapshot: parsed.snapshot, cachedAt: parsed.cachedAt };
+  } catch (e) {
+    console.warn("[loadCachedDB] unreadable cache:", e);
+    return null;
+  }
+}
+
 // ─── Full snapshot loader ───────────────────────────────────────────────────
 // Also runs the 30-day trash auto-purge: any league, player, or club whose
 // `data.deletedAt` is older than TRASH_RETENTION_DAYS gets hard-deleted (with
 // full cascade) before the snapshot is built. This makes purge opportunistic —
 // it happens on the next loadDB after the retention window passes, with no
 // background job needed.
+//
+// v1.5.0: every successful load also refreshes the offline snapshot cache.
+// We cache here rather than at the App.jsx call site so that EVERY successful
+// load benefits — including the reload() that follows each write — keeping the
+// cached copy as fresh as the app has ever seen.
 export async function loadDB() {
   await purgeExpiredTrash();
-  return loadDBSnapshot();
+  const snapshot = await loadDBSnapshot();
+  cacheSnapshot(snapshot);
+  return snapshot;
 }
 
 // Find every league/player/club in the trash whose retention window has

@@ -34,15 +34,89 @@
          app's logic, so there's no reason to make it wait for React.
          Registration is best-effort: if it fails (e.g. file:// dev,
          http://, browser without SW support), the app still works as
-         a regular web page. -->
+         a regular web page.
+
+         v1.5.0: the worker now caches the app shell, so this script also
+         owns the *update handshake*. The SW deliberately does NOT call
+         skipWaiting() on install — a new worker sits in `waiting` until
+         the user opts in. Flow:
+
+           1. Browser finds a new sw.js → installs it → it waits.
+           2. We detect the waiting worker and dispatch `pwa:update-ready`
+              on window.
+           3. React's <UpdateBanner> hears that and offers "Reload".
+           4. On click, the banner calls window.__pwaApplyUpdate(), which
+              posts SKIP_WAITING to the waiting worker.
+           5. The worker activates → `controllerchange` fires → we reload.
+
+         Updating only on a user gesture is what keeps a cached PWA from
+         swapping code out from under someone mid-task. -->
     <script>
-      if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("/sw.js").catch((err) => {
-            console.warn("[sw] registration failed:", err);
-          });
+      (function () {
+        if (!("serviceWorker" in navigator)) return;
+
+        // Set by the registration below once we know which worker is waiting.
+        var waitingWorker = null;
+
+        // Called by the update banner's "Reload" button.
+        window.__pwaApplyUpdate = function () {
+          if (waitingWorker) {
+            waitingWorker.postMessage({ type: "SKIP_WAITING" });
+          } else {
+            // No waiting worker tracked (edge case) — a plain reload is the
+            // safe fallback.
+            window.location.reload();
+          }
+        };
+
+        function announceUpdate(worker) {
+          waitingWorker = worker;
+          window.dispatchEvent(new CustomEvent("pwa:update-ready"));
+        }
+
+        // When the newly-activated worker takes control, reload so the page
+        // is running the code that matches the freshly-cached assets.
+        // Guarded so we only ever reload once.
+        var reloading = false;
+        navigator.serviceWorker.addEventListener("controllerchange", function () {
+          if (reloading) return;
+          reloading = true;
+          window.location.reload();
         });
-      }
+
+        window.addEventListener("load", function () {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then(function (reg) {
+              // Case A: a worker is already waiting when we register (e.g. the
+              // user opened a second tab after an update was downloaded).
+              if (reg.waiting && navigator.serviceWorker.controller) {
+                announceUpdate(reg.waiting);
+              }
+
+              // Case B: an update is found while this page is open.
+              reg.addEventListener("updatefound", function () {
+                var incoming = reg.installing;
+                if (!incoming) return;
+                incoming.addEventListener("statechange", function () {
+                  // "installed" + an existing controller ⇒ this is an UPDATE,
+                  // not a first install. Without the controller check we'd
+                  // show the banner to first-time visitors, who have nothing
+                  // to update from.
+                  if (
+                    incoming.state === "installed" &&
+                    navigator.serviceWorker.controller
+                  ) {
+                    announceUpdate(incoming);
+                  }
+                });
+              });
+            })
+            .catch(function (err) {
+              console.warn("[sw] registration failed:", err);
+            });
+        });
+      })();
     </script>
   </body>
 </html>
