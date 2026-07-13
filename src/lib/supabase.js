@@ -16,31 +16,80 @@ export const supabase = createClient(SUPABASE_URL || "", SUPABASE_ANON_KEY || ""
   auth: { persistSession: false }, // app handles its own auth
 });
 
-// ─── Key-prefix matching helper ──────────────────────────────────────────────
-// Compound keys in this app look like `${leagueId}_...` or `${clubId}_...`
-// where the prefix ID itself contains an underscore (e.g. "league_1",
-// "club_2"). SQL `LIKE "league_1_%"` is WRONG for matching these: in LIKE,
-// `_` matches any single character, so "league_1_%" also matches
-// "league_10_...", "league_11_...", etc. That bug (present in older cascade
-// code) could over-delete child rows belonging to a different league/club.
+// ─── Compound-key matching helpers ──────────────────────────────────────────
 //
-// The safe approach used throughout the cascade functions below: pull the
-// candidate keys and filter in JS with a literal `startsWith(`${id}_`)`.
+// ⚠️ THE UNDERSCORE TRAP — read this before writing any key-matching code.
+//
+// Our IDs contain underscores (`league_1`, `club_2`, `player_7`), and compound
+// keys concatenate them with more underscores:
+//
+//     pb_scores        →  ${leagueId}_${week}_${matchId}   e.g. league_7_3_w3_c0_m1
+//     pb_registrations →  ${leagueId}_${playerId}          e.g. league_7_player_21
+//     pb_checkins      →  ${leagueId}_w${week}_${playerId} e.g. league_7_w3_player_21
+//     pb_locked_weeks  →  ${leagueId}_w${week}             e.g. league_7_w3
+//     pb_memberships   →  ${clubId}_${playerId}            e.g. club_1_player_21
+//
+// In SQL `LIKE`, **`_` is a single-character wildcard.** So the innocent-looking
+// pattern `LIKE 'league_1_%'` actually means `league?1?%` and matches:
+//
+//     league_1_...    ✓ intended
+//     league_10_...   ✗ DIFFERENT LEAGUE — the trailing _ ate the "0"
+//     league_11_...   ✗ DIFFERENT LEAGUE
+//
+// It's worse for week-scoped keys: `LIKE 'league_7_3_%'` (league 7, week 3) also
+// matches `league_7_30_...` (week 30), and even `league_73_..._...`. Deleting one
+// week's scores could silently eat another week's — or another league's.
+//
+// This class of bug was fixed in the hard-delete cascades in v1.4.1 and in
+// dbRebalanceWeek in v1.5.1. The rule going forward:
+//
+//     **Never use SQL LIKE against these keys. Pull the candidate keys and
+//     filter in JS, where `_` is just a character.**
+//
+// (Escaping — `LIKE 'league\_1\_%' ESCAPE '\'` — also works, but it's easy to
+// forget one and the failure is silent. JS filtering is harder to get wrong, and
+// at this app's scale the extra round-trip is free.)
+
+// Keys beginning with `${id}_`. Used for league- and club-scoped cascades.
 // `startsWith` treats the underscore literally, so "league_1_" never matches
-// "league_10_". See dbHardDeleteLeague / dbHardDeleteClub.
+// "league_10_".
 function keysWithPrefix(rows, id) {
   const prefix = `${id}_`;
   return (rows || []).map(r => r.key).filter(k => k.startsWith(prefix));
 }
 
-// Same idea for keys where the ID is a SUFFIX, e.g. registration keys
-// `${leagueId}_${playerId}` or check-in keys `${leagueId}_w${week}_${playerId}`.
-// `endsWith(`_${playerId}`)` matches "..._player_5" but NOT "..._player_55"
-// (the leading underscore in the suffix prevents the false match). This is
-// why we never need to worry about player_5 vs player_50 collisions here.
+// Keys ending with `_${id}`. Used for player-scoped cascades (registrations,
+// check-ins, memberships all end in the player ID). The leading underscore in
+// the suffix is what makes this safe: "_player_5" doesn't match "..._player_55".
 function keysWithSuffix(rows, id) {
   const suffix = `_${id}`;
   return (rows || []).map(r => r.key).filter(k => k.endsWith(suffix));
+}
+
+// Score keys for one specific league AND week.
+//
+// Score keys look like `${leagueId}_${week}_${matchId}`, e.g. "league_7_3_w3_c0_m1".
+// We can't just use keysWithPrefix with `${leagueId}_${weekNum}` — that prefix
+// ("league_7_3_") would also match week 30's keys ("league_7_30_..."), because
+// "league_7_3" is a genuine string prefix of "league_7_30". The trailing
+// underscore doesn't save us: "league_7_3_" IS a prefix of "league_7_30_"?
+// No — it isn't ("league_7_30_"[10] is '0', not '_'). But relying on that kind of
+// off-by-one reasoning is exactly how the LIKE bug survived this long.
+//
+// So we parse instead of pattern-match: strip the known league prefix, then
+// require the NEXT underscore-delimited segment to equal the week exactly.
+// Unambiguous, and it reads as what it means.
+function scoreKeysForLeagueWeek(rows, leagueId, weekNum) {
+  const prefix = `${leagueId}_`;
+  const week = String(weekNum); // weekNum arrives as a number; key segments are strings
+  return (rows || [])
+    .map(r => r.key)
+    .filter(k => {
+      if (!k.startsWith(prefix)) return false;
+      const rest = k.slice(prefix.length);      // "3_w3_c0_m1"
+      const weekSegment = rest.split("_")[0];   // "3"
+      return weekSegment === week;              // exact match — "30" !== "3"
+    });
 }
 
 // ─── Offline snapshot cache (v1.5.0) ────────────────────────────────────────
@@ -320,14 +369,10 @@ export async function dbRestoreLeague(id) {
 // Hard-delete cascade: the original `dbDeleteLeague`. Used by the trash UI's
 // "Delete Forever" button and the 30-day auto-purge.
 //
-// v1.4.1: switched from SQL `LIKE "${id}_%"` to JS-side prefix filtering.
-// The old LIKE patterns had the underscore-as-wildcard bug — deleting
-// "league_1" would match child keys for "league_10", "league_11", etc.,
-// over-deleting rows that belong to OTHER leagues. We now pull candidate
-// keys and filter with a literal `startsWith` (see keysWithPrefix), then
-// delete by explicit key list. `pb_leagues` (by id) and `pb_schedules`
-// (by league_id column) are unaffected by the quirk and stay as direct
-// equality deletes.
+// v1.4.1: switched from SQL `LIKE "${id}_%"` to JS-side prefix filtering — see
+// the underscore-trap note at the top of this file. `pb_leagues` (by id) and
+// `pb_schedules` (by league_id column) are unaffected by the quirk and stay as
+// direct equality deletes.
 export async function dbHardDeleteLeague(id) {
   const [regsRes, scoresRes, locksRes, checkinsRes] = await Promise.all([
     supabase.from("pb_registrations").select("key"),
@@ -356,6 +401,21 @@ export async function dbHardDeleteLeague(id) {
   const results = await Promise.all(ops);
   const firstError = results.find(r => r.error)?.error;
   if (firstError) throw firstError;
+}
+
+// Delete every score belonging to one league. Exported because App.jsx's
+// schedule-commit path needs it (regenerating a season wipes its scores), and
+// that call site was previously doing its own raw `LIKE '${leagueId}_%'` —
+// the same underscore bug. Routed through keysWithPrefix here so there's exactly
+// one safe implementation.
+export async function dbDeleteLeagueScores(leagueId) {
+  const { data, error } = await supabase.from("pb_scores").select("key");
+  if (error) throw error;
+  const keys = keysWithPrefix(data, leagueId);
+  if (keys.length === 0) return 0;
+  const { error: delErr } = await supabase.from("pb_scores").delete().in("key", keys);
+  if (delErr) throw delErr;
+  return keys.length;
 }
 
 export async function dbRegisterForLeague(leagueId, playerId) {
@@ -481,23 +541,32 @@ export async function dbWriteSchedule(leagueId, scheduleData) {
   if (error) throw error;
 }
 
+// Rebalance one week: write its new court assignments, and delete that week's
+// scores.
+//
+// Why the scores must go: match IDs are deterministic (`w{N}_c{C}_m{M}`), derived
+// from position rather than from who's playing. After a rebalance, the match at
+// court 0 / slot 1 is between *different people* — but it has the same ID. Left
+// alone, the old score would silently re-attribute itself to the new pairing.
+// So the week's scores are cleared and re-entered.
+//
+// v1.5.1 — LIKE bug fixed here. This previously did:
+//
+//     .delete().like("key", `${leagueId}_${weekNum}_%`)
+//
+// which, for league 7 week 3, is the pattern `league?7?3?%` — matching not just
+// "league_7_3_..." but also "league_7_30_..." (week 30) and even
+// "league_73_...". Rebalancing one week could have wiped another week's scores,
+// or another league's, with no error and no warning. It never fired in practice
+// (8-week seasons, and zero scores existed when this was found), but it was live.
+//
+// Now routed through scoreKeysForLeagueWeek, which parses the week segment and
+// compares it exactly. See the underscore-trap note at the top of this file.
 export async function dbRebalanceWeek(leagueId, weekNum, newCourts) {
-  // Atomic-ish rebalance: write the new courts for one week, and delete ALL
-  // scores for that week (because match IDs are deterministic — w{N}_c{C}_m{M}
-  // — and would otherwise be silently re-attributed to different matches with
-  // the same ID after the rebuild).
-  //
-  // NOTE on the scores delete below: the `${leagueId}_${weekNum}_%` LIKE
-  // pattern has the same theoretical underscore-wildcard quirk as the old
-  // cascade code (e.g. league_1 week 1 could match league_1 week 10's keys:
-  // "league_1_1_%" matches "league_1_10_..."). This is a pre-existing issue
-  // scoped to rebalance and is NOT addressed in v1.4.1 (which only touches the
-  // hard-delete cascades). Flagged for a future fix. In practice the blast
-  // radius is limited to the same league's other weeks and rebalance already
-  // rewrites that week's matches, but it should still be tightened later.
   const { data, error: e1 } = await supabase
     .from("pb_schedules").select("data").eq("league_id", leagueId).single();
   if (e1) throw e1;
+
   const sched = data?.data || { weeks: [] };
   const weeks = (sched.weeks || []).map(w =>
     w.week === weekNum ? { ...w, courts: newCourts, placeholder: false } : w
@@ -505,10 +574,20 @@ export async function dbRebalanceWeek(leagueId, weekNum, newCourts) {
   if (!weeks.find(w => w.week === weekNum)) {
     weeks.push({ week: weekNum, date: "", time: null, courts: newCourts });
   }
-  const results = await Promise.all([
+
+  // Find exactly this week's score keys — no wildcards involved.
+  const { data: scoreRows, error: e2 } = await supabase.from("pb_scores").select("key");
+  if (e2) throw e2;
+  const staleScoreKeys = scoreKeysForLeagueWeek(scoreRows, leagueId, weekNum);
+
+  const ops = [
     supabase.from("pb_schedules").upsert({ league_id: leagueId, data: { ...sched, weeks } }),
-    supabase.from("pb_scores").delete().like("key", `${leagueId}_${weekNum}_%`),
-  ]);
+  ];
+  if (staleScoreKeys.length > 0) {
+    ops.push(supabase.from("pb_scores").delete().in("key", staleScoreKeys));
+  }
+
+  const results = await Promise.all(ops);
   const firstError = results.find(r => r.error)?.error;
   if (firstError) throw firstError;
 }
@@ -580,12 +659,8 @@ export async function dbRestorePlayer(playerId) {
 //   1. Now also cascades to pb_memberships — previously a hard-deleted player
 //      left orphaned membership rows pointing at a player_id that no longer
 //      exists.
-//   2. Switched from SQL `LIKE "%_${playerId}"` to JS-side suffix filtering.
-//      Although the suffix form is less collision-prone than the prefix form,
-//      `LIKE "%_player_5"` still matches "..._player_5" only by luck of the
-//      leading "_"; we make it explicit + safe with `endsWith(`_${playerId}`)`
-//      (see keysWithSuffix). This also dodges the case where a stray key could
-//      contain the player ID mid-string.
+//   2. Switched from SQL `LIKE "%_${playerId}"` to JS-side suffix filtering
+//      (see the underscore-trap note at the top of this file).
 export async function dbHardDeletePlayer(playerId) {
   const [regsRes, checkinsRes, memsRes] = await Promise.all([
     supabase.from("pb_registrations").select("key"),
@@ -798,8 +873,7 @@ export async function dbSoftDeleteClub(clubId) {
   }
 
   // 3. Cascade to memberships. Filter by key prefix in JS rather than
-  // SQL LIKE so we don't hit the underscore-as-wildcard quirk (e.g.
-  // "club_1_%" would also match "club_10_...").
+  // SQL LIKE (see the underscore-trap note at the top of this file).
   const { data: allMemberships, error: e4 } = await supabase
     .from("pb_memberships").select("key, data");
   if (e4) throw e4;
@@ -842,8 +916,7 @@ export async function dbHardDeleteClub(clubId) {
     await dbHardDeleteLeague(lid);
   }
 
-  // 2. Delete memberships. Filter by key prefix in JS to dodge the LIKE
-  // underscore quirk.
+  // 2. Delete memberships. Filter by key prefix in JS (underscore trap).
   const { data: allMemberships, error: e2 } = await supabase
     .from("pb_memberships").select("key");
   if (e2) throw e2;

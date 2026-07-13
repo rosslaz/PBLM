@@ -9,9 +9,9 @@ import {
   resolveActiveClub, generateJoinCode,
 } from "./lib/clubs.js";
 import {
-  supabase, loadDB, loadCachedDB, defaultDB,
+  loadDB, loadCachedDB, defaultDB,
   dbCreateLeague, dbUpdateLeague,
-  dbSoftDeleteLeague, dbRestoreLeague, dbHardDeleteLeague,
+  dbSoftDeleteLeague, dbRestoreLeague, dbHardDeleteLeague, dbDeleteLeagueScores,
   dbCreatePlayer, dbUpdatePlayer,
   dbSoftDeletePlayer, dbRestorePlayer, dbHardDeletePlayer,
   dbRegisterForLeague, dbRemovePlayerFromLeague, dbToggleRegPaid,
@@ -846,14 +846,22 @@ export default function App() {
     };
   }
 
+  // Write an accepted proposal to the DB.
+  //
+  // v1.5.1: the score wipe used to be a raw
+  //     supabase.from("pb_scores").delete().like("key", `${leagueId}_%`)
+  // right here in App.jsx — the same SQL LIKE underscore bug that was fixed in
+  // the cascades (for league_1, that pattern also matches league_10's scores).
+  // It now goes through dbDeleteLeagueScores(), so there is exactly ONE safe
+  // implementation of "delete this league's scores" and no raw SQL in the view
+  // layer. See the underscore-trap note at the top of lib/supabase.js.
   async function commitScheduleProposal(proposal) {
     if (!proposal) return;
     const { leagueId, schedule, scoresWiped, successToast } = proposal;
     await action(async () => {
       await dbWriteSchedule(leagueId, schedule);
       if (scoresWiped > 0) {
-        const { error } = await supabase.from("pb_scores").delete().like("key", `${leagueId}_%`);
-        if (error) throw error;
+        await dbDeleteLeagueScores(leagueId);
       }
     }, undefined, "commit-schedule");
     showToast(successToast);

@@ -38,7 +38,7 @@
 // and no invisible staleness.
 //
 // ─── Update flow (important) ────────────────────────────────────────────────
-// The previous worker called skipWaiting() on install. That was safe when
+// The pre-v1.5.0 worker called skipWaiting() on install. That was safe when
 // nothing was cached. It is NOT safe now, and it's deliberately removed.
 //
 // With caching, an immediately-activating SW can serve v2 assets to a page
@@ -55,7 +55,11 @@
 // Bump this on every release that changes cached assets. The activate handler
 // deletes every cache whose name doesn't match the current one, so bumping
 // this is what flushes stale shells.
-const CACHE_VERSION = "v1.5.0";
+//
+// Keep it in step with package.json / APP_INFO.version. It doesn't strictly
+// have to match, but a version-shaped name makes it obvious in DevTools which
+// build a client is actually running.
+const CACHE_VERSION = "v1.5.1";
 const CACHE_NAME = `csc-pickleball-${CACHE_VERSION}`;
 
 // The app shell. Everything here is fetched and cached on install, so a cold
