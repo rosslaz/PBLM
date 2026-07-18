@@ -21,8 +21,9 @@ import {
   dbUpdateClub, dbTransferOwnership, dbSoftDeleteClub,
 } from "./lib/supabase.js";
 import {
-  distributePlayersToCourts, seededShuffle, singlesMatches, doublesMatches,
+  distributePlayersToCourts, seededShuffle,
   generateCourtSchedule, assignBalancedCourts, laddderRotate, buildLadderWeek,
+  buildCourtMatches,
 } from "./lib/scheduling.js";
 import { S, genderBadgeStyle } from "./styles.js";
 
@@ -609,31 +610,39 @@ export default function App() {
     setSelectedLeague(null); setModal(null);
   }
 
-  async function rebalanceWeek(leagueId, weekNum) {
+  // ─── Rebalance: compute → preview → apply ───────────────────────────────
+  // v1.6.0: rebalance now goes through the same preview modal as schedule
+  // generation, which means the commissioner can drag players between courts
+  // before committing. Previously it wrote straight to the DB from the
+  // confirm modal with no chance to adjust.
+  //
+  // This also gives rebalance a proper preview of a destructive action — it
+  // clears the week's scores, which was only ever mentioned in a warning line.
+  //
+  // Returns { error } or { proposal }. No DB writes.
+  function computeRebalanceProposal(leagueId, weekNum) {
     const league = db.leagues[leagueId];
     const regs = getLeagueRegs(leagueId);
     const sched = getLeagueSchedule(leagueId);
     const week = sched.weeks?.find(w => w.week === weekNum);
-    if (!week) { showToast("Week not found.", "error"); return; }
+    if (!week) return { error: "Week not found." };
 
+    // Everyone except explicit "out". Maybe / sub / no-response all still get
+    // a court — the commissioner would rather have a spot held than have to
+    // rebuild when someone turns up.
     const activePlayerIds = regs
       .map(r => r.playerId)
-      .filter(pid => {
-        const ci = getCheckIn(leagueId, weekNum, pid);
-        return ci?.status !== "out";
-      });
+      .filter(pid => getCheckIn(leagueId, weekNum, pid)?.status !== "out");
 
     if (activePlayerIds.length < MIN_PER_COURT) {
-      showToast(`Only ${activePlayerIds.length} players available. Need at least ${MIN_PER_COURT}.`, "error");
-      return;
+      return { error: `Only ${activePlayerIds.length} players available. Need at least ${MIN_PER_COURT}.` };
     }
 
     const numCourts = league.numCourts || 4;
     const sizes = distributePlayersToCourts(activePlayerIds.length, numCourts);
     if (!sizes) {
       const maxAllowed = numCourts * MAX_PER_COURT;
-      showToast(`Cannot rebalance ${activePlayerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} (${MIN_PER_COURT}–${MAX_PER_COURT} per court).`, "error");
-      return;
+      return { error: `Cannot rebalance ${activePlayerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} (${MIN_PER_COURT}–${MAX_PER_COURT} per court).` };
     }
 
     const shuffled = seededShuffle(activePlayerIds, Date.now() & 0xffffffff);
@@ -651,30 +660,70 @@ export default function App() {
       }
     }
 
-    const isDoubles = league.format === "Doubles" || league.format === "Mixed Doubles";
-    const newCourts = courtGroups.map((group, c) => {
-      let rawMatches;
-      if (isDoubles) rawMatches = doublesMatches(group, weekNum * 1009 + c * 7 + 13);
-      else            rawMatches = singlesMatches(group);
-      const matches = rawMatches.map((m, mi) => ({
-        id: `w${weekNum}_c${c}_m${mi}`,
-        ...m,
-        week: weekNum,
-        court: courtName(c),
-        date: week.date,
-        format: isDoubles ? "doubles" : "singles",
-      }));
-      return { courtName: courtName(c), players: group, matches };
-    });
+    const newCourts = courtGroups.map((group, c) => ({
+      courtName: courtName(c),
+      players: group,
+      matches: buildCourtMatches(group, weekNum, c, league.format || "Singles", week.date),
+    }));
 
+    // How many scores this will clear — drives the red button + warning.
     let scoresCleared = 0;
     (week.courts || []).forEach(ct => ct.matches.forEach(m => {
       if (db.scores[`${leagueId}_${weekNum}_${m.id}`]) scoresCleared++;
     }));
 
-    await action(() => dbRebalanceWeek(leagueId, weekNum, newCourts));
-    const sz = courtGroups.map(g => g.length).join(", ");
-    showToast(`Week ${weekNum} rebalanced: ${courtGroups.length} courts (${sz} players)${scoresCleared > 0 ? `, ${scoresCleared} score${scoresCleared!==1?"s":""} cleared` : ""}.`);
+    const sizeLabel = courtGroups.map(g => g.length).join(", ");
+    const outCount = regs.length - activePlayerIds.length;
+
+    return {
+      proposal: {
+        kind: "rebalance",
+        leagueId,
+        leagueName: league.name,
+        weekNum,
+        newCourts,
+        scoresWiped: scoresCleared,
+        // The preview renders `weeks`, so hand it this single week with
+        // playerNames resolved for display.
+        weeks: [{
+          ...week,
+          courts: newCourts.map(c => ({
+            ...c,
+            playerNames: c.players.map(pid => getPlayerName(pid)),
+          })),
+        }],
+        summary: `Week ${weekNum}: ${courtGroups.length} court${courtGroups.length!==1?"s":""} (${sizeLabel} players)${outCount > 0 ? ` · ${outCount} marked out` : ""}`,
+        warning: scoresCleared > 0
+          ? `Applying will clear ${scoresCleared} score${scoresCleared!==1?"s":""} already entered for this week.`
+          : null,
+        // Rebalance shuffles randomly, so a retry gives a genuinely different
+        // arrangement — worth offering.
+        canRetry: true,
+        successToast: `Week ${weekNum} rebalanced: ${courtGroups.length} court${courtGroups.length!==1?"s":""} (${sizeLabel} players)${scoresCleared > 0 ? `, ${scoresCleared} score${scoresCleared!==1?"s":""} cleared` : ""}.`,
+      },
+    };
+  }
+
+  // Open the rebalance preview. Replaces the old confirm-then-write modal.
+  function rebalanceWeek(leagueId, weekNum) {
+    const { error, proposal } = computeRebalanceProposal(leagueId, weekNum);
+    if (error) { showToast(error, "error"); return; }
+    setModal({ type: "schedulePreview", proposal });
+  }
+
+  // Write an accepted rebalance. `proposal.weeks[0].courts` is the edited
+  // version if the commissioner dragged anyone around; we strip the display-
+  // only playerNames before writing.
+  async function commitRebalanceProposal(proposal) {
+    const { leagueId, weekNum, successToast } = proposal;
+    const edited = proposal.weeks[0]?.courts || proposal.newCourts;
+    const courtsForDb = edited.map(({ playerNames, ...rest }) => rest);
+    await action(
+      () => dbRebalanceWeek(leagueId, weekNum, courtsForDb),
+      undefined,
+      "commit-schedule"
+    );
+    showToast(successToast);
     setModal(null);
   }
 
@@ -904,12 +953,16 @@ export default function App() {
     setModal({ type: "schedulePreview", proposal });
   }
 
-  // Re-run the proposal generator for the same league. Only meaningful when
-  // the underlying generator is non-deterministic (ladder Week 1 today).
+  // Re-run the proposal generator. Only meaningful when the underlying
+  // generator is non-deterministic — ladder Week 1 and rebalance both
+  // shuffle randomly, so a retry gives a genuinely different arrangement.
+  // Round-Robin generation is deterministic and doesn't offer the button.
   function retryScheduleProposal() {
     const cur = modal?.proposal;
     if (!cur) return;
-    const { error, proposal } = computeScheduleProposal(cur.leagueId);
+    const { error, proposal } = cur.kind === "rebalance"
+      ? computeRebalanceProposal(cur.leagueId, cur.weekNum)
+      : computeScheduleProposal(cur.leagueId);
     if (error) { showToast(error, "error"); return; }
     setModal({ type: "schedulePreview", proposal });
   }
@@ -1453,56 +1506,12 @@ export default function App() {
             </div>
           </Modal>
         )}
-        {modal?.type === "confirmRebalance" && (() => {
-          const w = modal.weekData;
-          const lid = modal.leagueId;
-          const regsForLeague = getLeagueRegs(lid);
-          let inCount = 0, subCount = 0, maybeCount = 0, outCount = 0, noneCount = 0;
-          regsForLeague.forEach(r => {
-            const ci = getCheckIn(lid, w.week, r.playerId);
-            const s = ci?.status;
-            if (s === "in") inCount++;
-            else if (s === "sub") subCount++;
-            else if (s === "maybe") maybeCount++;
-            else if (s === "out") outCount++;
-            else noneCount++;
-          });
-          const activeCount = inCount + subCount + maybeCount + noneCount;
-          const existingScoresCount = (w.courts || [])
-            .flatMap(ct => ct.matches)
-            .filter(m => db.scores[`${lid}_${w.week}_${m.id}`])
-            .length;
-          return (
-            <Modal title={`Rebalance Week ${w.week}`} onClose={() => setModal(null)}>
-              <p style={{ fontSize: 14, margin: "0 0 12px", color: "var(--color-text-secondary)" }}>
-                Rebuild the court assignments for this week based on current RSVP status.
-                Players marked <b>OUT</b> are removed; everyone else (including no-response) stays in.
-              </p>
-              <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 12px", marginBottom: 12, fontSize: 13 }}>
-                <p style={{ margin: "0 0 8px", fontWeight: 600 }}>Headcount for Week {w.week}:</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <span style={{ ...S.badge("success"), fontSize: 11 }}>✓ {inCount} in</span>
-                  {subCount > 0 && <span style={{ ...S.badge("purple"), fontSize: 11 }}>↔ {subCount} sub</span>}
-                  <span style={{ ...S.badge("warning"), fontSize: 11 }}>? {maybeCount} maybe</span>
-                  <span style={{ ...S.badge("danger"), fontSize: 11 }}>✗ {outCount} out</span>
-                  {noneCount > 0 && <span style={{ ...S.badge("info"), fontSize: 11 }}>• {noneCount} no reply</span>}
-                </div>
-                <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 600 }}>
-                  {activeCount} player{activeCount!==1?"s":""} will be assigned to courts.
-                </p>
-              </div>
-              {existingScoresCount > 0 && (
-                <div style={{ padding: "12px 12px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
-                  ⚠ This week has {existingScoresCount} score{existingScoresCount!==1?"s":""} already entered. All will be cleared because the matches will be different after rebalancing.
-                </div>
-              )}
-              <div style={{ ...S.row, justifyContent: "flex-end", gap: 8 }}>
-                <button style={S.btn("secondary")} onClick={() => setModal(null)}>Cancel</button>
-                <button style={{ ...S.btn("primary"), background: "#534AB7" }} onClick={() => rebalanceWeek(lid, w.week)}>Rebalance</button>
-              </div>
-            </Modal>
-          );
-        })()}
+        {/* v1.6.0 — the old "confirmRebalance" modal was removed here.
+            Rebalance now opens the SchedulePreview modal instead, so the
+            commissioner can review AND drag players between courts before
+            committing. The headcount summary that used to live in this
+            modal is now the preview's `summary` line, and the
+            scores-will-be-cleared warning is its `warning` field. */}
         {modal?.type === "editWeek" && (() => {
           const w = modal.weekData;
           const lg = db.leagues[modal.leagueId];
@@ -1520,12 +1529,19 @@ export default function App() {
         })()}
         {modal?.type === "schedulePreview" && (
           <Modal
-            title={`${modal.proposal.isReplace ? "Replace" : "Review"} Schedule · ${modal.proposal.leagueName}`}
+            title={
+              modal.proposal.kind === "rebalance"
+                ? `Rebalance Week ${modal.proposal.weekNum} · ${modal.proposal.leagueName}`
+                : `${modal.proposal.isReplace ? "Replace" : "Review"} Schedule · ${modal.proposal.leagueName}`
+            }
             onClose={() => setModal(null)}>
             <SchedulePreview
               preview={modal.proposal}
               league={db.leagues[modal.proposal.leagueId]}
-              onAccept={(finalProposal) => commitScheduleProposal(finalProposal)}
+              onAccept={(finalProposal) =>
+                finalProposal.kind === "rebalance"
+                  ? commitRebalanceProposal(finalProposal)
+                  : commitScheduleProposal(finalProposal)}
               onRetry={retryScheduleProposal}
               onCancel={() => setModal(null)} />
           </Modal>
@@ -1742,7 +1758,7 @@ export default function App() {
             onEnterScore={match => setModal({ type: "enterScore", match, leagueId: league.id })}
             onSubmitScore={(home, away, match, actionId) => submitScoreInline(league.id, home, away, match, actionId)}
             onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })}
-            onRebalanceWeek={weekData => setModal({ type: "confirmRebalance", leagueId: league.id, weekData })}
+            onRebalanceWeek={weekData => rebalanceWeek(league.id, weekData.week)}
             onSetPlayerCheckIn={(week, playerId, status, subName) =>
               setPlayerCheckIn(league.id, week, playerId, status, subName)} />
         ) : (

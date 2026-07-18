@@ -384,7 +384,15 @@ export function SchedulePreview({ preview, league, onAccept, onRetry, onCancel }
         <p style={{ margin: 0, fontSize: 13, color: CSC.blueDark }}>{localProposal.summary}</p>
         {canEdit && (
           <p style={{ margin: "6px 0 0", fontSize: 12, color: CSC.blueDark, opacity: 0.85 }}>
-            Click "Edit courts" on any week to rearrange players. Other weeks won't be affected.
+            {localProposal.kind === "rebalance"
+              ? 'Click "Edit courts" to move players between courts before applying.'
+              : 'Click "Edit courts" on any week to rearrange players. Other weeks won\'t be affected.'}
+          </p>
+        )}
+        {!canEdit && localProposal.kind === "rebalance" && (
+          <p style={{ margin: "6px 0 0", fontSize: 12, color: CSC.blueDark, opacity: 0.85 }}>
+            Court editing needs a larger screen — on a phone you can still apply
+            these assignments as generated.
           </p>
         )}
       </div>
@@ -432,8 +440,10 @@ export function SchedulePreview({ preview, league, onAccept, onRetry, onCancel }
           {(() => {
             const replacing = !!localProposal.isReplace;
             const destructive = localProposal.scoresWiped > 0;
+            const isRebalance = localProposal.kind === "rebalance";
             const label = isCommitting
               ? <><Spinner /> Saving…</>
+              : isRebalance ? `Apply to Week ${localProposal.weeks[0]?.week ?? ""}`
               : replacing ? "Replace Schedule" : "Generate Schedule";
             const bg = destructive ? "#A32D2D" : undefined;
             return (
