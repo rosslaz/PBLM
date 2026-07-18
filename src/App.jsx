@@ -544,8 +544,37 @@ export default function App() {
   const getCheckIn = (leagueId, week, playerId) =>
     db.checkIns?.[`${leagueId}_w${week}_${playerId}`] || null;
 
+  // Player setting their OWN availability. setByAdmin is false, which also
+  // clears the flag if the commissioner had previously set it for them.
   async function setCheckIn(leagueId, week, playerId, status, subName) {
-    await action(() => dbSetCheckIn(leagueId, week, playerId, status, subName));
+    await action(() => dbSetCheckIn(leagueId, week, playerId, status, subName, { setByAdmin: false }));
+  }
+
+  // v1.6.0 — commissioner setting a player's availability on their behalf.
+  // The motivating case: players text "can't make it Thursday" instead of
+  // opening the app, and the commissioner needs the RSVP recorded so the
+  // rebalance headcount is right.
+  //
+  // Stamped setByAdmin so the player's own view can show "the commissioner
+  // set this for you" rather than silently displaying a status they never
+  // chose. The player can still change it themselves at any time, which
+  // clears the flag.
+  //
+  // Toast names the player and status — with several rows on screen it's
+  // otherwise easy to mis-tap and not notice.
+  async function setPlayerCheckIn(leagueId, week, playerId, status, subName) {
+    const name = getPlayerName(playerId);
+    const label = status === null
+      ? `Cleared ${name}'s RSVP for Week ${week}.`
+      : `${name} marked ${status.toUpperCase()} for Week ${week}.`;
+    await action(
+      () => dbSetCheckIn(leagueId, week, playerId, status, subName, {
+        setByAdmin: true,
+        adminEmail: adminEmail || currentPlayer?.email || null,
+      }),
+      label,
+      `set-checkin-${playerId}-w${week}`
+    );
   }
 
   // ─── Action wrappers — each writes to DB then reloads ─────────────────────
@@ -1713,7 +1742,9 @@ export default function App() {
             onEnterScore={match => setModal({ type: "enterScore", match, leagueId: league.id })}
             onSubmitScore={(home, away, match, actionId) => submitScoreInline(league.id, home, away, match, actionId)}
             onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })}
-            onRebalanceWeek={weekData => setModal({ type: "confirmRebalance", leagueId: league.id, weekData })} />
+            onRebalanceWeek={weekData => setModal({ type: "confirmRebalance", leagueId: league.id, weekData })}
+            onSetPlayerCheckIn={(week, playerId, status, subName) =>
+              setPlayerCheckIn(league.id, week, playerId, status, subName)} />
         ) : (
           <>
             <div style={S.tabBar}>

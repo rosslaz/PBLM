@@ -1,9 +1,114 @@
 import { useState } from "react";
 import { S } from "../styles.js";
+import { CHECKIN_OPTS } from "../lib/constants.js";
 
-// Commissioner view: collapsible per-week check-in summary with counts and the
-// ability to email reminders / copy a plain-text report.
-export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEmail, leagueId, leagueName, week, weekDate }) {
+// ─── Per-player RSVP editor (v1.6.0) ────────────────────────────────────────
+// One row per player inside the expanded commissioner summary. Lets the
+// commissioner set someone's RSVP on their behalf — the common case being a
+// player who texts "can't make it Thursday" instead of opening the app.
+//
+// Deliberately compact: a name, the four status buttons, and (for "sub") a
+// name field. Four buttons at ~44px each fits a phone without wrapping.
+//
+// Tapping the active status clears it back to "no response".
+function PlayerRsvpRow({ playerId, playerName, checkIn, isLocked, onSet }) {
+  const current = checkIn?.status || null;
+  const [subName, setSubName] = useState(checkIn?.subName || "");
+  const [showSubInput, setShowSubInput] = useState(current === "sub");
+
+  function handleClick(optKey) {
+    if (isLocked) return;
+    if (current === optKey) {
+      onSet(playerId, null);            // tap active = clear
+      setShowSubInput(false);
+      return;
+    }
+    if (optKey === "sub") {
+      setShowSubInput(true);
+      onSet(playerId, "sub", subName);
+      return;
+    }
+    setShowSubInput(false);
+    onSet(playerId, optKey);
+  }
+
+  function commitSubName() {
+    if (current === "sub" && subName !== (checkIn?.subName || "")) {
+      onSet(playerId, "sub", subName);
+    }
+  }
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 8,
+      padding: "6px 0",
+      borderTop: "0.5px solid var(--color-border-tertiary)",
+      flexWrap: "wrap",
+    }}>
+      <span style={{
+        flex: "1 1 120px", minWidth: 0,
+        fontSize: 13,
+        color: "var(--color-text-primary)",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>
+        {playerName}
+        {checkIn?.setByAdmin && (
+          <span
+            title="You set this on the player's behalf"
+            style={{ marginLeft: 6, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+            (set by you)
+          </span>
+        )}
+      </span>
+      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+        {CHECKIN_OPTS.map(opt => {
+          const active = current === opt.key;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              disabled={isLocked}
+              onClick={() => handleClick(opt.key)}
+              title={isLocked ? "Week is locked" : `Mark ${playerName} as ${opt.label}`}
+              style={{
+                minWidth: 34,
+                padding: "4px 8px",
+                fontSize: 11,
+                fontWeight: 700,
+                border: `1px solid ${active ? opt.color : "var(--color-border-secondary)"}`,
+                background: active ? opt.color : "var(--color-background-primary)",
+                color: active ? "#fff" : opt.color,
+                borderRadius: 6,
+                cursor: isLocked ? "not-allowed" : "pointer",
+                opacity: isLocked ? 0.5 : 1,
+                fontFamily: "inherit",
+                lineHeight: 1.2,
+              }}>
+              {opt.icon}
+            </button>
+          );
+        })}
+      </div>
+      {showSubInput && current === "sub" && (
+        <input
+          type="text"
+          value={subName}
+          onChange={e => setSubName(e.target.value)}
+          onBlur={commitSubName}
+          onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+          disabled={isLocked}
+          placeholder="Sub's name"
+          style={{ ...S.input, flex: "1 1 100%", padding: "5px 8px", fontSize: 12 }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Commissioner view: collapsible per-week check-in summary with counts, the
+// ability to email reminders / copy a plain-text report, and (v1.6.0) direct
+// editing of any player's RSVP.
+export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPlayerEmail, leagueId, leagueName, week, weekDate, onSetPlayerCheckIn, isLocked }) {
   const [expanded, setExpanded] = useState(false);
   const counts = { in: 0, out: 0, maybe: 0, sub: 0, none: 0 };
   const buckets = { in: [], maybe: [], sub: [], out: [], none: [] };
@@ -76,6 +181,17 @@ export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPl
     window.location.href = `mailto:?${params.toString()}`;
   }
 
+  // Roster in a stable, useful order for the editor: everyone who hasn't
+  // responded first (they're the ones the commissioner is chasing), then the
+  // rest alphabetically. Sorting by status would make rows jump around as
+  // soon as you set one, which is disorienting mid-edit — so we compute the
+  // order once from the *initial* buckets and keep it stable within a render.
+  const editorOrder = [
+    ...buckets.none,
+    ...[...buckets.in, ...buckets.maybe, ...buckets.sub, ...buckets.out]
+      .sort((a, b) => getPlayerName(a).localeCompare(getPlayerName(b))),
+  ];
+
   return (
     <div style={{ margin: "12px 16px 0", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: "var(--color-background-secondary)", overflow: "hidden" }}>
       <div
@@ -137,6 +253,34 @@ export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPl
               </div>
             )
           ))}
+
+          {/* ─── v1.6.0: set RSVPs on players' behalf ─────────────────────
+              For the player who texts "can't make it" instead of opening the
+              app. Anything set here is stamped as commissioner-set, and the
+              player sees a note explaining it in their own view — so their
+              status never silently changes with no explanation. */}
+          {onSetPlayerCheckIn && (
+            <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px solid var(--color-border-secondary)" }}>
+              <p style={{ margin: "0 0 2px", fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Set availability for a player
+              </p>
+              <p style={{ margin: "0 0 4px", fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.4 }}>
+                {isLocked
+                  ? "This week is locked — unlock it to change RSVPs."
+                  : "For players who told you outside the app. They'll see that you set it, and can still change it themselves."}
+              </p>
+              {editorOrder.map(pid => (
+                <PlayerRsvpRow
+                  key={pid}
+                  playerId={pid}
+                  playerName={getPlayerName(pid)}
+                  checkIn={getCheckInForPlayer(pid)}
+                  isLocked={isLocked}
+                  onSet={onSetPlayerCheckIn}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -614,11 +614,28 @@ export async function dbToggleLockWeek(leagueId, week) {
   }
 }
 
-export async function dbSetCheckIn(leagueId, week, playerId, status, subName) {
+// Write (or clear) one player's RSVP for a given week.
+//
+// v1.6.0 — `opts.setByAdmin` records that the commissioner set this on the
+// player's behalf, which happens whenever someone texts "can't make it"
+// instead of opening the app. We store it so the player's own view can
+// explain why their status changed without them touching it — a status that
+// silently flips with no explanation is worse than no feature at all.
+//
+// A player editing their own RSVP always writes setByAdmin: false, which
+// clears the flag. Once they've spoken for themselves, the commissioner's
+// stand-in answer is no longer the story.
+//
+// `opts.adminEmail` is kept purely for traceability when two commissioners
+// are both editing. Not surfaced in the UI today.
+export async function dbSetCheckIn(leagueId, week, playerId, status, subName, opts = {}) {
   const key = `${leagueId}_w${week}_${playerId}`;
+  const { setByAdmin = false, adminEmail = null } = opts;
   const data = {
     leagueId, week, playerId, status,
     subName: status === "sub" ? (subName || "").trim() || null : null,
+    setByAdmin: !!setByAdmin,
+    setByAdminEmail: setByAdmin ? (adminEmail || null) : null,
     updatedAt: new Date().toISOString(),
   };
   if (status === null) {

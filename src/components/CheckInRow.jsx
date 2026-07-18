@@ -22,7 +22,7 @@ const CAPTIONS = {
   out:   "✗ You're sitting out — this week won't count toward your standings.",
 };
 
-export function CheckInRow({ current, currentSubName, onSet, isLocked }) {
+export function CheckInRow({ current, currentSubName, setByAdmin, onSet, isLocked }) {
   const [subName, setSubName] = useState(currentSubName || "");
   // Keep local input in sync when the parent value changes (e.g. after reload)
   useEffect(() => { setSubName(currentSubName || ""); }, [currentSubName]);
@@ -121,6 +121,26 @@ export function CheckInRow({ current, currentSubName, onSet, isLocked }) {
             style={{ ...S.input, flex: 1, padding: "6px 10px" }}
           />
         </div>
+      )}
+      {/* Commissioner-set notice (v1.6.0).
+          If the commissioner set this on the player's behalf — because they
+          texted instead of using the app — say so. Without this, the player
+          opens the app, sees "Out" they never selected, and has no idea why.
+          Tapping any option clears the flag, since they've now spoken for
+          themselves. */}
+      {setByAdmin && current && !isLocked && (
+        <p style={{
+          margin: "8px 0 0",
+          padding: "6px 10px",
+          background: "#FAEEDA",
+          border: "0.5px solid #ECC580",
+          borderRadius: 6,
+          fontSize: 12,
+          color: "#854F0B",
+          lineHeight: 1.4,
+        }}>
+          The commissioner set this for you. Tap any option above to change it.
+        </p>
       )}
       {/* Status caption — tells a new player what each state actually does.
           Keyed by current status so it animates from one explanation to the

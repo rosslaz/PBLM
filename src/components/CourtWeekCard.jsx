@@ -152,7 +152,8 @@ function InlineScoreEntry({ match, onSubmit, accentColor }) {
 // isLocked: commissioner has locked this week — players cannot edit, commissioner still can
 // isAdmin: full commissioner access
 // league: the league record (used to resolve league-level court defaults)
-export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, myCheckIn, onSetCheckIn, regs, getCheckInForPlayer }) {
+// onSetPlayerCheckIn: (v1.6.0) admin-only — set any player's RSVP on their behalf
+export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, myCheckIn, onSetCheckIn, onSetPlayerCheckIn, regs, getCheckInForPlayer }) {
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
 
@@ -286,15 +287,22 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
             <CheckInRow
               current={myCheckIn?.status}
               currentSubName={myCheckIn?.subName}
+              setByAdmin={myCheckIn?.setByAdmin}
               isLocked={isLocked}
               onSet={(status, subName) => onSetCheckIn(weekData.week, status, subName)} />
           )}
-          {/* Commissioner check-in summary */}
+          {/* Commissioner check-in summary + per-player RSVP editor */}
           {isAdmin && regs && getCheckInForPlayer && (
             <CheckInSummary regs={regs} getCheckInForPlayer={getCheckInForPlayer}
               getPlayerName={getPlayerName} getPlayerEmail={getPlayerEmail}
               leagueId={leagueId} leagueName={leagueName}
-              week={weekData.week} weekDate={formatDate(weekData.date)} />
+              week={weekData.week} weekDate={formatDate(weekData.date)}
+              isLocked={isLocked}
+              onSetPlayerCheckIn={
+                onSetPlayerCheckIn
+                  ? (playerId, status, subName) => onSetPlayerCheckIn(weekData.week, playerId, status, subName)
+                  : undefined
+              } />
           )}
           {weekData.courts.map((court, ci) => {
             const courtColor = COURT_COLORS[ci] || CSC.blue;
