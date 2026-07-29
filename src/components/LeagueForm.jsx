@@ -35,6 +35,10 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  // Open play has no courts, so the court-count and court-defaults controls
+  // are hidden when this type is selected.
+  const isOpen = form.competitionType === "open";
+
   // When the user changes Number of Courts, resize courtConfig to match.
   function setNumCourts(n) {
     setForm(f => ({
@@ -83,14 +87,16 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: SPACE.md }}>
         <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option></select></div>
-        <div>
-          <label style={S.label}>Number of Courts *</label>
-          <select style={S.input} value={form.numCourts} onChange={e => setNumCourts(+e.target.value)}>
-            {Array.from({ length: MAX_COURTS }, (_, i) => i + 1).map(n => (
-              <option key={n} value={n}>{n} court{n!==1?"s":""} (max {n * MAX_PER_COURT} players)</option>
-            ))}
-          </select>
-        </div>
+        {!isOpen && (
+          <div>
+            <label style={S.label}>Number of Courts *</label>
+            <select style={S.input} value={form.numCourts} onChange={e => setNumCourts(+e.target.value)}>
+              {Array.from({ length: MAX_COURTS }, (_, i) => i + 1).map(n => (
+                <option key={n} value={n}>{n} court{n!==1?"s":""} (max {n * MAX_PER_COURT} players)</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div><label style={S.label}>Location</label><input style={S.input} value={form.location} onChange={e => set("location", e.target.value)} placeholder="Community Center" /></div>
       </div>
       <div>
@@ -101,13 +107,20 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
               of v0.10.x. */}
           <option value="mixer">Round-Robin — every player faces every other player across the season</option>
           <option value="ladder">Ladder — week-by-week, courts based on previous week's results</option>
+          <option value="open">Open Play — no set courts; players just RSVP in or out each week</option>
         </select>
+        {isOpen && (
+          <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12, color: "var(--color-text-secondary)" }}>
+            Open play has no schedule, courts, or standings — it only tracks weekly RSVPs. Players see each week and mark themselves in or out; you see the headcount and who's coming.
+          </p>
+        )}
       </div>
       <div><label style={S.label}>Description</label><textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} value={form.description} onChange={e => set("description", e.target.value)} placeholder="Optional…" /></div>
 
       {/* ─── Court config (optional) ─────────────────────────────────────
           Default name + start time for each court. Applies to every week
           unless the commissioner sets a per-week override on Edit Week. */}
+      {!isOpen && (
       <div style={{
         padding: `${SPACE.md}px ${SPACE.md}px`,
         background: "var(--color-background-secondary)",
@@ -156,6 +169,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
           })}
         </div>
       </div>
+      )}
 
       <div style={{ ...S.row, justifyContent: "flex-end", gap: SPACE.sm, marginTop: SPACE.xs }}>
         <button style={S.btn("secondary")} onClick={onCancel}>Cancel</button>

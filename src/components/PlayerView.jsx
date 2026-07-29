@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS, CSC, MAX_PER_COURT } from "../lib/constants.js";
-import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime, todayISO } from "../lib/format.js";
+import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime, todayISO, openPlayWeeks, isOpenPlay } from "../lib/format.js";
 import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh, PickleballIcon } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
+import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { LeagueRegistrationCard } from "./LeagueRegistrationCard.jsx";
 import { ClubSwitcher } from "./ClubSwitcher.jsx";
@@ -145,6 +146,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
   const rawLeague = selectedLeagueId ? db.leagues[selectedLeagueId] : null;
   const selectedLeague = rawLeague && !rawLeague.deletedAt ? rawLeague : null;
   const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.csc) : COLORS.teal;
+  const openPlay = isOpenPlay(selectedLeague);
   const sched = selectedLeagueId ? getLeagueSchedule(selectedLeagueId) : { weeks: [] };
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
 
@@ -172,7 +174,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
     const upcoming = allWeeks.find(w => w.date && w.date >= today);
     return upcoming || allWeeks[allWeeks.length - 1];
   })();
-  const heroState = (selectedLeague && selectedLeague.status !== "archived")
+  const heroState = (selectedLeague && !openPlay && selectedLeague.status !== "archived")
     ? computeHeroState({
         player, allWeeks, today, currentWeek,
         leagueId: selectedLeagueId, getScore, isWeekLocked,
@@ -225,6 +227,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
         const lc = COLORS[league.color] || COLORS.csc;
         const leagueRegs = regsByLeague[league.id] || [];
         const filled = leagueRegs.length;
+        const leagueIsOpenPlay = isOpenPlay(league);
         const capacity = (league.numCourts || 4) * MAX_PER_COURT;
         return (
           <Modal title="Join this league?" onClose={() => setModal(null)}>
@@ -242,7 +245,9 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
                 </p>
               )}
               <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--color-text-tertiary)" }}>
-                {filled} of {capacity} spots filled
+                {leagueIsOpenPlay
+                  ? `${filled} player${filled !== 1 ? "s" : ""} signed up`
+                  : `${filled} of ${capacity} spots filled`}
               </p>
             </div>
             <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-secondary)" }}>
@@ -340,6 +345,8 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
         // scores > missing check-in); when null, falls through to the
         // default "next/most-recent match" summary.
         if (selectedLeague.status === "archived") return null;
+        // Open play has no matches to highlight — the RSVP list is the whole UI.
+        if (openPlay) return null;
 
         // ── Variant 1: unscored past matches ────────────────────────
         if (heroState?.kind === "pending-scores") {
@@ -460,6 +467,34 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
       })()}
       {selectedLeague && (
         <>
+          {openPlay ? (
+            <div style={S.section}>
+              <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--color-text-secondary)" }}>
+                Weekly RSVP for <b>{selectedLeague.name}</b>
+              </p>
+              {selectedLeague.status === "archived" && (
+                <div style={{ padding: "12px 16px", marginBottom: 12, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B" }}>
+                  📦 This league has been archived. Past RSVPs are visible for reference but can no longer be changed.
+                </div>
+              )}
+              {selectedLeague.description && selectedLeague.description.trim() && (
+                <div style={{ padding: "12px 14px", marginBottom: 12, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                  {selectedLeague.description}
+                </div>
+              )}
+              <OpenPlayWeeks
+                weeks={openPlayWeeks(selectedLeague)}
+                leagueId={selectedLeagueId}
+                leagueName={selectedLeague.name}
+                myId={player.id}
+                getCheckIn={getCheckIn}
+                onSetCheckIn={selectedLeague.status === "archived"
+                  ? undefined
+                  : (week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)}
+              />
+            </div>
+          ) : (
+          <>
           <div style={S.tabBar}>
             {["schedule","standings"].map(t => <button key={t} style={S.tab(playerTab===t,c.bg)} onClick={() => setPlayerTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
           </div>
@@ -548,6 +583,8 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
               return <StandingsTable standings={getStandings(selectedLeagueId)} getPlayerName={getPlayerName} color={c} myId={player.id} pendingWeeks={pendingWeeks} />;
             })()}
           </div>
+          </>
+          )}
         </>
       )}
       <VersionFooter />

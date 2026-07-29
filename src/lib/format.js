@@ -167,6 +167,42 @@ export function isPastWeek(weekDate) {
   return weekDate < todayISO();
 }
 
+// ─── Open-play weeks (v1.7.0) ────────────────────────────────────────────────
+// Open-play leagues have no schedule and no courts — players just RSVP in/out
+// each week. So there are no stored week objects in pb_schedules; instead we
+// derive the weeks on the fly from the league's startDate + weeks count.
+//
+// Week N runs on startDate + (N-1) * 7 days. Returns a lightweight array of
+// { week, date } — the same {week, date} fields the court-based week objects
+// carry, so the RSVP components (which only read week + date) work unchanged.
+//
+// Kept here in format.js next to the other date helpers, and pure, so both the
+// player view and the commissioner view derive an identical week list without
+// sharing state.
+export function openPlayWeeks(league) {
+  if (!league?.startDate || !league?.weeks) return [];
+  const [y, m, d] = league.startDate.split("-").map(Number);
+  if (!y || !m || !d) return [];
+  const out = [];
+  for (let i = 0; i < league.weeks; i++) {
+    // Build each date from a fresh local-noon Date to dodge DST/UTC edge cases,
+    // then re-serialize to YYYY-MM-DD (the format every other date field uses).
+    const dt = new Date(y, m - 1, d, 12, 0, 0);
+    dt.setDate(dt.getDate() + i * 7);
+    const pad = n => String(n).padStart(2, "0");
+    const iso = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    out.push({ week: i + 1, date: iso });
+  }
+  return out;
+}
+
+// True for the "open" competition type — the RSVP-only mode with no courts,
+// no scoring, and no standings. Centralized so every `=== "open"` check reads
+// the same and there's one place to change if the stored value ever moves.
+export function isOpenPlay(league) {
+  return league?.competitionType === "open";
+}
+
 // ─── Gender eligibility ────────────────────────────────────────────────────
 // True when a player can join a league based on the league's gender setting.
 // "Mixed" leagues accept anyone; "Men's" rejects only players known to be

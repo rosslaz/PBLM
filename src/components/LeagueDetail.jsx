@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { S, genderBadgeStyle } from "../styles.js";
 import { COLORS, COURT_COLORS, MAX_PER_COURT, MIN_PER_COURT, courtNames } from "../lib/constants.js";
-import { formatDate, formatPlayerName, playerFullName, playerInitial, formatPhone } from "../lib/format.js";
+import { formatDate, formatPlayerName, playerFullName, playerInitial, formatPhone, openPlayWeeks, isOpenPlay } from "../lib/format.js";
 import { useIsMobile, buildDisplayWeeks } from "../lib/session.js";
 import { distributePlayersToCourts } from "../lib/scheduling.js";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
+import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { EmptyState } from "./ui.jsx";
 
 export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onShowContacts, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn, onSetPlayerCheckIn }) {
   const isMobile = useIsMobile();
-  const [tab, setTab] = useState("schedule");
+  const openPlay = isOpenPlay(league);
+  const [tab, setTab] = useState(openPlay ? "rsvps" : "schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = buildDisplayWeeks(league, schedule);
   const realWeeks = weeks.filter(w => !w.placeholder);
@@ -131,8 +133,8 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
           <div>
             <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text, fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
-              <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : "info"), marginLeft: 8, fontSize: 10 }}>
-                {league.competitionType === "ladder" ? "🪜 Ladder" : "🔀 Round-Robin"}
+              <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : league.competitionType === "open" ? "success" : "info"), marginLeft: 8, fontSize: 10 }}>
+                {league.competitionType === "ladder" ? "🪜 Ladder" : league.competitionType === "open" ? "🌓 Open Play" : "🔀 Round-Robin"}
               </span>
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
@@ -153,11 +155,29 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
       </div>
 
       <div style={S.tabBar}>
-        {["schedule", "players", "standings"].map(t => <button key={t} style={S.tab(tab===t, c.bg)} onClick={() => setTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
+        {(openPlay ? ["rsvps", "players"] : ["schedule", "players", "standings"]).map(t => <button key={t} style={S.tab(tab===t, c.bg)} onClick={() => setTab(t)}>{t === "rsvps" ? "RSVPs" : t[0].toUpperCase()+t.slice(1)}</button>)}
       </div>
 
       <div style={S.section}>
-        {tab === "schedule" && (
+        {openPlay && tab === "rsvps" && (
+          <div>
+            <div style={{ padding: "12px 14px", marginBottom: 16, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+              🌓 Open play — no courts or standings, just weekly RSVPs. Each week below shows who's in. You can set a player's status for them if they tell you outside the app, and email reminders to anyone who hasn't replied.
+            </div>
+            <OpenPlayWeeks
+              weeks={openPlayWeeks(league)}
+              leagueId={league.id}
+              leagueName={league.name}
+              isAdmin
+              regs={regs}
+              getPlayerName={getPlayerName}
+              getPlayerEmail={pid => db.players[pid]?.email}
+              getCheckIn={getCheckIn}
+              onSetPlayerCheckIn={onSetPlayerCheckIn}
+            />
+          </div>
+        )}
+        {!openPlay && tab === "schedule" && (
           <div>
             {/* Reminder: weeks with all scores entered but not yet locked */}
             {(() => {
