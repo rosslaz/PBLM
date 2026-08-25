@@ -971,15 +971,37 @@ export default function App() {
     await action(() => dbRemovePlayerFromLeague(leagueId, playerId), "Player removed. Regenerate schedule.");
   }
 
+  // Create a player from the commissioner panel (Players tab, or the
+  // add-player-to-league modal). Both are scoped to the active club.
+  //
+  // v1.8.0: if the email already belongs to a live player — typically someone
+  // who plays at another club — add a membership to that existing record
+  // instead of creating a duplicate. Returns the id either way, so callers
+  // that immediately register the player into a league keep working.
   async function createPlayer(data) {
-    let newId = null;
-    const displayName = data.firstName ? `${data.firstName} ${data.lastName || ""}`.trim() : data.name;
-    // Auto-join the active club. createPlayer is only called from admin
-    // flows (commissioner panel + AddPlayerToLeague modal); both are
-    // by-definition scoped to the active club. The home-screen "New
-    // Account" button is disabled in v1.1.0 until the dedicated join-by-
-    // code flow ships in Phase 3.
     if (!activeClubId) { showToast("No active club selected.", "error"); return null; }
+    const displayName = data.firstName ? `${data.firstName} ${data.lastName || ""}`.trim() : data.name;
+    const existing = findLivePlayerByEmail(data?.email);
+
+    if (existing) {
+      // Already in this club? Nothing to do but say so — avoids a confusing
+      // silent no-op when the commissioner re-adds someone.
+      const alreadyMember = !!db.memberships?.[`${activeClubId}_${existing.id}`]
+        && !db.memberships[`${activeClubId}_${existing.id}`].deletedAt;
+      if (alreadyMember) {
+        showToast(`${formatPlayerName(existing)} is already in this club.`, "error");
+        setModal(null);
+        return existing.id;
+      }
+      await action(
+        () => dbCreateMembership(activeClubId, existing.id),
+        `${formatPlayerName(existing)} already had an account — added them to this club.`
+      );
+      setModal(null);
+      return existing.id;
+    }
+
+    let newId = null;
     await action(async () => {
       newId = await dbCreatePlayer(data);
       await dbCreateMembership(activeClubId, newId);
@@ -999,22 +1021,48 @@ export default function App() {
   // They write all the necessary records (player, club, membership) and
   // then immediately log the user in and set the active club.
 
+  // Look up a live player by email. Returns the player record or null.
+  //
+  // v1.8.0 — added to stop duplicate accounts. Email is the de-facto identity
+  // key in this app (it's how login works), but nothing in the schema enforces
+  // uniqueness, so any flow that creates a player from an email has to check
+  // first. Without this, one person ends up as two records with one club each
+  // and no way to switch between them — which is exactly what happened when a
+  // club owner created a second club using their existing email.
+  //
+  // Searches ALL players, not the club-scoped list: the whole point is to find
+  // someone who exists in a different club.
+  function findLivePlayerByEmail(email) {
+    const target = (email || "").trim().toLowerCase();
+    if (!target) return null;
+    return Object.values(db.players || {}).find(
+      p => p.email?.toLowerCase() === target && !p.deletedAt
+    ) || null;
+  }
+
   // Home-screen "Create a Club" — creates the club + the owner's player
   // record + their membership, then signs the new owner in to their new
   // club. On any DB error mid-sequence, we surface the error and abort;
   // partial state (e.g. a player created but no club) is recoverable on
   // retry (the orphaned player just lives in db.players with no club, and
   // the next attempt will create everything fresh).
+  //
+  // v1.8.0: if the owner's email already belongs to a live player, we reuse
+  // that record instead of creating a second one. A person who runs two clubs
+  // is still one person.
   async function createClub({ clubName, playerData }) {
     const joinCode = generateJoinCode(clubName);
-    let newPlayerId = null;
+    const existingPlayer = findLivePlayerByEmail(playerData?.email);
+    let newPlayerId = existingPlayer?.id || null;
     let newClubId = null;
     await action(async () => {
-      // Order matters: create the player first so we have their email
-      // confirmed in storage before we attach them as the club's owner.
-      // If club-create fails after this, the player exists but is in no
-      // club — they'd hit the "no clubs" empty state on next login.
-      newPlayerId = await dbCreatePlayer(playerData);
+      // Order matters: resolve the player first so we have their id confirmed
+      // before we attach them as the club's owner. If club-create fails after
+      // this, a newly-created player exists but is in no club — they'd hit the
+      // "no clubs" empty state on next login and can retry.
+      if (!newPlayerId) {
+        newPlayerId = await dbCreatePlayer(playerData);
+      }
       newClubId = await dbCreateClub({
         name: clubName,
         ownerEmail: playerData.email,
@@ -1026,12 +1074,16 @@ export default function App() {
       // Toast already surfaced the error via the action wrapper.
       return;
     }
-    showToast(`Welcome to ${clubName}! Your join code is ${joinCode} — find it any time in the Commissioners tab.`);
+    showToast(
+      existingPlayer
+        ? `${clubName} created and added to your account. Join code: ${joinCode}`
+        : `Welcome to ${clubName}! Your join code is ${joinCode} — find it any time in the Commissioners tab.`
+    );
     // Log them in immediately. reload() inside `action` already happened,
     // so db now contains the new records.
     if (playerData.email) saveLastEmail(playerData.email);
     setActiveClubId(newClubId);
-    setCurrentPlayer({ ...playerData, id: newPlayerId });
+    setCurrentPlayer(existingPlayer || { ...playerData, id: newPlayerId });
     setView("player");
     setModal(null);
   }
