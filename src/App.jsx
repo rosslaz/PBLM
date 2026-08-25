@@ -1184,6 +1184,17 @@ export default function App() {
     if (club) showToast(`Switched to ${club.name}.`);
   }
 
+  // v1.8.0 — per-club logo. Stored as a plain string on the club record so
+  // the same field works whether it points at a bundled /public asset or a
+  // future uploaded URL. Passing null clears it.
+  async function setClubLogo(logoUrl) {
+    if (!activeClubId) { showToast("No active club selected.", "error"); return; }
+    await action(
+      () => dbUpdateClub(activeClubId, { logoUrl: logoUrl || null }),
+      logoUrl ? "Club logo updated." : "Club logo removed."
+    );
+  }
+
   // Rename the active club. Admin-gated by the UI (ClubSettingsTab).
   async function renameClub(newName) {
     if (!activeClubId) { showToast("No active club selected.", "error"); return; }
@@ -1899,6 +1910,7 @@ export default function App() {
                 isAdmin={isClubAdmin(activeClub, adminEmail)}
                 isOwner={isClubOwner(activeClub, adminEmail)}
                 onRename={renameClub}
+                onSetLogo={setClubLogo}
                 onRegenerateRequest={() => setModal({ type: "confirmRegenerateCode" })}
                 onTransferRequest={(newOwnerEmail) => setModal({ type: "confirmTransferOwnership", newOwnerEmail })}
                 onDeleteRequest={() => setModal({ type: "confirmDeleteClub" })}

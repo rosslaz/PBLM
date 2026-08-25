@@ -1,6 +1,40 @@
 import { useEffect, useRef, useState } from "react";
 import { SPACE } from "../lib/constants.js";
 
+// ─── Club logo (v1.8.0) ────────────────────────────────────────────
+// Renders a club's logo if it has one, otherwise nothing. Clubs are
+// multi-tenant, so branding has to follow the ACTIVE club rather than being
+// baked into the app shell — CSC players should never see another club's mark.
+//
+// `logoUrl` is just a string on the club record. Today those point at assets
+// bundled in /public (the operator creates clubs and deploys); if clubs ever
+// self-serve, the same field can hold a Supabase Storage URL with no schema
+// change and no migration.
+export function ClubLogo({ club, size = 28, style }) {
+  const url = club?.logoUrl;
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt=""                       // decorative: the club name is always adjacent
+      width={size}
+      height={size}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        objectFit: "cover",
+        flexShrink: 0,
+        display: "block",
+        // Logos are user-supplied art on a colored header; a hairline keeps
+        // light-background marks from bleeding into the header.
+        background: "rgba(255,255,255,0.9)",
+        ...style,
+      }}
+    />
+  );
+}
+
 // ─── Club switcher (Phase 4 / v1.3.0) ──────────────────────────────────────
 // Header-mounted dropdown. Renders the active club's name as the page title;
 // if the user belongs to multiple clubs, a chevron is shown and clicking
@@ -57,9 +91,12 @@ export function ClubSwitcher({ clubs, activeClubId, onSwitch, subtitle, color })
   // pointer cursor. Subtitle still renders if provided.
   if (!hasMultiple) {
     return (
-      <div>
-        <h1 style={titleStyle}>{activeName}</h1>
-        {subtitle && <p style={subtitleStyle}>{subtitle}</p>}
+      <div style={{ display: "flex", alignItems: "center", gap: SPACE.sm, minWidth: 0 }}>
+        <ClubLogo club={activeClub} size={32} />
+        <div style={{ minWidth: 0 }}>
+          <h1 style={titleStyle}>{activeName}</h1>
+          {subtitle && <p style={subtitleStyle}>{subtitle}</p>}
+        </div>
       </div>
     );
   }
@@ -91,9 +128,10 @@ export function ClubSwitcher({ clubs, activeClubId, onSwitch, subtitle, color })
           textAlign: "left",
           display: "flex",
           alignItems: "center",
-          gap: SPACE.xs,
+          gap: SPACE.sm,
         }}>
-        <div>
+        <ClubLogo club={activeClub} size={32} />
+        <div style={{ minWidth: 0 }}>
           <h1 style={titleStyle}>
             {activeName}
             <span style={{
@@ -165,6 +203,7 @@ export function ClubSwitcher({ clubs, activeClubId, onSwitch, subtitle, color })
                   color: "var(--color-text-primary)",
                   textAlign: "left",
                 }}>
+                <ClubLogo club={club} size={24} />
                 <span style={{
                   fontWeight: isActive ? 700 : 500,
                   overflow: "hidden",

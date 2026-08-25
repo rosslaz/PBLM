@@ -28,6 +28,7 @@ import { SPACE, CSC } from "../lib/constants.js";
 export function ClubSettingsTab({
   club, isAdmin, isOwner,
   onRename,
+  onSetLogo,
   onRegenerateRequest,
   onTransferRequest,
   onDeleteRequest,
@@ -66,6 +67,7 @@ export function ClubSettingsTab({
       </p>
 
       <RenameSection club={club} onRename={onRename} />
+      <LogoSection club={club} onSetLogo={onSetLogo} />
       <RegenerateCodeSection club={club} onRequest={onRegenerateRequest} />
       {/* Transfer + Delete are owner-only. We render placeholders when the
           current user isn't the owner so it's clear those options exist
@@ -143,6 +145,98 @@ function RenameSection({ club, onRename }) {
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Club logo (v1.8.0) ──────────────────────────────────────────
+// The app is multi-tenant: one shell, many clubs. So branding can't live in
+// the app shell — a CSC player must never see another club's mark. The logo
+// is stored per club and rendered wherever the active club is identified
+// (header, club switcher).
+//
+// Note this deliberately does NOT change the login screen. At that point no
+// club is selected yet, so there's nothing to brand with; the login screen
+// stays neutral app branding.
+//
+// The field takes a path or URL rather than offering an upload. With a
+// handful of operator-created clubs, bundling the image in /public and
+// pointing at it is far less machinery than a storage bucket + upload
+// pipeline. The stored value is just a string, so switching to uploaded
+// URLs later needs no schema change and no migration.
+function LogoSection({ club, onSetLogo }) {
+  const [draft, setDraft] = useState(club.logoUrl || "");
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setDraft(club.logoUrl || ""); setBroken(false); }, [club.logoUrl]);
+
+  const trimmed = draft.trim();
+  const isDirty = trimmed !== (club.logoUrl || "").trim();
+
+  function handleSave() {
+    // Empty clears the logo — the switcher just renders the name alone.
+    onSetLogo(trimmed || null);
+  }
+
+  return (
+    <div style={{ ...S.card, padding: `${SPACE.lg}px ${SPACE.lg}px`, marginBottom: SPACE.lg }}>
+      <div style={{ marginBottom: SPACE.sm }}>
+        <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+          Club logo
+        </p>
+        <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12, color: "var(--color-text-secondary)" }}>
+          Shown next to this club's name in the header. Only members of this club see it — other clubs keep their own branding. Leave blank for no logo.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: SPACE.md, marginBottom: SPACE.md }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: "50%", flexShrink: 0,
+          background: "var(--color-background-secondary)",
+          border: "0.5px solid var(--color-border-secondary)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          overflow: "hidden",
+        }}>
+          {trimmed && !broken ? (
+            <img
+              src={trimmed}
+              alt=""
+              onError={() => setBroken(true)}
+              onLoad={() => setBroken(false)}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <span style={{ fontSize: 20, color: "var(--color-text-tertiary)" }}>
+              {broken ? "⚠" : "—"}
+            </span>
+          )}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <label style={S.label}>Image path or URL</label>
+          <input
+            style={{ ...S.input, width: "100%" }}
+            type="text"
+            value={draft}
+            placeholder="/dink-drink.png"
+            onChange={e => { setDraft(e.target.value); setBroken(false); }}
+            onKeyDown={e => { if (e.key === "Enter") handleSave(); }}
+          />
+        </div>
+      </div>
+
+      {broken && trimmed && (
+        <p style={{ margin: `0 0 ${SPACE.md}px`, padding: `${SPACE.sm}px ${SPACE.md}px`, background: "#FAEEDA", color: "#854F0B", borderRadius: 6, fontSize: 13 }}>
+          That image didn't load. Check the path — files in <code>public/</code> are referenced from the site root, e.g. <code>/dink-drink.png</code>.
+        </p>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          style={{ ...S.btn("primary"), background: CSC.blue, opacity: isDirty ? 1 : 0.5 }}
+          disabled={!isDirty}
+          onClick={handleSave}>
+          {trimmed ? "Save logo" : "Remove logo"}
+        </button>
+      </div>
     </div>
   );
 }
