@@ -21,10 +21,12 @@ import { PlayerForm } from "./PlayerForm.jsx";
 //   db                      — read-only access to clubs/players for lookup
 //   onSubmit(payload)       — fires after final confirmation
 //   onCancel                — close the modal
-export function JoinClubModal({ db, onSubmit, onCancel }) {
+export function JoinClubModal({ db, initialCode, onSubmit, onCancel }) {
   // Steps: "code" → "confirm" → "email" → "create" (if email is new)
   const [step, setStep] = useState("code");
-  const [codeInput, setCodeInput] = useState("");
+  // Prefilled when the user arrives here from the create-club flow after
+  // pasting a join code into the name field — no reason to make them retype it.
+  const [codeInput, setCodeInput] = useState(initialCode || "");
   const [foundClub, setFoundClub] = useState(null);
   const [emailInput, setEmailInput] = useState("");
   const [matchedPlayer, setMatchedPlayer] = useState(null);

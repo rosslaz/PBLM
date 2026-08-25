@@ -101,7 +101,9 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
       {modal?.type === "createClub" && (
         <Modal title="Create a Club" onClose={() => setModal(null)}>
           <CreateClubModal
+            db={db}
             onSubmit={({ clubName, playerData }) => onCreateClub({ clubName, playerData })}
+            onSwitchToJoin={(code) => setModal({ type: "joinClub", initialCode: code })}
             onCancel={() => setModal(null)} />
         </Modal>
       )}
@@ -109,6 +111,7 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
         <Modal title="Join with a Code" onClose={() => setModal(null)}>
           <JoinClubModal
             db={db}
+            initialCode={modal.initialCode}
             onSubmit={(payload) => onJoinClub(payload)}
             onCancel={() => setModal(null)} />
         </Modal>
