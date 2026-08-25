@@ -12,6 +12,40 @@ import { useIsMobile } from "../lib/session.js";
 //
 // `PickleballIcon` is kept as a backwards-compat alias so any older imports
 // still resolve. New code should use `CSCMark` directly.
+// ─── Neutral app mark (v1.8.0) ──────────────────────────────────────────────
+// A generic pickleball, drawn inline. Deliberately NOT the CSC mark: the app
+// is multi-tenant, so shared surfaces — above all the login screen, which is
+// shown before any club is known — can't wear one club's identity. Club
+// branding belongs to the club logo (see ClubLogo), which appears only once
+// an active club is established.
+//
+// Inline SVG rather than an image file so it inherits `color` from its parent
+// and needs no asset, no cache-busting, and no network request.
+export function AppMark({ size = 48, style }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      fill="none"
+      role="img"
+      aria-hidden="true"
+      style={{ display: "block", ...style }}>
+      {/* Ball body */}
+      <circle cx="24" cy="24" r="21" fill="currentColor" opacity="0.16" />
+      <circle cx="24" cy="24" r="21" stroke="currentColor" strokeWidth="2.5" />
+      {/* Perforations, in the staggered arrangement a real pickleball has */}
+      {[
+        [24, 11], [15, 16], [33, 16],
+        [12, 25], [24, 23], [36, 25],
+        [16, 33], [31, 33], [24, 39],
+      ].map(([cx, cy], i) => (
+        <circle key={i} cx={cx} cy={cy} r="2.6" fill="currentColor" />
+      ))}
+    </svg>
+  );
+}
+
 export function CSCMark({ size = 32, style }) {
   return (
     <img

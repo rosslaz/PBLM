@@ -130,6 +130,17 @@ export default function App() {
   // stale snapshot can never be the basis for a mutation even if this state
   // somehow got out of sync.
   const [snapshotAge, setSnapshotAge] = useState(null);
+  // v1.8.0 — lifted out of <UpdateBanner> so this component knows whether a
+  // banner is on screen. That matters for iOS safe-area handling: whichever
+  // element is topmost has to pad for the notch, and it's the banner stack
+  // when a banner is showing, the header otherwise.
+  const [updateReady, setUpdateReady] = useState(false);
+
+  useEffect(() => {
+    function onUpdateReady() { setUpdateReady(true); }
+    window.addEventListener("pwa:update-ready", onUpdateReady);
+    return () => window.removeEventListener("pwa:update-ready", onUpdateReady);
+  }, []);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -354,16 +365,28 @@ export default function App() {
 
   if (!db) return <div style={{ display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,color:"var(--color-text-secondary)",fontSize:18 }}>Loading…</div>;
 
-  // Status bars rendered at the top of every view. Both no-op when irrelevant.
-  const statusBanners = (
-    <>
-      <UpdateBanner />
+  // Status bars rendered at the top of every view. The wrapper only exists
+  // when something is actually showing — an empty one would still claim the
+  // iOS safe-area inset and leave a dead strip under the status bar.
+  //
+  // `hasBanner` is also handed to the headers below so they can drop their
+  // own inset: only the topmost element should pad for the notch.
+  const hasBanner = updateReady || snapshotAge !== null;
+  const statusBanners = hasBanner ? (
+    <div className="pwa-banner-stack">
+      <UpdateBanner
+        ready={updateReady}
+        onDismiss={() => setUpdateReady(false)} />
       <OfflineBanner
         cachedAt={snapshotAge}
         onRetry={refresh}
         isRetrying={currentActionId === "refresh"} />
-    </>
-  );
+    </div>
+  ) : null;
+
+  // Header top-padding class: the banner stack owns the notch inset when
+  // it's present, so the header falls back to plain padding.
+  const headerTopClass = hasBanner ? "pwa-has-banner" : "pwa-safe-top";
 
   // Split records by whether they've been soft-deleted. `leagues`/`players`
   // are the live ones every existing view reads from; trashed records are only
@@ -1475,6 +1498,7 @@ export default function App() {
         <PullToRefresh onRefresh={refresh} isRefreshing={currentActionId === "refresh"}>
         {statusBanners}
         <HomeView leagues={leagues} players={players} db={db}
+          hasBanner={hasBanner}
           onAdmin={(email) => {
             // Admin-only sign-in: pick the first club where this email is
             // owner/admin. If none, leave activeClubId null — the
@@ -1776,7 +1800,7 @@ export default function App() {
 
         {statusBanners}
 
-        <div style={S.header(league ? c.bg : undefined)} className="pwa-safe-top pwa-safe-x">
+        <div style={S.header(league ? c.bg : undefined)} className={`${headerTopClass} pwa-safe-x`}>
           <div style={S.row}>
             <button style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0" }} onClick={() => { if (league) setSelectedLeague(null); else setView("home"); }}>←</button>
             {league
@@ -2021,6 +2045,7 @@ export default function App() {
       <ActionPendingProvider value={currentActionId}>
         {statusBanners}
         <PlayerView key={activeClubId || "no-club"}
+          headerTopClass={headerTopClass}
           db={db} player={currentPlayer} myLeagues={myLeagues} unregistered={unregistered}
           accessibleClubs={getClubsForPlayer(db.memberships || {}, db.clubs || {}, currentPlayer.id)}
           activeClubId={activeClubId} onSwitchClub={switchClub}

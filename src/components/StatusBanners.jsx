@@ -30,15 +30,13 @@ import { formatRelativeTime } from "../lib/format.js";
 // vite-plugin-pwa's `virtual:pwa-register` because we don't use that plugin —
 // the worker is hand-written. A DOM event is the natural seam between the
 // vanilla registration script and React.
-export function UpdateBanner() {
-  const [ready, setReady] = useState(false);
+// v1.8.0: `ready` and `onDismiss` are now controlled by the parent. App.jsx
+// listens for `pwa:update-ready` itself because it needs to know whether ANY
+// banner is on screen — the banner stack owns the iOS safe-area inset, and
+// the sticky header has to drop its own inset when a banner is above it.
+// Keeping that state here would have meant the parent couldn't see it.
+export function UpdateBanner({ ready, onDismiss }) {
   const [applying, setApplying] = useState(false);
-
-  useEffect(() => {
-    function onUpdateReady() { setReady(true); }
-    window.addEventListener("pwa:update-ready", onUpdateReady);
-    return () => window.removeEventListener("pwa:update-ready", onUpdateReady);
-  }, []);
 
   if (!ready) return null;
 
@@ -88,7 +86,7 @@ export function UpdateBanner() {
       </button>
       <button
         type="button"
-        onClick={() => setReady(false)}
+        onClick={onDismiss}
         disabled={applying}
         style={{
           background: "transparent",

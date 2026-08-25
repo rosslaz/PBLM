@@ -99,6 +99,41 @@ input[type="number"]::-webkit-outer-spin-button {
 .pwa-safe-top-lg {
   padding-top: calc(32px + env(safe-area-inset-top, 0px)) !important;
 }
+
+/* ─── Status-banner stack (fix, v1.8.0) ────────────────────────────
+   The update/offline banners render ABOVE the sticky header, which makes
+   them the topmost element on screen. They had no safe-area padding, so
+   in a standalone PWA they drew underneath the iOS status bar: visually
+   pinned to the very top, and — because iOS owns that strip — their
+   buttons could not be tapped at all.
+
+   This wrapper owns the top inset instead. When it's present it also
+   cancels the header's own inset (via .pwa-has-banner on the header),
+   because only the FIRST element at the top of the viewport should pad
+   for the notch — otherwise the two stack and leave a dead gap.
+
+   Sticky rather than static so a long scroll doesn't hide an active
+   update prompt; z-index sits above the header's 100. */
+.pwa-banner-stack {
+  position: sticky;
+  top: 0;
+  z-index: 150;
+  padding-top: env(safe-area-inset-top, 0px);
+  /* Opaque so header content scrolling underneath doesn't show through
+     the inset strip. Matches the banners' own backgrounds closely enough
+     that the seam is invisible in both light and dark. */
+  background: var(--color-background-primary);
+}
+/* Applied to the sticky header when a banner stack is above it: the
+   banner already cleared the notch, so the header reverts to its plain
+   padding and sticks just below the banner rather than under it. */
+.pwa-has-banner {
+  padding-top: 16px !important;
+}
+/* Same idea for the home screen's large hero banner. */
+.pwa-has-banner-lg {
+  padding-top: 32px !important;
+}
 /* Left/right safe areas: avoid content getting clipped by landscape
    notches. Inset is 0 in portrait; only matters in landscape. */
 .pwa-safe-x {

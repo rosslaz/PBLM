@@ -3,12 +3,12 @@ import { S } from "../styles.js";
 import { CSC, COLORS, SPACE } from "../lib/constants.js";
 import { formatDate, playerFullName, playerInitial, todayISO } from "../lib/format.js";
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
-import { Toast, Modal, VersionFooter, PWAInstallBanner } from "./ui.jsx";
+import { Toast, Modal, VersionFooter, PWAInstallBanner, AppMark } from "./ui.jsx";
 import { PlayerForm } from "./PlayerForm.jsx";
 import { CreateClubModal } from "./CreateClubModal.jsx";
 import { JoinClubModal } from "./JoinClubModal.jsx";
 
-export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, onCreateClub, onJoinClub, toast, modal, setModal, registerForLeague }) {
+export function HomeView({ hasBanner, leagues, players, db, onPlayerLogin, onCreatePlayer, onCreateClub, onJoinClub, toast, modal, setModal, registerForLeague }) {
   // Pre-fill the email input with the last-used email on this device. Even
   // after explicit logout this remains, so coming back to log in is at most
   // one tap if the saved email matches a player.
@@ -116,13 +116,20 @@ export function HomeView({ leagues, players, db, onPlayerLogin, onCreatePlayer, 
             onCancel={() => setModal(null)} />
         </Modal>
       )}
-      <div className="pwa-safe-top-lg" style={{ background: CSC.blue, color: "#fff", padding: "32px 24px 28px", textAlign: "center" }}>
-        <img
-          src="/csc-pickleball.png"
-          alt="CSC Pickleball"
-          style={{ maxWidth: 320, width: "85%", height: "auto", display: "block", margin: "0 auto 12px", borderRadius: 8 }}
-        />
-        <p style={{ margin: 0, color: "#fff", opacity: 0.92, fontSize: 14, fontWeight: 500, letterSpacing: "0.3px" }}>League Manager</p>
+      {/* Neutral app header. This screen is shown before any club is known —
+          there's no active club to brand it with, and wearing one club's logo
+          here would misrepresent the app to members of every other club.
+          Club identity appears after login, via ClubLogo in the header. */}
+      <div className={hasBanner ? "pwa-has-banner-lg" : "pwa-safe-top-lg"} style={{ background: CSC.blue, color: "#fff", padding: "32px 24px 28px", textAlign: "center" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12, color: "#fff" }}>
+          <AppMark size={56} />
+        </div>
+        <h1 style={{ margin: 0, color: "#fff", fontSize: 24, fontWeight: 700, letterSpacing: "-0.4px" }}>
+          Pickleball League Manager
+        </h1>
+        <p style={{ margin: "6px 0 0", color: "#fff", opacity: 0.9, fontSize: 14, fontWeight: 500, letterSpacing: "0.3px" }}>
+          Schedules, scores, and check-ins for your club
+        </p>
       </div>
       <div style={{ maxWidth: 520, margin: "0 auto", padding: "24px 20px" }}>
 

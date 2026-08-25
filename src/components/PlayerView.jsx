@@ -139,7 +139,7 @@ function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore)
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
-export function PlayerView({ db, player, myLeagues, unregistered, accessibleClubs, activeClubId, onSwitchClub, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, submitScoreInline, isWeekLocked, getCheckIn, setCheckIn, canSwitchToAdmin, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
+export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered, accessibleClubs, activeClubId, onSwitchClub, playerTab, setPlayerTab, modal, setModal, toast, getLeagueSchedule, getScore, getPlayerName, getStandings, registerForLeague, submitScore, submitScoreInline, isWeekLocked, getCheckIn, setCheckIn, canSwitchToAdmin, onSwitchToAdmin, onLogout, scoreModal, onRefresh, isRefreshing }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(myLeagues[0]?.id || null);
   // Even if the commissioner soft-deletes a league while the player is
   // looking at it, don't render the stale data — treat it as null.
@@ -269,7 +269,7 @@ export function PlayerView({ db, player, myLeagues, unregistered, accessibleClub
         );
       })()}
 
-      <div style={S.header(c.bg)} className="pwa-safe-top pwa-safe-x">
+      <div style={S.header(c.bg)} className={`${headerTopClass || "pwa-safe-top"} pwa-safe-x`}>
         <ClubSwitcher
           clubs={accessibleClubs || []}
           activeClubId={activeClubId}
