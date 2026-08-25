@@ -1,6 +1,6 @@
 // ─── Session, sorting helpers, and the mobile-detection hook ────────────────
 import { useState, useEffect } from "react";
-import { SESSION_KEY, LAST_EMAIL_KEY, STATUS_ORDER } from "./constants.js";
+import { SESSION_KEY, LAST_EMAIL_KEY, LAST_CLUB_KEY, STATUS_ORDER } from "./constants.js";
 
 // ─── Session persistence (browser localStorage) ─────────────────────────────
 export function loadSession() {
@@ -34,6 +34,28 @@ export function saveLastEmail(email) {
   try {
     if (!email) localStorage.removeItem(LAST_EMAIL_KEY);
     else localStorage.setItem(LAST_EMAIL_KEY, email.toLowerCase().trim());
+  } catch (_) {}
+}
+
+// ─── Remembered club (also separate from session) ───────────────────────
+// Mirrors the remembered-email behaviour. `activeClubId` lives in the session
+// too, but the session is wiped on logout — so without this, someone in two
+// clubs gets dropped into whichever club sorts first every time they sign in,
+// rather than the one they were actually working in.
+//
+// Stored as a bare club id. Validated on read at the call site (against the
+// clubs the user can actually access), so a stale or revoked id degrades to
+// the normal fallback instead of breaking login.
+export function loadLastClub() {
+  try {
+    return localStorage.getItem(LAST_CLUB_KEY) || null;
+  } catch (_) { return null; }
+}
+
+export function saveLastClub(clubId) {
+  try {
+    if (!clubId) localStorage.removeItem(LAST_CLUB_KEY);
+    else localStorage.setItem(LAST_CLUB_KEY, clubId);
   } catch (_) {}
 }
 

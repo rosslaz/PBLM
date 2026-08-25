@@ -76,6 +76,12 @@ export const SESSION_KEY = "pickleball_session_v1";
 // or when the browser clears localStorage entirely.
 export const LAST_EMAIL_KEY = "pickleball_last_email_v1";
 
+// Last active club on this device, kept separately from the session for the
+// same reason as LAST_EMAIL_KEY: the session is cleared on logout, but the
+// next login should land you back in the club you were actually using. A
+// player in two clubs shouldn't have to re-pick every time they sign in.
+export const LAST_CLUB_KEY = "pickleball_last_club_v1";
+
 // v1.5.0 — offline snapshot cache. Holds the last successful loadDB() result
 // plus the epoch-ms timestamp it was fetched at, so a boot with no network can
 // render the app read-only from the last-known state. Written on every

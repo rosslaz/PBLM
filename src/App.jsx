@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 import { COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
 import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender, formatPhone } from "./lib/format.js";
-import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail } from "./lib/session.js";
+import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail, loadLastClub, saveLastClub } from "./lib/session.js";
 import {
   isClubOwner, isClubAdmin,
   getClubsForPlayer, getClubsWhereAdmin, getClubMemberIds,
@@ -248,7 +248,7 @@ export default function App() {
         if (!candidates.find(x => x.id === c.id)) candidates.push(c);
       });
     }
-    const resolved = resolveActiveClub(sess.activeClubId, candidates);
+    const resolved = resolveActiveClub(sess.activeClubId || loadLastClub(), candidates);
 
     if (sess.playerId && playerIsLive) {
       setCurrentPlayer(savedPlayer);
@@ -290,6 +290,15 @@ export default function App() {
       saveSession(null);
     }
   }, [currentPlayer, adminEmail, activeClubId, view, sessionRestored]);
+
+  // Remember the active club independently of the session, so it survives
+  // logout. Deliberately NOT cleared by logout() — that's the whole point:
+  // signing back in should return you to the club you were last using rather
+  // than whichever one happens to sort first.
+  useEffect(() => {
+    if (!sessionRestored) return;
+    if (activeClubId) saveLastClub(activeClubId);
+  }, [activeClubId, sessionRestored]);
 
   const dbPlayers = db?.players;
   useEffect(() => {
@@ -1500,11 +1509,12 @@ export default function App() {
         <HomeView leagues={leagues} players={players} db={db}
           hasBanner={hasBanner}
           onAdmin={(email) => {
-            // Admin-only sign-in: pick the first club where this email is
-            // owner/admin. If none, leave activeClubId null — the
-            // commissioner panel will surface an empty state.
+            // Admin-only sign-in: prefer the club they were last in, falling
+            // back to the first club where this email is owner/admin. If none,
+            // leave activeClubId null — the commissioner panel will surface an
+            // empty state.
             const adminClubs = getClubsWhereAdmin(db.clubs || {}, email);
-            const club = adminClubs[0];
+            const club = resolveActiveClub(loadLastClub(), adminClubs);
             setActiveClubId(club?.id || null);
             setAdminEmail(email);
             setView("admin");
@@ -1513,12 +1523,12 @@ export default function App() {
             // Remember this email on this device for next time, even if the
             // user later logs out. The login screen will pre-fill it.
             if (p?.email) saveLastEmail(p.email);
-            // Pick the player's first club as active. If they have none
-            // (rare today — every existing player has a CSC membership —
-            // but possible after Phase 3 when new signups land first), the
-            // player view will render the empty state.
+            // Land them back in the club they were last using. resolveActiveClub
+            // validates the remembered id against the clubs they can actually
+            // access, so a stale one (left the club, club deleted) silently
+            // falls back to their first club rather than erroring.
             const myClubs = getClubsForPlayer(db.memberships || {}, db.clubs || {}, p.id);
-            const club = resolveActiveClub(null, myClubs);
+            const club = resolveActiveClub(loadLastClub(), myClubs);
             setActiveClubId(club?.id || null);
             setCurrentPlayer(p);
             setView("player");
