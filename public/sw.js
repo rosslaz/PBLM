@@ -59,7 +59,7 @@
 // Keep it in step with package.json / APP_INFO.version. It doesn't strictly
 // have to match, but a version-shaped name makes it obvious in DevTools which
 // build a client is actually running.
-const CACHE_VERSION = "v1.8.0";
+const CACHE_VERSION = "v1.8.0-icons";
 const CACHE_NAME = `csc-pickleball-${CACHE_VERSION}`;
 
 // The app shell. Everything here is fetched and cached on install, so a cold
@@ -74,6 +74,7 @@ const APP_SHELL = [
   "/index.html",
   "/manifest.webmanifest",
   "/favicon.png",
+  "/app-logo.png",
   "/csc-pickleball.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

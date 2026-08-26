@@ -3,7 +3,7 @@ import { S } from "../styles.js";
 import { CSC, COLORS, SPACE } from "../lib/constants.js";
 import { formatDate, playerFullName, playerInitial, todayISO } from "../lib/format.js";
 import { sortLeagues, loadLastEmail, saveLastEmail } from "../lib/session.js";
-import { Toast, Modal, VersionFooter, PWAInstallBanner, AppMark } from "./ui.jsx";
+import { Toast, Modal, VersionFooter, PWAInstallBanner } from "./ui.jsx";
 import { PlayerForm } from "./PlayerForm.jsx";
 import { CreateClubModal } from "./CreateClubModal.jsx";
 import { JoinClubModal } from "./JoinClubModal.jsx";
@@ -119,10 +119,23 @@ export function HomeView({ hasBanner, leagues, players, db, onPlayerLogin, onCre
       {/* Neutral app header. This screen is shown before any club is known —
           there's no active club to brand it with, and wearing one club's logo
           here would misrepresent the app to members of every other club.
-          Club identity appears after login, via ClubLogo in the header. */}
+          Club identity appears after login, via ClubLogo in the header.
+
+          The mark sits on a white card rather than directly on the blue: the
+          logo is navy line art and would disappear against the header colour. */}
       <div className={hasBanner ? "pwa-has-banner-lg" : "pwa-safe-top-lg"} style={{ background: CSC.blue, color: "#fff", padding: "32px 24px 28px", textAlign: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12, color: "#fff" }}>
-          <AppMark size={56} />
+        <div style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          background: "#fff", borderRadius: 16,
+          padding: "14px 22px", marginBottom: 14,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+        }}>
+          <img
+            src="/app-logo.png"
+            alt=""
+            aria-hidden="true"
+            style={{ width: 190, maxWidth: "60vw", height: "auto", display: "block" }}
+          />
         </div>
         <h1 style={{ margin: 0, color: "#fff", fontSize: 24, fontWeight: 700, letterSpacing: "-0.4px" }}>
           Pickleball League Manager
