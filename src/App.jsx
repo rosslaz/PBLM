@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 import { COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
 import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender, formatPhone } from "./lib/format.js";
@@ -135,12 +135,27 @@ export default function App() {
   // element is topmost has to pad for the notch, and it's the banner stack
   // when a banner is showing, the header otherwise.
   const [updateReady, setUpdateReady] = useState(false);
+  // When the current snapshot was last read from the DB. Drives silentRefresh's
+  // staleness check. A ref rather than state — nothing should re-render because
+  // this changed.
+  const lastLoadRef = useRef(0);
+  // Mirrors `currentActionId` so silentRefresh can bail while a write is in
+  // flight without taking a dependency on it. A background fetch that landed
+  // after a write's own reload() would overwrite fresher data with older data.
+  const busyRef = useRef(false);
 
   useEffect(() => {
     function onUpdateReady() { setUpdateReady(true); }
     window.addEventListener("pwa:update-ready", onUpdateReady);
     return () => window.removeEventListener("pwa:update-ready", onUpdateReady);
   }, []);
+
+  // Keep busyRef in step with the in-flight action. Covers every write path,
+  // including the three that bypass the action() wrapper and set
+  // currentActionId themselves (deleteClub, seedTestPlayers, schedule commit).
+  useEffect(() => {
+    busyRef.current = currentActionId !== null;
+  }, [currentActionId]);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -165,10 +180,39 @@ export default function App() {
     try {
       const fresh = await loadDB();
       setDB(fresh);
+      lastLoadRef.current = Date.now();
       setSnapshotAge(null);
     } catch (e) {
       console.error("[reload] failed:", e);
       showToast("Database error — see console", "error");
+    }
+  }, []);
+
+  // v1.9.0 — staleness-aware background refresh.
+  //
+  // The data layer is write-first/read-back: it re-reads after ITS OWN writes
+  // and otherwise sits on the snapshot it has. That's correct for consistency,
+  // but it means a session left open drifts from reality whenever anything
+  // changes elsewhere — another device, a second browser tab, or a direct DB
+  // edit. The commissioner would switch tabs, see old data, and have to hit
+  // refresh manually.
+  //
+  // This refetches only when the snapshot is actually old, so navigating
+  // between tabs doesn't fire a full 10-table query on every click. Silent by
+  // design: no spinner, no toast on failure. It's a freshness top-up, not a
+  // user-visible action — if it fails we simply keep showing what we have,
+  // and the manual refresh button is still there.
+  const silentRefresh = useCallback(async (maxAgeMs = 20000) => {
+    if (!navigator.onLine) return;
+    if (busyRef.current) return;                       // a write is mid-flight
+    if (Date.now() - lastLoadRef.current < maxAgeMs) return;
+    try {
+      const fresh = await loadDB();
+      setDB(fresh);
+      lastLoadRef.current = Date.now();
+      setSnapshotAge(null);
+    } catch (e) {
+      console.warn("[silentRefresh] failed, keeping current data:", e);
     }
   }, []);
 
@@ -185,6 +229,7 @@ export default function App() {
       try {
         const fresh = await loadDB();
         setDB(fresh);
+        lastLoadRef.current = Date.now();
         setSnapshotAge(null);
       } catch (e) {
         console.error("[initial load] failed:", e);
@@ -221,6 +266,29 @@ export default function App() {
     window.addEventListener("online", onOnline);
     return () => window.removeEventListener("online", onOnline);
   }, [snapshotAge]);
+
+  // Refresh when the user comes back to the app. Covers the most common way a
+  // session goes stale: leave the browser tab (or switch apps on mobile), come
+  // back later, and act on data that moved on without you.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") silentRefresh();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [silentRefresh]);
+
+  // Refresh on in-app navigation — switching commissioner tabs, opening a
+  // league, or moving between player tabs. Throttled by silentRefresh's
+  // staleness check, so rapid clicking costs at most one fetch per interval.
+  useEffect(() => {
+    if (!sessionRestored) return;
+    silentRefresh();
+  }, [adminTab, playerTab, selectedLeague, view, sessionRestored, silentRefresh]);
 
   // Restore login session once db is loaded.
   // For Phase 2 the admin check is club-scoped: a saved adminEmail is
