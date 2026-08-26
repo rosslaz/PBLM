@@ -23,7 +23,7 @@ import {
 import {
   distributePlayersToCourts, seededShuffle,
   generateCourtSchedule, assignBalancedCourts, laddderRotate, buildLadderWeek,
-  buildCourtMatches,
+  buildCourtMatches, generateDDPartnersSchedule, DD_PARTNERS_PLAYERS, DD_PARTNERS_WEEKS,
 } from "./lib/scheduling.js";
 import { S, genderBadgeStyle } from "./styles.js";
 
@@ -782,14 +782,6 @@ export default function App() {
   function computeScheduleProposal(leagueId, seedOverride) {
     const league = db.leagues[leagueId];
     const playerIds = getLeagueRegs(leagueId).map(r => r.playerId);
-    const numCourts = league.numCourts || 4;
-    const sizes = distributePlayersToCourts(playerIds.length, numCourts);
-    if (!sizes) {
-      const maxAllowed = numCourts * MAX_PER_COURT;
-      return { error: `Cannot schedule ${playerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).` };
-    }
-
-    const isLadder = league.competitionType === "ladder";
 
     // Convenience: enrich each court with resolved playerNames for display.
     const withNames = (weeks) => weeks.map(w => ({
@@ -799,6 +791,51 @@ export default function App() {
         playerNames: c.players.map(pid => getPlayerName(pid)),
       })),
     }));
+
+    // ─── D+D Weekly Partners ──────────────────────────────────────
+    // Fixed 8-player / 14-week format built from a precomputed template.
+    // Nothing here is configurable, so it short-circuits ahead of all the
+    // court-capacity machinery.
+    if (league.competitionType === "dd_partners") {
+      if (playerIds.length !== DD_PARTNERS_PLAYERS) {
+        return { error: `D+D Weekly Partners needs exactly ${DD_PARTNERS_PLAYERS} players — no more, no less. This league has ${playerIds.length}.` };
+      }
+      const existingWeeks = db.schedules[leagueId]?.weeks || [];
+      if (existingWeeks.some(w => isWeekLocked(leagueId, w.week))) {
+        return { error: "Cannot regenerate: one or more weeks are locked. Unlock all weeks first." };
+      }
+      const result = generateDDPartnersSchedule(playerIds, league.startDate, seedOverride);
+      if (result.error) return { error: result.error };
+      const scoresWiped = Object.keys(db.scores).filter(k => k.startsWith(`${leagueId}_`)).length;
+      return {
+        proposal: {
+          kind: "dd_partners",
+          leagueId,
+          leagueName: league.name,
+          schedule: result,
+          scoresWiped,
+          isReplace: existingWeeks.length > 0 || scoresWiped > 0,
+          weeks: withNames(result.weeks),
+          summary: `${DD_PARTNERS_WEEKS} weeks · 8 players · new partners every week · 8 games per week`,
+          warning: scoresWiped > 0
+            ? `Accepting will clear ${scoresWiped} existing score${scoresWiped!==1?"s":""} from this league.`
+            : null,
+          // Players are shuffled into the template's seats, so a retry gives a
+          // genuinely different season while keeping every guarantee.
+          canRetry: true,
+          successToast: `Season generated! ${DD_PARTNERS_WEEKS} weeks of weekly partners${scoresWiped > 0 ? `, ${scoresWiped} previous score${scoresWiped!==1?"s":""} cleared` : ""}`,
+        },
+      };
+    }
+
+    const numCourts = league.numCourts || 4;
+    const sizes = distributePlayersToCourts(playerIds.length, numCourts);
+    if (!sizes) {
+      const maxAllowed = numCourts * MAX_PER_COURT;
+      return { error: `Cannot schedule ${playerIds.length} players. Need ${MIN_PER_COURT}–${maxAllowed} players (${MIN_PER_COURT}–${MAX_PER_COURT} per court, up to ${numCourts} court${numCourts!==1?"s":""}).` };
+    }
+
+    const isLadder = league.competitionType === "ladder";
 
     if (!isLadder) {
       // ─── Round-Robin: full season at once ───────────────────────────────────
@@ -1184,6 +1221,17 @@ export default function App() {
   async function registerForLeague(leagueId, playerId) {
     const key = `${leagueId}_${playerId}`;
     if (db.registrations[key]) { showToast("Already registered!", "error"); return; }
+    // D+D Weekly Partners is a hard 8. The whole season template is built
+    // around exactly that many players, so a 9th can't be accommodated later
+    // by regenerating — block it at the door rather than at generation time.
+    const lg = db.leagues[leagueId];
+    if (lg?.competitionType === "dd_partners") {
+      const count = getLeagueRegs(leagueId).length;
+      if (count >= DD_PARTNERS_PLAYERS) {
+        showToast(`This league is full — D+D Weekly Partners is exactly ${DD_PARTNERS_PLAYERS} players.`, "error");
+        return;
+      }
+    }
     await action(() => dbRegisterForLeague(leagueId, playerId), "Registered successfully!");
     setModal(null);
   }
@@ -2037,6 +2085,9 @@ export default function App() {
     const unregistered = leagues.filter(l => {
       if (myRegs.find(r => r.leagueId === l.id)) return false;
       if ((l.status || "open") !== "open") return false;
+      // A full fixed-size league shouldn't advertise itself as joinable.
+      if (l.competitionType === "dd_partners"
+          && getLeagueRegs(l.id).length >= DD_PARTNERS_PLAYERS) return false;
       // Shared with the commissioner's add-player flow so both surfaces
       // apply the same gender rule.
       return playerFitsLeagueGender(currentPlayer.gender, l.gender);

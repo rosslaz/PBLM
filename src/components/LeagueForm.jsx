@@ -38,6 +38,11 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
   // Open play has no courts, so the court-count and court-defaults controls
   // are hidden when this type is selected.
   const isOpen = form.competitionType === "open";
+  // D+D Weekly Partners is a fixed format: exactly 8 players, exactly 14
+  // weeks, always doubles, and two rounds rather than configurable courts.
+  // Locking the inputs is clearer than letting someone set values that the
+  // generator will silently ignore.
+  const isDDPartners = form.competitionType === "dd_partners";
 
   // When the user changes Number of Courts, resize courtConfig to match.
   function setNumCourts(n) {
@@ -64,6 +69,14 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       ...form,
       courtConfig: hasAnyOverride ? form.courtConfig : undefined,
     };
+    // D+D Weekly Partners is a fixed format. Normalize on the way out so the
+    // stored league can never disagree with what the generator will build.
+    if (form.competitionType === "dd_partners") {
+      payload.weeks = 14;
+      payload.format = "Doubles";
+      payload.numCourts = 2;      // two rounds, not two physical courts
+      payload.courtConfig = undefined;
+    }
     onSubmit(payload);
   }
 
@@ -71,11 +84,30 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
     <div style={{ display: "flex", flexDirection: "column", gap: SPACE.md }}>
       <div><label style={S.label}>League Name *</label><input style={S.input} value={form.name} onChange={e => set("name", e.target.value)} placeholder="Summer Singles 2025" /></div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: SPACE.md }}>
-        <div><label style={S.label}>Number of Weeks *</label><input style={S.input} type="number" min={1} max={52} value={form.weeks} onChange={e => set("weeks", +e.target.value)} /></div>
+        <div>
+          <label style={S.label}>Number of Weeks *</label>
+          <input
+            style={{ ...S.input, opacity: isDDPartners ? 0.6 : 1 }}
+            type="number" min={1} max={52}
+            value={isDDPartners ? 14 : form.weeks}
+            disabled={isDDPartners}
+            onChange={e => set("weeks", +e.target.value)} />
+          {isDDPartners && <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>Fixed at 14 by the format.</p>}
+        </div>
         <div><label style={S.label}>Start Date *</label><input style={S.input} type="date" value={form.startDate} onChange={e => set("startDate", e.target.value)} /></div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: SPACE.md }}>
-        <div><label style={S.label}>Format</label><select style={S.input} value={form.format} onChange={e => set("format", e.target.value)}><option>Singles</option><option>Doubles</option><option>Mixed Doubles</option></select></div>
+        <div>
+          <label style={S.label}>Format</label>
+          <select
+            style={{ ...S.input, opacity: isDDPartners ? 0.6 : 1 }}
+            value={isDDPartners ? "Doubles" : form.format}
+            disabled={isDDPartners}
+            onChange={e => set("format", e.target.value)}>
+            <option>Singles</option><option>Doubles</option><option>Mixed Doubles</option>
+          </select>
+          {isDDPartners && <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>Always doubles.</p>}
+        </div>
         <div>
           <label style={S.label}>Gender *</label>
           <select style={S.input} value={form.gender} onChange={e => set("gender", e.target.value)}>
@@ -87,7 +119,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: SPACE.md }}>
         <div><label style={S.label}>Status</label><select style={S.input} value={form.status} onChange={e => set("status", e.target.value)}><option value="open">Open Registration</option><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option></select></div>
-        {!isOpen && (
+        {!isOpen && !isDDPartners && (
           <div>
             <label style={S.label}>Number of Courts *</label>
             <select style={S.input} value={form.numCourts} onChange={e => setNumCourts(+e.target.value)}>
@@ -108,11 +140,23 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
           <option value="mixer">Round-Robin — every player faces every other player across the season</option>
           <option value="ladder">Ladder — week-by-week, courts based on previous week's results</option>
           <option value="open">Open Play — no set courts; players just RSVP in or out each week</option>
+          <option value="dd_partners">D+D Weekly Partners — 8 players, 14 weeks, new partner every week</option>
         </select>
         {isOpen && (
           <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12, color: "var(--color-text-secondary)" }}>
             Open play has no schedule, courts, or standings — it only tracks weekly RSVPs. Players see each week and mark themselves in or out; you see the headcount and who's coming.
           </p>
+        )}
+        {isDDPartners && (
+          <div style={{ margin: `${SPACE.sm}px 0 0`, padding: `${SPACE.md}px ${SPACE.md}px`, background: "#EEEDFE", border: "0.5px solid #C9C5F0", borderRadius: 8, fontSize: 12, color: "#3D3585", lineHeight: 1.5 }}>
+            <b>Fixed format.</b> Exactly 8 players and 14 weeks — both are locked and can't be changed.
+            <ul style={{ margin: `${SPACE.xs}px 0 0 16px`, padding: 0 }}>
+              <li>Every week the 8 players are re-paired into 4 new teams</li>
+              <li>Each team plays 2 of the other teams, 2 games against each</li>
+              <li>Opponents swap for the second pair of games; partners stay</li>
+              <li>You'll partner with everyone exactly twice over the season, and never face the same teams the second time</li>
+            </ul>
+          </div>
         )}
       </div>
       <div><label style={S.label}>Description</label><textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} value={form.description} onChange={e => set("description", e.target.value)} placeholder="Optional…" /></div>
@@ -120,7 +164,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       {/* ─── Court config (optional) ─────────────────────────────────────
           Default name + start time for each court. Applies to every week
           unless the commissioner sets a per-week override on Edit Week. */}
-      {!isOpen && (
+      {!isOpen && !isDDPartners && (
       <div style={{
         padding: `${SPACE.md}px ${SPACE.md}px`,
         background: "var(--color-background-secondary)",

@@ -149,6 +149,125 @@ export function assignBalancedCourts(shuffledPlayers, sizes, playerGenders) {
 //
 // `weekNum` is 1-indexed (matches the convention used elsewhere — week 1
 // for the first week of the season). `courtIdx` is 0-indexed.
+// D+D Weekly Partners
+//
+// A fixed 8-player, 14-week format. Every week the 8 players are re-paired
+// into 4 teams; the teams split into two sides, and each team plays both
+// teams on the opposite side - two games per matchup, opponents swapping
+// between the two rounds while partners stay put.
+//
+// Per week: 4 teams, 2 rounds, 2 matchups per round, 2 games each = 8 games.
+//
+// THE CONSTRAINTS, and why this is a hard-coded table rather than a solver:
+//   - Each of the 28 possible pairs partners exactly twice
+//     (14 weeks x 4 teams = 56 = 28 x 2 - an exact fit, no slack)
+//   - The second time a pair is together they must face neither of the two
+//     teams they faced the first time
+//
+// Those interact tightly. Repeating a 1-factorization outright fails: the
+// second time a pair is together the other three teams are identical, they
+// have already played two of them, and only one legal opponent remains where
+// two are needed. A valid arrangement needs two DIFFERENT 1-factorizations
+// whose weeks line up correctly.
+//
+// The table below was found by backtracking search and verified exhaustively:
+// 28 distinct pairs, each appearing exactly twice, and zero pairs facing a
+// repeated opponent team. Because the format is always exactly 8 players and
+// always 14 weeks, there is nothing to solve at runtime - shipping a search to
+// the browser would add failure modes and latency for a fixed answer.
+//
+// Indices 0-7 are seats, not people. Real players are shuffled into the seats
+// at generation time, so the same table yields a different-looking season each
+// time while the guarantees hold (they are symmetric under any relabelling).
+//
+//   teams - the 4 partnerships for that week, as seat-index pairs
+//   sides - the two opposing sides, as indices INTO teams
+export const DD_PARTNERS_TEMPLATE = [
+  { teams: [[0,5],[1,2],[3,4],[6,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,6],[1,5],[2,3],[4,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,4],[1,3],[2,6],[5,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,1],[2,5],[3,6],[4,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,7],[1,5],[2,3],[4,6]], sides: [[0,3],[1,2]] },
+  { teams: [[0,3],[1,7],[2,4],[5,6]], sides: [[0,1],[2,3]] },
+  { teams: [[0,3],[1,4],[2,5],[6,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,1],[2,6],[3,4],[5,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,2],[1,4],[3,7],[5,6]], sides: [[0,1],[2,3]] },
+  { teams: [[0,2],[1,7],[3,5],[4,6]], sides: [[0,1],[2,3]] },
+  { teams: [[0,5],[1,6],[2,4],[3,7]], sides: [[0,1],[2,3]] },
+  { teams: [[0,4],[1,6],[2,7],[3,5]], sides: [[0,1],[2,3]] },
+  { teams: [[0,6],[1,3],[2,7],[4,5]], sides: [[0,1],[2,3]] },
+  { teams: [[0,7],[1,2],[3,6],[4,5]], sides: [[0,1],[2,3]] },
+];
+
+export const DD_PARTNERS_PLAYERS = 8;
+export const DD_PARTNERS_WEEKS = DD_PARTNERS_TEMPLATE.length; // 14
+export const DD_PARTNERS_GAMES_PER_MATCHUP = 2;
+
+// Build one week. Returns a week object in the shape the rest of the app
+// expects, with the two ROUNDS occupying the courts slots - all 8 players are
+// present for both rounds, so a court here means a round of play, and every
+// player sees the whole week rather than just their own court.
+export function buildDDPartnersWeek(seats, weekNum, dateStr) {
+  const tpl = DD_PARTNERS_TEMPLATE[(weekNum - 1) % DD_PARTNERS_TEMPLATE.length];
+  const teams = tpl.teams.map(([a, b]) => [seats[a], seats[b]]);
+  const [sideA, sideB] = tpl.sides;
+
+  // Round 1 pairs each side-A team with the same-position side-B team;
+  // round 2 swaps them. Partners never change, opponents do.
+  const rounds = [
+    [[sideA[0], sideB[0]], [sideA[1], sideB[1]]],
+    [[sideA[0], sideB[1]], [sideA[1], sideB[0]]],
+  ];
+
+  const courts = rounds.map((matchups, r) => {
+    const matches = [];
+    matchups.forEach(([t1, t2], mi) => {
+      for (let g = 0; g < DD_PARTNERS_GAMES_PER_MATCHUP; g++) {
+        matches.push({
+          // Keeps the established w{week}_c{court}_m{idx} shape so score keys
+          // and every other consumer keep working untouched.
+          id: `w${weekNum}_c${r}_m${mi * DD_PARTNERS_GAMES_PER_MATCHUP + g}`,
+          team1: teams[t1],
+          team2: teams[t2],
+          sitOut: null,
+          week: weekNum,
+          court: `Round ${r + 1}`,
+          date: dateStr,
+          format: "doubles",
+          game: g + 1, // 1 or 2 - display only
+        });
+      }
+    });
+    return {
+      courtName: `Round ${r + 1}`,
+      // All 8 players are involved in every round, so nobody is filtered out
+      // of their own schedule view.
+      players: seats.slice(),
+      matches,
+    };
+  });
+
+  return { week: weekNum, date: dateStr, courts };
+}
+
+// Full 14-week season. playerIds must be exactly 8.
+export function generateDDPartnersSchedule(playerIds, startDate, seed) {
+  if (playerIds.length !== DD_PARTNERS_PLAYERS) {
+    return { error: `D+D Weekly Partners needs exactly ${DD_PARTNERS_PLAYERS} players. This league has ${playerIds.length}.` };
+  }
+  // Shuffle players into the seats so each generated season looks different.
+  // The guarantees are invariant under relabelling, so this is free variety.
+  const seats = seededShuffle(playerIds, seed ?? (Date.now() & 0xffffffff));
+
+  const weeks = [];
+  for (let w = 1; w <= DD_PARTNERS_WEEKS; w++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + (w - 1) * 7);
+    weeks.push(buildDDPartnersWeek(seats, w, d.toISOString().split("T")[0]));
+  }
+  return { weeks };
+}
+
 export function buildCourtMatches(group, weekNum, courtIdx, format, dateStr) {
   const isDoubles = format === "Doubles" || format === "Mixed Doubles";
   const raw = isDoubles

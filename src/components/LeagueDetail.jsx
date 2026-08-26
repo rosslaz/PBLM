@@ -37,8 +37,45 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
   //   action  { label, disabled? } or null when no action is available
   const scheduleState = (() => {
     const isLadder = league.competitionType === "ladder";
+    const isDD = league.competitionType === "dd_partners";
     const allDone = realWeeksCount >= league.weeks;
     const hasLockedWeeks = realWeeks.some(w => isWeekLocked(w.week));
+
+    // D+D Weekly Partners: fixed 8 players, fixed 14 weeks, nothing to size.
+    if (isDD) {
+      if (n !== 8) {
+        return {
+          tone: "blocked",
+          title: n < 8
+            ? `Need exactly 8 players — ${8 - n} more to go.`
+            : `Need exactly 8 players — ${n - 8} too many.`,
+          hint: "This format is built around 8 players. No more, no less.",
+          action: null,
+        };
+      }
+      if (allDone && hasLockedWeeks) {
+        return {
+          tone: "done",
+          title: `All ${league.weeks} weeks generated.`,
+          hint: "Lock each week as its scores come in to update standings.",
+          action: null,
+        };
+      }
+      if (allDone) {
+        return {
+          tone: "done",
+          title: `All ${league.weeks} weeks generated.`,
+          hint: "Regenerating reshuffles who partners with whom across the whole season.",
+          action: { label: "Regenerate Season" },
+        };
+      }
+      return {
+        tone: "ready",
+        title: "Ready to generate the season.",
+        hint: "8 players · 14 weeks · new partners each week · 8 games per week",
+        action: { label: "Generate Season" },
+      };
+    }
 
     if (allDone) {
       return {
@@ -133,8 +170,8 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
           <div>
             <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text, fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
-              <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : league.competitionType === "open" ? "success" : "info"), marginLeft: 8, fontSize: 10 }}>
-                {league.competitionType === "ladder" ? "🪜 Ladder" : league.competitionType === "open" ? "🌓 Open Play" : "🔀 Round-Robin"}
+              <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : league.competitionType === "open" ? "success" : league.competitionType === "dd_partners" ? "purple" : "info"), marginLeft: 8, fontSize: 10 }}>
+                {league.competitionType === "ladder" ? "🪜 Ladder" : league.competitionType === "open" ? "🌓 Open Play" : league.competitionType === "dd_partners" ? "🤝 Weekly Partners" : "🔀 Round-Robin"}
               </span>
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
@@ -202,7 +239,9 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                 </div>
               );
             })()}
-            {/* Court capacity visualizer */}
+            {/* Court capacity visualizer. Meaningless for D+D Weekly Partners,
+                which is fixed at 8 players in 4 rotating teams. */}
+            {league.competitionType !== "dd_partners" && (
             <div style={{ ...S.card, marginBottom: 16, padding: "12px 16px", background: "var(--color-background-secondary)" }}>
               <div style={{ ...S.row, justifyContent: "space-between", marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Court Assignments</span>
@@ -231,6 +270,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               {capacityOk && n < maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#854F0B" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
               {capacityOk && n === maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
             </div>
+            )}
 
             {/* Consolidated schedule state widget — replaces the previous mix of
                 summary text + standalone Generate button + ladder banner +
