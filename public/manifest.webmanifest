@@ -1,7 +1,7 @@
 {
-  "name": "CSC Pickleball League Manager",
-  "short_name": "CSC Pickleball",
-  "description": "League schedules, scores, and check-ins for CSC Pickleball.",
+  "name": "Pickleball League Manager",
+  "short_name": "League Manager",
+  "description": "League schedules, scores, and check-ins for your pickleball club.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

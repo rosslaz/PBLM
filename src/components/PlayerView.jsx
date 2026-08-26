@@ -2,7 +2,7 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS, CSC, MAX_PER_COURT } from "../lib/constants.js";
 import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime, todayISO, openPlayWeeks, isOpenPlay } from "../lib/format.js";
-import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh, PickleballIcon } from "./ui.jsx";
+import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh, AppMark } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
@@ -306,8 +306,8 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
       {myLeagues.length === 0 && (
         <div style={{ padding: "32px 20px", color: "var(--color-text-secondary)" }}>
           <div style={{ textAlign: "center", marginBottom: unregistered.length > 0 ? 28 : 0 }}>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-              <PickleballIcon size={48} />
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8, color: "var(--color-text-tertiary)" }}>
+              <AppMark size={48} />
             </div>
             <p style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
               Ready to play?

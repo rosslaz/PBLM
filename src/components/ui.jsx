@@ -132,8 +132,9 @@ export function Toast({ toast }) {
 export function EmptyState({ msg }) {
   return (
     <div style={{ textAlign: "center", padding: "32px 0", color: "var(--color-text-secondary)", fontSize: 14 }}>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-        <PickleballIcon size={40} />
+      {/* Neutral mark — empty states appear in every club's views. */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 8, color: "var(--color-text-tertiary)" }}>
+        <AppMark size={40} />
       </div>
       <p style={{ margin: 0 }}>{msg}</p>
     </div>
@@ -265,13 +266,13 @@ export function AboutContent({ onClose }) {
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: SPACE.lg }}>
-        {/* The CSC mark already includes the brand blue background and
-            its own internal margin, so it doesn't need a surrounding chip. */}
-        <div style={{ display: "inline-block", marginBottom: SPACE.md }}>
-          <CSCMark size={80} />
+        {/* Neutral mark: About is a shared surface, shown to members of every
+            club, so it can't carry one club's logo. */}
+        <div style={{ display: "inline-block", marginBottom: SPACE.md, color: CSC.blue }}>
+          <AppMark size={72} />
         </div>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-          CSC Pickleball League Manager
+          Pickleball League Manager
         </h3>
         <p style={{
           margin: `${SPACE.xs}px 0 0`,

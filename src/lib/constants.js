@@ -13,9 +13,7 @@
 export const APP_INFO = {
   version: "1.8.0",
   createdBy: "Ross Lazar",
-  // CSC = Cranbrook Swim Club. Spelled out here so newcomers to the About
-  // modal don't have to decode the acronym.
-  description: "League Manager for CSC Pickleball at Cranbrook Swim Club — schedules, scoring, standings.",
+  description: "Pickleball league manager — schedules, scoring, standings, and weekly check-ins for your club.",
 };
 
 // Court sizing rules
