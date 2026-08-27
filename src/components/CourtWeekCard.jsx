@@ -306,9 +306,18 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
           )}
           {weekData.courts.map((court, ci) => {
             const courtColor = COURT_COLORS[ci] || CSC.blue;
-            // For players: show only their own court; for commissioner: show all courts
+            // Players see EVERY court, not just their own — knowing what the
+            // rest of the league is playing is part of the experience, and
+            // in formats like D+D Weekly Partners the other courts are the
+            // matches you'll face later in the season.
+            //
+            // Scoring stays scoped: `playerCanEdit` below is gated on
+            // onMyCourt, so other courts render read-only. A player can still
+            // enter scores for anyone on their OWN court — that's deliberate,
+            // so one person can knock out the whole court at the end of the
+            // night rather than four people each entering one line.
             const onMyCourt = myId ? court.players.includes(myId) : true;
-            if (myId && !onMyCourt) return null;
+            const isOtherCourt = !!myId && !onMyCourt;
             // Three-tier name resolution: per-week override → league default
             // → generator's "Court N" fallback.
             const displayName = resolveCourtName(court, ci, league);
@@ -318,11 +327,14 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
             const courtTime = resolveCourtTime(court, ci, league, weekData.time);
             const showCourtTime = courtTime && courtTime !== weekData.time;
             return (
-              <div key={court.courtName} style={{ margin: isMobile ? "12px 12px 0" : "12px 16px 0" }}>
+              <div key={court.courtName} style={{ margin: isMobile ? "12px 12px 0" : "12px 16px 0", opacity: isOtherCourt ? 0.72 : 1 }}>
                 {/* Court label */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: courtColor + "18", border: `0.5px solid ${courtColor}40` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: courtColor + (isOtherCourt ? "0D" : "18"), border: `${onMyCourt && myId ? "1px" : "0.5px"} solid ${courtColor}${isOtherCourt ? "26" : "40"}` }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: courtColor, flexShrink: 0 }} />
                   <span style={{ fontWeight: 700, fontSize: 12, color: courtColor, letterSpacing: "0.5px" }}>{displayName.toUpperCase()}</span>
+                  {myId && onMyCourt && (
+                    <span style={{ background: courtColor, color: "#fff", borderRadius: 999, padding: "1px 7px", fontSize: 9, fontWeight: 700, letterSpacing: "0.4px", flexShrink: 0 }}>YOURS</span>
+                  )}
                   {showCourtTime && (
                     <span style={{ fontSize: 11, fontWeight: 600, color: courtColor, opacity: 0.85 }}>
                       · {formatTime(courtTime)}

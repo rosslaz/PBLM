@@ -11,7 +11,7 @@
 // Surfaced in the About modal (accessible from the avatar menu). Update on
 // every release. Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "1.9.1",
+  version: "1.10.0",
   createdBy: "Ross Lazar",
   description: "Pickleball league manager — schedules, scoring, standings, and weekly check-ins for your club.",
 };

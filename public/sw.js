@@ -59,7 +59,7 @@
 // Keep it in step with package.json / APP_INFO.version. It doesn't strictly
 // have to match, but a version-shaped name makes it obvious in DevTools which
 // build a client is actually running.
-const CACHE_VERSION = "v1.9.1";
+const CACHE_VERSION = "v1.10.0";
 const CACHE_NAME = `csc-pickleball-${CACHE_VERSION}`;
 
 // The app shell. Everything here is fetched and cached on install, so a cold
