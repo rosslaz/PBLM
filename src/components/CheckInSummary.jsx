@@ -76,7 +76,12 @@ function PlayerRsvpRow({ playerId, playerName, checkIn, isLocked, onSet }) {
                 fontSize: 11,
                 fontWeight: 700,
                 border: `1px solid ${active ? opt.color : "var(--color-border-secondary)"}`,
-                background: active ? opt.color : "var(--color-background-primary)",
+                // Inactive uses the option's own pale tint rather than the
+                // themed surface colour. A dark semantic colour on
+                // --color-background-primary measures ~2.5:1 in dark mode;
+                // this pairing is hardcoded light-on-dark-text and so reads
+                // identically (5.4-6.1:1) in both themes.
+                background: active ? opt.color : opt.bg,
                 color: active ? "#fff" : opt.color,
                 borderRadius: 6,
                 cursor: isLocked ? "not-allowed" : "pointer",

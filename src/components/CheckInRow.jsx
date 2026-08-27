@@ -87,7 +87,12 @@ export function CheckInRow({ current, currentSubName, setByAdmin, onSet, isLocke
                 padding: "8px 4px",
                 fontSize: 13,
                 fontWeight: 600,
-                background: active ? opt.color : "var(--color-background-primary)",
+                // Inactive segments use the option's own pale tint, not the
+                // themed surface. A dark semantic colour on
+                // --color-background-primary measures ~2.5:1 in dark mode -
+                // effectively unreadable. This pairing is hardcoded and reads
+                // the same (5.4-6.1:1) in both themes.
+                background: active ? opt.color : opt.bg,
                 color: active ? "#fff" : opt.color,
                 // The segmented look: only the right edge of each segment
                 // (except the last) shows a divider line.

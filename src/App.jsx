@@ -26,6 +26,7 @@ import {
   buildCourtMatches, generateDDPartnersSchedule, DD_PARTNERS_PLAYERS, DD_PARTNERS_WEEKS,
 } from "./lib/scheduling.js";
 import { S, genderBadgeStyle } from "./styles.js";
+import { standingsPoints } from "./lib/scoring.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
@@ -586,18 +587,22 @@ export default function App() {
           const sideA = match.format === "doubles" ? match.team1 : [match.home];
           const sideB = match.format === "doubles" ? match.team2 : [match.away];
           const aWon = hs > as;
+          // Points are capped per game (winner 11, loser 9) so a long 15-13
+          // doesn't out-earn a decisive 11-4. The raw score stays in the DB
+          // and on screen; only what counts toward standings is capped.
+          const pts = standingsPoints(hs, as);
           sideA.forEach(pid => {
             if (!stats[pid]) return;
             if (playerSatOutThisWeek(pid, match.week)) return;
-            stats[pid].pointsFor += hs;
-            stats[pid].pointsAgainst += as;
+            stats[pid].pointsFor += pts.homePF;
+            stats[pid].pointsAgainst += pts.homePA;
             if (aWon) stats[pid].wins++; else stats[pid].losses++;
           });
           sideB.forEach(pid => {
             if (!stats[pid]) return;
             if (playerSatOutThisWeek(pid, match.week)) return;
-            stats[pid].pointsFor += as;
-            stats[pid].pointsAgainst += hs;
+            stats[pid].pointsFor += pts.awayPF;
+            stats[pid].pointsAgainst += pts.awayPA;
             if (!aWon) stats[pid].wins++; else stats[pid].losses++;
           });
         }));

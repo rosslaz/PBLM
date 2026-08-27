@@ -29,7 +29,9 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
 
   const tieBreakerNote = (
     <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: SPACE.sm }}>
-      Only locked weeks count. Ranked by Win% (accounts for sit-outs), then +/- (points for minus points against), then wins. PF=Points For · PA=Points Against
+      Only locked weeks count. Ranked by Win% (accounts for sit-outs), then +/- (points for minus points against), then wins. PF=Points For · PA=Points Against.
+      <br />
+      Points are capped per game: the winner earns 11 and the loser 9, so a long 15–13 counts the same as an 11–9. Lopsided games keep their real margin — an 11–4 counts as 11–4.
     </p>
   );
 

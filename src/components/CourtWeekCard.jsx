@@ -327,16 +327,29 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
             const courtTime = resolveCourtTime(court, ci, league, weekData.time);
             const showCourtTime = courtTime && courtTime !== weekData.time;
             return (
-              <div key={court.courtName} style={{ margin: isMobile ? "12px 12px 0" : "12px 16px 0", opacity: isOtherCourt ? 0.72 : 1 }}>
-                {/* Court label */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: courtColor + (isOtherCourt ? "0D" : "18"), border: `${onMyCourt && myId ? "1px" : "0.5px"} solid ${courtColor}${isOtherCourt ? "26" : "40"}` }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: courtColor, flexShrink: 0 }} />
-                  <span style={{ fontWeight: 700, fontSize: 12, color: courtColor, letterSpacing: "0.5px" }}>{displayName.toUpperCase()}</span>
+              <div key={court.courtName} style={{ margin: isMobile ? "12px 12px 0" : "12px 16px 0" }}>
+                {/* Court label.
+                    The court name is rendered in the primary text colour, not
+                    the court colour. Colour-on-a-tint-of-itself measured
+                    3.4-4.7:1 in light and as low as 2.4:1 in dark - below the
+                    4.5:1 AA floor for 12px text. The dot and the border carry
+                    the court's identity instead, which is what colour is
+                    actually good at; the text just needs to be readable. */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+                  padding: "6px 10px", borderRadius: 6,
+                  background: courtColor + (isOtherCourt ? "0D" : "1F"),
+                  border: `${onMyCourt && myId ? "1.5px" : "0.5px"} solid ${courtColor}${isOtherCourt ? "33" : "66"}`,
+                }}>
+                  <div style={{ width: 9, height: 9, borderRadius: "50%", background: courtColor, flexShrink: 0 }} />
+                  <span style={{ fontWeight: 700, fontSize: 12, color: "var(--color-text-primary)", letterSpacing: "0.5px" }}>{displayName.toUpperCase()}</span>
                   {myId && onMyCourt && (
-                    <span style={{ background: courtColor, color: "#fff", borderRadius: 999, padding: "1px 7px", fontSize: 9, fontWeight: 700, letterSpacing: "0.4px", flexShrink: 0 }}>YOURS</span>
+                    // Inverted neutral chip. White-on-court-colour measured
+                    // 3.9-4.1:1 for green and coral - too low for a 9px label.
+                    <span style={{ background: "var(--color-text-primary)", color: "var(--color-background-primary)", borderRadius: 999, padding: "1px 7px", fontSize: 9, fontWeight: 700, letterSpacing: "0.4px", flexShrink: 0 }}>YOURS</span>
                   )}
                   {showCourtTime && (
-                    <span style={{ fontSize: 11, fontWeight: 600, color: courtColor, opacity: 0.85 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)" }}>
                       · {formatTime(courtTime)}
                     </span>
                   )}

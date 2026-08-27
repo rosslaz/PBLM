@@ -2,6 +2,7 @@
 // Pure functions for distributing players across courts, generating match
 // templates, and computing ladder rotations. No React or DB dependencies.
 import { MIN_PER_COURT, MAX_PER_COURT, courtName } from "./constants.js";
+import { standingsPoints } from "./scoring.js";
 
 // Try to split N players into court groups of 4–5 across up to `maxCourts` courts.
 // Returns an array of group sizes, or null if no valid distribution exists.
@@ -389,16 +390,21 @@ export function rankCourtPlayers(courtData, scoresMap, leagueId, weekNum) {
     const sideA = match.format === "doubles" ? match.team1 : [match.home];
     const sideB = match.format === "doubles" ? match.team2 : [match.away];
     const aWon = score.homeScore > score.awayScore;
+    // Same per-game cap the standings use (winner 11, loser 9). Ladder
+    // movement has to agree with the table it feeds - ranking on raw scores
+    // here while standings used capped ones would move players up and down
+    // for reasons the standings never showed.
+    const pts = standingsPoints(score.homeScore, score.awayScore);
     sideA.forEach(pid => {
       if (!stats[pid]) return;
-      stats[pid].pf += score.homeScore;
-      stats[pid].pa += score.awayScore;
+      stats[pid].pf += pts.homePF;
+      stats[pid].pa += pts.homePA;
       if (aWon) stats[pid].wins++; else stats[pid].losses++;
     });
     sideB.forEach(pid => {
       if (!stats[pid]) return;
-      stats[pid].pf += score.awayScore;
-      stats[pid].pa += score.homeScore;
+      stats[pid].pf += pts.awayPF;
+      stats[pid].pa += pts.awayPA;
       if (!aWon) stats[pid].wins++; else stats[pid].losses++;
     });
   });
