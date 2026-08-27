@@ -219,32 +219,40 @@ export function buildDDPartnersWeek(seats, weekNum, dateStr) {
     [[sideA[0], sideB[1]], [sideA[1], sideB[0]]],
   ];
 
-  const courts = rounds.map((matchups, r) => {
-    const matches = [];
+  const courts = [];
+  rounds.forEach((matchups, r) => {
     matchups.forEach(([t1, t2], mi) => {
+      // Each matchup occupies its own physical court for that round, so a
+      // court group here is exactly one matchup: 4 players, 2 games.
+      // Flattening rounds x courts into a single list keeps the existing
+      // court model intact - CourtWeekCard filters by court.players, so a
+      // player sees exactly the two courts they are on (one per round)
+      // rather than the whole week.
+      const courtIdx = courts.length;              // 0..3 across the week
+      const matches = [];
       for (let g = 0; g < DD_PARTNERS_GAMES_PER_MATCHUP; g++) {
         matches.push({
           // Keeps the established w{week}_c{court}_m{idx} shape so score keys
           // and every other consumer keep working untouched.
-          id: `w${weekNum}_c${r}_m${mi * DD_PARTNERS_GAMES_PER_MATCHUP + g}`,
+          id: `w${weekNum}_c${courtIdx}_m${g}`,
           team1: teams[t1],
           team2: teams[t2],
           sitOut: null,
           week: weekNum,
-          court: `Round ${r + 1}`,
+          court: `Round ${r + 1} \u00b7 Court ${mi + 1}`,
           date: dateStr,
           format: "doubles",
+          round: r + 1,
           game: g + 1, // 1 or 2 - display only
         });
       }
+      courts.push({
+        courtName: `Round ${r + 1} \u00b7 Court ${mi + 1}`,
+        players: [...teams[t1], ...teams[t2]],
+        matches,
+        round: r + 1,
+      });
     });
-    return {
-      courtName: `Round ${r + 1}`,
-      // All 8 players are involved in every round, so nobody is filtered out
-      // of their own schedule view.
-      players: seats.slice(),
-      matches,
-    };
   });
 
   return { week: weekNum, date: dateStr, courts };
