@@ -79,7 +79,10 @@ function InlineScoreEntry({ match, onSubmit, accentColor }) {
     fontFamily: "inherit",
     fontVariantNumeric: "tabular-nums",
     borderRadius: 6,
-    border: `1.5px solid ${both && !isValid ? "#A32D2D" : "var(--color-border-secondary)"}`,
+    // Uses the dedicated control-outline token: the generic border tokens
+    // measure under 2:1 against the surface, which left these reading as
+    // smudges rather than enterable fields. Red still wins when invalid.
+    border: `1.5px solid ${both && !isValid ? "#A32D2D" : "var(--color-input-border)"}`,
     background: "var(--color-background-primary)",
     color: "var(--color-text-primary)",
     boxSizing: "border-box",
@@ -184,7 +187,22 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
   const weekIsStrictlyPast = isPastWeek(weekData.date);
   const playerBlockedFuture = !!myId && !weekIsCurrentOrPast;
 
-  const headerBg = isLocked ? "#F1EFE8" : allScored ? "#EAF3DE" : "var(--color-background-secondary)";
+  // Week header tint.
+  //
+  // These were hardcoded pale colours (#F1EFE8 / #EAF3DE), which broke badly
+  // in dark mode: everything inside the header inherits the theme's text
+  // colours, so near-white text landed on a pale beige surface at 1.09:1 -
+  // the week label, the date, the match count and the Edit button were all
+  // effectively invisible.
+  //
+  // A translucent tint over the themed surface composites correctly in both
+  // themes: pale amber on white, dark amber on near-black, with theme text
+  // readable either way (~15:1).
+  const headerBg = isLocked
+    ? "rgba(133, 79, 11, 0.14)"      // amber - locked
+    : allScored
+      ? "rgba(59, 109, 17, 0.14)"    // green - all scored
+      : "var(--color-background-secondary)";
 
   // Season-progress tinting via a 4px left stripe on the card.
   //   - Past:    muted gray (de-emphasized — for reference)
@@ -388,7 +406,13 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                       display: "flex", flexDirection: "column",
                       alignItems: align === "right" ? "flex-end" : "flex-start",
                       lineHeight: 1.25,
-                      color: isMySide ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                      // De-emphasis only makes sense when there's something to
+                      // contrast against. In the commissioner view nobody is
+                      // "me", so dimming every name just renders the row's main
+                      // content at reduced contrast for no benefit.
+                      color: (!myId || isMySide)
+                        ? "var(--color-text-primary)"
+                        : "var(--color-text-secondary)",
                     }}>
                       {playerIds.map(pid => {
                         const isMe = myId && pid === myId;

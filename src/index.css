@@ -9,6 +9,12 @@
   --color-text-tertiary: #a8a29e;
   --color-border-secondary: #d6d3d1;
   --color-border-tertiary: #e7e5e4;
+  /* Input and control outlines need 3:1 against their surface (WCAG 1.4.11).
+     The border tokens above are tuned for dividers, not for delineating an
+     interactive control, and measured under 2:1 against the page in both
+     themes - score boxes read as faint smudges rather than fields. A
+     translucent value composites correctly over whatever surface it lands on. */
+  --color-input-border: rgba(0, 0, 0, 0.45);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +27,7 @@
     --color-text-tertiary: #78716c;
     --color-border-secondary: #44403c;
     --color-border-tertiary: #292524;
+    --color-input-border: rgba(255, 255, 255, 0.45);
   }
 }
 

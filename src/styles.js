@@ -28,7 +28,10 @@ export const S = {
   // Small button. Vertical padding bumped from off-scale 5 → 4 (xs); horizontal
   // 12 → 12 (md). Slightly tighter vertical feel, perfectly on the 4px grid.
   btnSm: (v = "primary", color) => ({ background: v === "primary" ? (color || CSC.blue) : "transparent", color: v === "primary" ? "#fff" : "var(--color-text-primary)", border: `0.5px solid ${v === "primary" ? "transparent" : "var(--color-border-secondary)"}`, borderRadius: 8, padding: `${SPACE.xs}px ${SPACE.md}px`, cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 500 }),
-  input: { width: "100%", padding: `${SPACE.sm}px ${SPACE.md}px`, borderRadius: 8, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" },
+  // Border uses the dedicated control-outline token rather than the divider
+  // tokens, and 1px rather than 0.5px: a hairline in a low-contrast grey left
+  // fields hard to distinguish from the surface, especially in dark mode.
+  input: { width: "100%", padding: `${SPACE.sm}px ${SPACE.md}px`, borderRadius: 8, border: "1px solid var(--color-input-border)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" },
   label: { fontSize: 12, color: "var(--color-text-secondary)", marginBottom: SPACE.xs, display: "block" },
   row: { display: "flex", gap: SPACE.md, alignItems: "center" },
   // Page section content. Same edge padding as the header.
