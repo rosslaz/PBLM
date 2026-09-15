@@ -26,6 +26,52 @@
 export const MAX_POINTS_WINNER = 11;
 export const MAX_POINTS_LOSER = 9;
 
+// ─── League points (D+D Weekly Partners) ───────────────────────────────────
+// A second, separate scoring system used by the D+D format, where standings
+// rank on accumulated Points rather than win percentage.
+//
+//   0.5 points per point scored, plus a 2-point bonus for winning.
+//
+// Worked example, an 11-6 win: the winners each bank 0.5 x 11 + 2 = 7.5, the
+// losers 0.5 x 6 = 3.0.
+//
+// CAPS. Long games are capped so they can't out-earn short ones, but the two
+// sides cap at different places:
+//
+//   winner  ->  11  ->  0.5 x 11 + 2  =  7.5 max
+//   loser   ->  10  ->  0.5 x 10      =  5.0 max
+//
+// So losing 15-13 banks 5.0, not the 6.5 an uncapped 13 would give. The loser
+// caps at 10 rather than 11 so that a losing scoreline can never match a
+// winning one's scoring half.
+//
+// NOTE: these caps are deliberately NOT the same as the PF/PA caps above
+// (winner 11, loser 9). Points is its own system computed from the raw score.
+// A 15-13 therefore shows PF 9 but Points 5.0 - the columns answer different
+// questions and are not meant to reconcile arithmetically.
+export const POINTS_PER_SCORE = 0.5;
+export const WIN_BONUS = 2;
+export const MAX_POINTS_SCORE_WINNER = 11;  // -> 7.5 with the bonus
+export const MAX_POINTS_SCORE_LOSER = 10;   // -> 5.0
+export const MAX_GAME_POINTS = MAX_POINTS_SCORE_WINNER * POINTS_PER_SCORE + WIN_BONUS; // 7.5
+
+// League points earned by one player from one game.
+//   rawScore - that player's side's ACTUAL score (not the capped PF)
+//   won      - whether their side won
+export function leaguePoints(rawScore, won) {
+  const cap = won ? MAX_POINTS_SCORE_WINNER : MAX_POINTS_SCORE_LOSER;
+  const scored = Math.min(Number(rawScore), cap);
+  return scored * POINTS_PER_SCORE + (won ? WIN_BONUS : 0);
+}
+
+// Points carry a .5, so they're summed as floats. Round at the display edge to
+// kill accumulated binary-float drift (0.1 + 0.2 territory) - 7.499999999 must
+// never render as 7.5 in one place and 7.49 in another.
+export function formatPoints(n) {
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 // Convert one raw game score into the four capped values a match contributes.
 //
 // Returns points from each side's perspective:

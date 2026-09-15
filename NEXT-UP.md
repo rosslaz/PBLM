@@ -1,143 +1,138 @@
 # Next Up — Backlog
 
-**Status:** v1.5.0 is live. Everything previously planned in this file (v1.4.1
-cascade fixes, v1.5.0 PWA polish) is **shipped**. Nothing is currently committed
-or in progress.
+**Status:** v1.10.0 is live. Everything previously in this file has shipped.
+Nothing is currently in progress or uncommitted.
 
-Read `PROJECT.md` first for architecture. This file is the candidate list for
-whatever comes next, roughly ordered by value-per-unit-risk.
-
----
-
-## Recently shipped (for context)
-
-**v1.4.1 — cascade fixes + scoping**
-- `dbHardDeleteLeague`: SQL `LIKE` underscore-wildcard bug fixed (JS `startsWith`)
-- `dbHardDeletePlayer`: now cascades to `pb_memberships`; same fix via `endsWith`
-- HomeView: "Active Leagues" gated to single-club deployments
-- One-time cleanup of 6 orphan rows (legacy `league_1/2/3` children)
-
-**v1.5.0 — PWA polish**
-- Caching service worker, hand-upgraded (deliberately *not* `vite-plugin-pwa`)
-- Offline read from a cached DB snapshot, with a visible staleness banner
-- Hard write-block when offline — all three mutation paths
-- Update banner that waits for a user gesture instead of hot-swapping code
-
-**Post-deploy data cleanup**
-- Deduplicated two player records (Shannon Lamb ×2, a stray "R L" test account)
-- No duplicate emails remain among live players
+Read `PROJECT.md` first for architecture. This is the candidate list, roughly
+ordered by value per unit of risk.
 
 ---
 
-## Candidate work
+## Recently shipped
 
-### A. Real authentication (Supabase Auth) — the big one
+**v1.6.0** — Commissioner can set any player's RSVP (players kept texting
+"can't make it" instead of opening the app, leaving rebalance headcounts wrong).
+Rebalance routed through the existing drag-and-drop preview editor, which also
+gave a destructive action the preview it deserved.
+
+**v1.7.0** — Open Play: RSVP-only leagues with no courts, scores, or standings.
+Weeks derived on the fly rather than stored.
+
+**v1.8.0** — Per-club logos; duplicate-account fixes in both creation paths;
+PWA banner safe-area fix (banners were rendering inside the iOS notch strip,
+visible but untappable); neutral app branding; remembered club across logout.
+
+**v1.9.0 / v1.9.1** — D+D Weekly Partners (fixed 8 players, 14 weeks, verified
+combinatorial template); staleness-aware background refresh; one court per matchup.
+
+**v1.10.0** — Players see all courts (scoring still scoped to their own);
+contrast audit with measured ratios; per-game standings points cap.
+
+**Data work** — orphan rows purged; three duplicate player records merged; a
+junk club (created when someone pasted a join code into the club-name field)
+trashed; the create-club form now catches that mistake as it's made.
+
+---
+
+## A. Real authentication — the one that matters now
 
 **Problem.** Login is email-only with no password. Type any member's email and
-you're them. There is no access control at all; RLS is permissive (`anon_all`), so
-the anon key grants full read/write on every table.
+you're them. RLS is enabled but permissive (`anon_all`), so the anon key grants
+full read/write on every table.
 
-This is fine for a trusted single club. It is **not** fine the moment a second,
-unrelated club joins — which the entire multi-tenancy build (Phases 2–4) exists to
-enable. Right now any user of any club could, with a little curiosity, read and
-mutate every other club's data. That's the gap between what the app is architected
-for and what it actually enforces.
+**This has changed character.** It was defensible when CSC was the only club.
+**There are now three clubs and 39 players.** Any user of any club can read and
+mutate every other club's data. The app is architected for multi-tenancy but
+doesn't enforce it — that gap is the whole point of the Phase 2–4 work.
 
 **Shape of the work.**
-1. Supabase Auth with magic-link (email) sign-in. No passwords to manage, and it
-   maps cleanly onto the existing email-as-identity model.
-2. Link `auth.users.id` → `pb_players`. Migration needed for the 10 existing players
-   (invite flow, or claim-by-email on first sign-in).
-3. **Rewrite the RLS policies.** This is the real work. Every table needs policies
-   keyed on club membership: you can read/write a league only if you have a live
-   membership in its club; only owners/admins can mutate club settings; etc.
-4. Rework `App.jsx` session handling — replace the localStorage session with
-   Supabase's, keep the club-switcher logic on top.
 
-**Risk.** High. It touches identity, every table's access rules, and the login path
-for real users mid-season. Genuinely a phase, not a session. **Do not start this
-while a season is running.**
+1. Supabase Auth with magic-link sign-in — no passwords to manage, and it maps
+   cleanly onto the existing email-as-identity model.
+2. Link `auth.users.id` → `pb_players`. Migration needed for 39 existing players
+   (claim-by-email on first sign-in is probably cleanest).
+3. **Rewrite the RLS policies.** This is the real work. Every table needs
+   policies keyed on club membership.
+4. Replace the localStorage session with Supabase's, keeping the club-switcher
+   logic on top.
 
-**Verdict.** The right next major thing, but time it for the off-season.
+**Risk: high.** Touches identity, every table's access rules, and the login path
+for real users. A phase, not a session. **Don't start it mid-season.**
 
----
-
-### B. Season-readiness polish — small, high value, low risk
-
-The two live leagues are `open` and haven't started. Things worth having *before*
-real scores start landing:
-
-- **`dbRebalanceWeek` LIKE quirk.** The one surviving underscore-wildcard pattern.
-  Blast radius is limited to the same league's other weeks, and rebalance rewrites
-  that week anyway — but it's the same class of bug we just fixed everywhere else.
-  ~20 minutes with the existing `keysWithPrefix` helper. Fix it before scores exist,
-  because scores are exactly what it would eat.
-- **Duplicate-email guard.** Nothing currently stops two player records sharing an
-  email (that's how the Shannon dup happened). The login lookup takes whichever it
-  finds first. Add a check in `dbCreatePlayer` / the create-player forms.
-- **Hard-delete the two trashed strays** (`player_29`, `player_33`) instead of
-  waiting 30 days, if you want the Trash tab clean.
-
-**Verdict.** Do these. Cheap, and the rebalance fix in particular is much easier
-before there's real data to lose.
+**Verdict.** The right next major thing. Time it for the off-season.
 
 ---
 
-### C. Stats & standings improvements
+## B. Small, cheap, worth doing
 
-Ideas floated but never scoped: head-to-head records, win/loss streaks, per-court
-performance history, a season-summary view.
-
-**Caveat:** no season has actually run end-to-end on the current standings code
-(0 scores in the DB). Running one real season will teach more about what's missing
-than speculating now would. **Wait for real data.**
-
----
-
-### D. `App.jsx` decomposition
-
-~85KB, and every edit is a full-file overwrite through the Filesystem MCP. Splitting
-out the modals, the action layer, and the view branches into separate modules would
-make edits cheaper and safer.
-
-**But:** it's a multi-day refactor with real regression risk across every flow, and
-it buys developer ergonomics rather than user value. **Not urgent. Don't do it
-mid-season.**
+- **Duplicate-email constraint at the DB level.** The app-layer guards
+  (`findLivePlayerByEmail`) cover every creation path today, but nothing stops a
+  direct insert. A partial unique index on `lower(data->>'email')` where
+  `deletedAt IS NULL` would make it structural.
+- **Fix Dink & Drink's `logoUrl`** — it's `dink-drink.png`, missing the leading
+  slash. Works only because the SPA never leaves `/`. One-character fix in
+  Settings.
+- **`league_19` needs 4 more players** before it can generate.
+- **A stale `buildCourtMatches` doc comment** in `scheduling.js` ended up above
+  the D+D template block during an edit; it now describes the wrong function.
 
 ---
 
-### E. Push notifications — explicitly deferred
+## C. Stats and standings
 
-Check-in reminders ("Week 3 is Thursday — are you in?") would be genuinely useful.
-But it needs VAPID keys, a push endpoint (i.e. actual server-side code, which this
-app has none of today), a permission flow, and scheduling logic.
+Head-to-head records, streaks, per-court history, a season-summary view.
 
-Realistically 1–2 weeks. **Out of scope until something else justifies standing up a
-backend.**
+**But:** no season has yet run end to end. There are 8 scores in the database.
+Running one real season will teach more about what's missing than speculating
+now. **Wait for data.**
+
+---
+
+## D. `App.jsx` decomposition
+
+~100KB, and it's grown steadily. Splitting out the modals, the action layer, and
+the view branches would make edits cheaper and safer.
+
+**But:** multi-day, real regression risk across every flow, and it buys
+developer ergonomics rather than user value. **Not urgent, not mid-season.**
+
+Related: the per-competition-type branching in `LeagueDetail` and `PlayerView`
+is now three branches deep (round-robin/ladder, open play, D+D). **If a fifth
+competition type appears, that's the signal** to pull per-type rendering into
+separate components rather than branching inline again.
+
+---
+
+## E. Push notifications — deferred
+
+Check-in reminders would be genuinely useful, but it needs VAPID keys, a push
+endpoint (i.e. actual server-side code, which this app has none of), a
+permission flow, and scheduling. Realistically 1–2 weeks. **Out of scope until
+something else justifies standing up a backend.**
 
 ---
 
 ## Suggested order
 
-1. **B (season-readiness polish)** — now, before the seasons start. Especially the
-   rebalance fix.
-2. **Run a real season.** Let the app do its job. Bugs and gaps will surface on their
-   own, and they'll be better-prioritized than anything on this list.
-3. **A (real auth)** — off-season, as a dedicated phase.
-4. **C / D / E** — as motivated by what the season actually teaches.
+1. **B** — now. Cheap and mostly one-liners.
+2. **Run a real season.** The app has four competition types and almost no
+   real scores. Actual use will prioritise better than this list can.
+3. **A** — off-season, as a dedicated phase.
+4. **C / D / E** — as the season motivates.
 
 ---
 
 ## Standing notes for whoever picks this up
 
-- **Read the code, not just the docs.** A previous version of these files claimed
-  there was no service worker (there was), named a manifest that didn't exist, and
-  miscounted an audit. Docs drift; the repo doesn't.
+- **Read the code, not just the docs.** These files have drifted badly twice.
+  When they disagree with the code, the code wins.
 - **The compound-key underscore trap is real.** `LIKE 'league_1_%'` matches
-  `league_10_...`. Use `keysWithPrefix` / `keysWithSuffix` in `supabase.js`.
+  `league_10_...`. No `LIKE` remains in the codebase — keep it that way.
 - **Three functions bypass `action()`** (`deleteClub`, `seedTestPlayers`, the
-  schedule commit). Any guard added to the wrapper must be added to them too — the
-  v1.5.0 offline block needed all three.
+  schedule commit). Any guard added to the wrapper must be added to them too.
 - **Don't reintroduce `skipWaiting()`** in `sw.js`. It's absent on purpose.
-- **Verify the filesystem path at session start** by reading a file, not by trusting
-  a cached directory listing.
+- **A hardcoded background with theme-variable text is always a dark-mode bug.**
+- **After deploying, check the version footer** before believing a change is
+  missing — the service worker deliberately serves the old bundle until reload.
+- **Verify the filesystem path by reading a file**, not by trusting a directory
+  listing.

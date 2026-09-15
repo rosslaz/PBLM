@@ -384,7 +384,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
         {tab === "standings" && (() => {
           const standings = getStandings();
           const pendingWeeks = weeks.filter(w => !isWeekLocked(w.week) && w.courts.some(ct => ct.matches.some(m => getScore(league.id, w.week, m.id)))).length;
-          return <StandingsTable standings={standings} getPlayerName={getPlayerName} color={c} pendingWeeks={pendingWeeks} />;
+          return <StandingsTable standings={standings} getPlayerName={getPlayerName} color={c} pendingWeeks={pendingWeeks} showPoints={league.competitionType === "dd_partners"} />;
         })()}
       </div>
     </div>

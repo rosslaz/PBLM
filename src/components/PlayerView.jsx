@@ -580,7 +580,7 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
             {playerTab === "standings" && (() => {
               const weeks = sched.weeks || [];
               const pendingWeeks = weeks.filter(w => !isWeekLocked(selectedLeagueId, w.week) && w.courts.some(ct => ct.matches.some(m => getScore(selectedLeagueId, w.week, m.id)))).length;
-              return <StandingsTable standings={getStandings(selectedLeagueId)} getPlayerName={getPlayerName} color={c} myId={player.id} pendingWeeks={pendingWeeks} />;
+              return <StandingsTable standings={getStandings(selectedLeagueId)} getPlayerName={getPlayerName} color={c} myId={player.id} pendingWeeks={pendingWeeks} showPoints={selectedLeague.competitionType === "dd_partners"} />;
             })()}
           </div>
           </>

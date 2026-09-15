@@ -1,13 +1,16 @@
 import { S } from "../styles.js";
 import { CSC, COLORS, SPACE } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
+import { formatPoints } from "../lib/scoring.js";
 import { EmptyState } from "./ui.jsx";
 
 // ─── Standings ──────────────────────────────────────────────────────────────
 // Two layouts: desktop shows the traditional table; mobile shows per-player
 // cards stacked vertically (no horizontal scroll, which the old table relied
 // on at narrow widths and which broke row alignment when scrolled).
-export function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 0 }) {
+// `showPoints` adds the Points column and makes it the ranking stat (D+D
+// Weekly Partners). Every other format keeps Win% as the headline.
+export function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 0, showPoints = false }) {
   const c = color || COLORS.csc;
   const isMobile = useIsMobile();
 
@@ -29,9 +32,23 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
 
   const tieBreakerNote = (
     <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: SPACE.sm }}>
-      Only locked weeks count. Ranked by Win% (accounts for sit-outs), then +/- (points for minus points against), then wins. PF=Points For · PA=Points Against.
-      <br />
-      Points are capped per game: the winner earns 11 and the loser 9, so a long 15–13 counts the same as an 11–9. Lopsided games keep their real margin — an 11–4 counts as 11–4.
+      {showPoints ? (
+        <>
+          Only locked weeks count. Ranked by <b>Points</b>, then Win%, then +/-.
+          <br />
+          Points per game: half a point for each point you score, plus 2 for winning. An 11–6 win is 7.5 for the winners and 3 for the losers.
+          <br />
+          Long games are capped so they can't out-earn short ones — a winner tops out at 7.5 and a loser at 5. Losing 15–13 banks 5.
+          <br />
+          PF and PA use their own cap (winner 11, loser 9) and won't always line up with Points.
+        </>
+      ) : (
+        <>
+          Only locked weeks count. Ranked by Win% (accounts for sit-outs), then +/- (points for minus points against), then wins. PF=Points For · PA=Points Against.
+          <br />
+          Points are capped per game: the winner earns 11 and the loser 9, so a long 15–13 counts the same as an 11–9. Lopsided games keep their real margin — an 11–4 counts as 11–4.
+        </>
+      )}
     </p>
   );
 
@@ -48,6 +65,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
               name={getPlayerName(s.id)}
               isMe={myId && s.id === myId}
               themeColor={c}
+              showPoints={showPoints}
               // Pass adjacent rows so we can compute "you vs the player above
               // and below" gaps. Only used for the "you" card.
               ahead={i > 0 ? standings[i - 1] : null}
@@ -68,7 +86,10 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
         <table className="tabular-nums" style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "var(--color-background-secondary)" }}>
-              {[["Player","32%"],["Win%","14%"],["+/-","14%"],["W","10%"],["L","10%"],["PF","10%"],["PA","10%"]].map(([h,w]) => (
+              {(showPoints
+                ? [["Player","28%"],["Pts","13%"],["Win%","13%"],["+/-","12%"],["W","9%"],["L","9%"],["PF","8%"],["PA","8%"]]
+                : [["Player","32%"],["Win%","14%"],["+/-","14%"],["W","10%"],["L","10%"],["PF","10%"],["PA","10%"]]
+              ).map(([h,w]) => (
                 <th key={h} style={{ padding: h==="Player"?"8px 12px":"8px", textAlign: h==="Player"?"left":"center", fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", width: w }}>{h}</th>
               ))}
             </tr>
@@ -85,7 +106,12 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                     {getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
                   </td>
-                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:700,fontSize:14,color:isMe?c.bg:"var(--color-text-primary)" }}>
+                  {showPoints && (
+                    <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:700,fontSize:16,color:isMe?c.bg:"var(--color-text-primary)" }}>
+                      {formatPoints(s.points || 0)}
+                    </td>
+                  )}
+                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:showPoints?500:700,fontSize:14,color:showPoints?"var(--color-text-secondary)":(isMe?c.bg:"var(--color-text-primary)") }}>
                     {s.matches > 0 ? `${Math.round(s.winPct * 100)}%` : "—"}
                   </td>
                   <td style={{ padding:"12px 8px",textAlign:"center",color:diff>=0?CSC.blue:"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
@@ -117,7 +143,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
 //   └─────────────────────────────────────────────┘
 // The "You" card uses the league-theme tint for the background so the user
 // can spot themselves in a long list at a glance.
-function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind }) {
+function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, showPoints = false }) {
   const diff = stat.pointsFor - stat.pointsAgainst;
   const c = themeColor;
   const hasMatches = stat.matches > 0;
@@ -173,26 +199,39 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind }) {
         borderBottom: "0.5px solid var(--color-border-tertiary)",
       }}>
         <HeadlineStat
-          label="Win%"
-          value={hasMatches ? `${Math.round(stat.winPct * 100)}%` : "—"}
+          label={showPoints ? "Points" : "Win%"}
+          value={showPoints
+            ? formatPoints(stat.points || 0)
+            : (hasMatches ? `${Math.round(stat.winPct * 100)}%` : "—")}
           color={isMe ? c.bg : "var(--color-text-primary)"}
         />
         <HeadlineStat
-          label="+/-"
-          value={hasMatches ? `${diff > 0 ? "+" : ""}${diff}` : "—"}
-          color={!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? CSC.blue : "#A32D2D"}
+          label={showPoints ? "Win%" : "+/-"}
+          value={showPoints
+            ? (hasMatches ? `${Math.round(stat.winPct * 100)}%` : "—")
+            : (hasMatches ? `${diff > 0 ? "+" : ""}${diff}` : "—")}
+          color={showPoints
+            ? (isMe ? c.bg : "var(--color-text-primary)")
+            : (!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? CSC.blue : "#A32D2D")}
         />
       </div>
 
-      {/* Detail strip: W / L / PF / PA */}
+      {/* Detail strip: W / L / PF / PA, plus +/- when Points has taken its
+          headline slot so the stat is still on the card somewhere. */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr 1fr",
+        gridTemplateColumns: showPoints ? "1fr 1fr 1fr 1fr 1fr" : "1fr 1fr 1fr 1fr",
         gap: SPACE.xs,
         marginTop: SPACE.sm,
       }}>
         <DetailStat label="W" value={stat.wins} color={CSC.blue} />
         <DetailStat label="L" value={stat.losses} color="#A32D2D" />
+        {showPoints && (
+          <DetailStat
+            label="+/-"
+            value={hasMatches ? `${diff > 0 ? "+" : ""}${diff}` : "—"}
+            color={!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? CSC.blue : "#A32D2D"} />
+        )}
         <DetailStat label="PF" value={stat.pointsFor} color="var(--color-text-secondary)" />
         <DetailStat label="PA" value={stat.pointsAgainst} color="var(--color-text-secondary)" />
       </div>

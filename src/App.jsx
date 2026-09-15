@@ -26,7 +26,7 @@ import {
   buildCourtMatches, generateDDPartnersSchedule, DD_PARTNERS_PLAYERS, DD_PARTNERS_WEEKS,
 } from "./lib/scheduling.js";
 import { S, genderBadgeStyle } from "./styles.js";
-import { standingsPoints } from "./lib/scoring.js";
+import { standingsPoints, leaguePoints } from "./lib/scoring.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
@@ -560,6 +560,10 @@ export default function App() {
   function getStandings(leagueId) {
     const regs = getLeagueRegs(leagueId);
     const sched = getLeagueSchedule(leagueId);
+    // D+D Weekly Partners ranks on accumulated Points rather than Win%.
+    // Points is computed for every format (it costs nothing) but only drives
+    // the sort and the table column here.
+    const usesLeaguePoints = db.leagues[leagueId]?.competitionType === "dd_partners";
     const allLockedWeeks = (sched.weeks || []).filter(w => isWeekLocked(leagueId, w.week));
 
     // A player whose check-in for a given week is "sub" or "out" doesn't
@@ -578,7 +582,7 @@ export default function App() {
     // locked week" snapshots with the same logic.
     function buildSorted(weeks) {
       const stats = {};
-      regs.forEach(r => { stats[r.playerId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }; });
+      regs.forEach(r => { stats[r.playerId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, points: 0 }; });
       weeks.forEach(w => {
         w.courts.forEach(ct => ct.matches.forEach(match => {
           const score = getScore(leagueId, match.week, match.id);
@@ -596,6 +600,9 @@ export default function App() {
             if (playerSatOutThisWeek(pid, match.week)) return;
             stats[pid].pointsFor += pts.homePF;
             stats[pid].pointsAgainst += pts.homePA;
+            // Raw score, not the capped PF - league Points has its own caps
+            // (winner 11, loser 10) which differ from the PF caps.
+            stats[pid].points += leaguePoints(hs, aWon);
             if (aWon) stats[pid].wins++; else stats[pid].losses++;
           });
           sideB.forEach(pid => {
@@ -603,6 +610,7 @@ export default function App() {
             if (playerSatOutThisWeek(pid, match.week)) return;
             stats[pid].pointsFor += pts.awayPF;
             stats[pid].pointsAgainst += pts.awayPA;
+            stats[pid].points += leaguePoints(as, !aWon);
             if (!aWon) stats[pid].wins++; else stats[pid].losses++;
           });
         }));
@@ -612,6 +620,18 @@ export default function App() {
         const winPct = matches > 0 ? s.wins / matches : 0;
         return { id, ...s, matches, winPct };
       }).sort((a, b) => {
+        // D+D ranks on accumulated Points; every other format ranks on Win%.
+        // Points already folds scoring and winning together, so Win% drops to
+        // a tiebreaker rather than leading - otherwise a player who won more
+        // low-scoring games could sit above someone who banked more Points,
+        // which is exactly what this stat exists to prevent.
+        if (usesLeaguePoints) {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.winPct !== a.winPct) return b.winPct - a.winPct;
+          const dA = a.pointsFor - a.pointsAgainst, dB = b.pointsFor - b.pointsAgainst;
+          if (dB !== dA) return dB - dA;
+          return b.wins - a.wins;
+        }
         if (b.winPct !== a.winPct) return b.winPct - a.winPct;
         const da = a.pointsFor - a.pointsAgainst, dbb = b.pointsFor - b.pointsAgainst;
         if (dbb !== da) return dbb - da;
