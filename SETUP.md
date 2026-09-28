@@ -1,7 +1,7 @@
 # Pickleball League Manager — Setup & Deployment
 
 **Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
-**Current version:** 1.10.0
+**Current version:** 1.11.0
 
 This guide covers standing up a fresh instance from scratch. If you're picking
 up the existing deployment, read `PROJECT.md` instead — this file is for
@@ -140,6 +140,11 @@ swapping between rounds while partners stay. Over the season you partner with
 everyone exactly twice, and never face the same opposing teams the second time.
 The 8-player limit is enforced at registration, since a 9th can't be absorbed by
 regenerating.
+
+This is also the only format that ranks on **Points** rather than win
+percentage: half a point for every point you score, plus 2 for winning. An 11–6
+is 7.5 for the winners and 3 for the losers. Long games are capped so they
+can't out-earn short ones — a winner tops out at 7.5 and a loser at 5.
 
 ---
 

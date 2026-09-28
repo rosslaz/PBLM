@@ -30,6 +30,39 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
     </div>
   ) : null;
 
+  // How many weeks each player is discarding right now. Read off the rows
+  // rather than recomputed, so the note can't disagree with the table.
+  const activeDrops = showPoints
+    ? Math.max(0, ...standings.map(s => (s.droppedWeeks || []).length))
+    : 0;
+
+  const dropNote = showPoints && standings.length > 0 ? (
+    <div style={{
+      padding: `${SPACE.sm}px ${SPACE.md}px`,
+      background: "var(--color-background-secondary)",
+      border: "0.5px solid var(--color-border-tertiary)",
+      borderRadius: 8,
+      fontSize: 12,
+      color: "var(--color-text-secondary)",
+      marginBottom: SPACE.md,
+      lineHeight: 1.5,
+    }}>
+      {activeDrops > 0 ? (
+        <>
+          <b style={{ color: "var(--color-text-primary)" }}>
+            Drop week{activeDrops !== 1 ? "s" : ""} in effect — {activeDrops} lowest week{activeDrops !== 1 ? "s" : ""} discarded.
+          </b>{" "}
+          Each player's {activeDrops === 1 ? "lowest-scoring week is" : "two lowest-scoring weeks are"} excluded from every stat below, not just Points.
+        </>
+      ) : (
+        <>
+          <b style={{ color: "var(--color-text-primary)" }}>No drops yet.</b>{" "}
+          The lowest week starts being dropped once 6 weeks are locked, and the two lowest once 12 are. Best 12 of 14 count at season's end.
+        </>
+      )}
+    </div>
+  ) : null;
+
   const tieBreakerNote = (
     <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: SPACE.sm }}>
       {showPoints ? (
@@ -56,6 +89,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
     return (
       <div>
         {pendingBanner}
+        {dropNote}
         <div className="tabular-nums">
           {standings.map((s, i) => (
             <StandingsCard
@@ -82,6 +116,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
   return (
     <div>
       {pendingBanner}
+      {dropNote}
       <div style={{ overflowX: "auto" }}>
         <table className="tabular-nums" style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
           <thead>
@@ -105,6 +140,13 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                     <TrendArrow trend={s.trend} />
                     {getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
+                    {showPoints && s.droppedWeeks?.length > 0 && (
+                      <span
+                        title="Lowest-scoring weeks, excluded from this player's totals"
+                        style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                        drops W{s.droppedWeeks.join(", W")}
+                      </span>
+                    )}
                   </td>
                   {showPoints && (
                     <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:700,fontSize:16,color:isMe?c.bg:"var(--color-text-primary)" }}>
@@ -187,6 +229,11 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
           {name}
         </span>
         {isMe && <span style={{ ...S.badge("info"), fontSize: 10 }}>You</span>}
+        {showPoints && stat.droppedWeeks?.length > 0 && (
+          <span style={{ fontSize: 10, color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+            drops W{stat.droppedWeeks.join(", W")}
+          </span>
+        )}
       </div>
 
       {/* Headline stats: Win% and +/- */}

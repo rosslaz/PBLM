@@ -72,6 +72,37 @@ export function formatPoints(n) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
+// ─── Drop weeks (D+D Weekly Partners) ─────────────────────────────────────
+// Only a player's best 12 of 14 weeks count toward final standings - their two
+// lowest-scoring weeks are dropped.
+//
+// The allowance phases in rather than applying from week one. Dropping two
+// weeks when only two have been played would leave everyone on zero, and
+// mid-season standings would swing wildly as a single new result displaced a
+// dropped one. So:
+//
+//   fewer than 6 locked weeks  ->  0 drops
+//   6 to 11                    ->  1 drop
+//   12 or more                 ->  2 drops
+//
+// Thresholds are on LOCKED weeks, not calendar weeks, so the allowance tracks
+// what has actually been played and scored.
+//
+// Note this quietly absorbs absences: a week a player sat out earns 0 points,
+// which makes it their lowest week and therefore the first one dropped. That's
+// usually the intent of a drop-week rule, but it does mean missing up to two
+// weeks carries no cost in the standings.
+export const DROP_THRESHOLDS = [
+  { minWeeks: 12, drops: 2 },
+  { minWeeks: 6, drops: 1 },
+];
+export const MAX_DROPS = 2;
+
+export function dropsForLockedWeeks(lockedWeekCount) {
+  const rule = DROP_THRESHOLDS.find(t => lockedWeekCount >= t.minWeeks);
+  return rule ? rule.drops : 0;
+}
+
 // Convert one raw game score into the four capped values a match contributes.
 //
 // Returns points from each side's perspective:

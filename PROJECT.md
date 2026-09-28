@@ -1,6 +1,6 @@
 # Pickleball League Manager — Project Reference
 
-**Current version: 1.10.0** — deployed and live. Docs verified against the
+**Current version: 1.11.0** — deployed and live. Docs verified against the
 running code and the production database on this date.
 
 This is the canonical handoff. Read this first, then `NEXT-UP.md` for planned
@@ -125,7 +125,7 @@ pickleball-deploy/
     │   │                        useIsMobile, sortLeagues, buildDisplayWeeks
     │   ├── scheduling.js     ← court distribution, match generation, ladder
     │   │                        rotation, D+D Weekly Partners template
-    │   ├── scoring.js        ← standingsPoints() — the per-game points cap
+    │   ├── scoring.js        ← standingsPoints() PF cap + leaguePoints() Points
     │   └── supabase.js       ← client + all dbXxx functions + loadDB + cache
     └── components/           ← ~25 files, see below
 ```
@@ -322,15 +322,21 @@ invariant under relabelling.
 The 8-player cap is enforced **at registration**, not at generation, because a
 9th player can't be absorbed by regenerating.
 
+**D+D is also the only format that ranks on Points** rather than Win% — see
+section 9.
+
 ---
 
 ## 9. Scoring and standings
 
-### Per-game points cap (v1.10.0)
+Two separate scoring systems live in `lib/scoring.js`. They are **not** the same
+rule and are not meant to reconcile — see the warning at the end.
 
-`standingsPoints(home, away)` in `lib/scoring.js`:
+### PF / PA cap — every format
 
-- **Winner earns 11, loser earns 9** — a 15–13 counts as 11–9.
+`standingsPoints(home, away)`:
+
+- **Winner's PF caps at 11, loser's at 9.** A 15–13 counts as 11–9.
 - `Math.min`, so lopsided games keep their real margin: **11–4 counts as 11–4.**
 - Points against are the opponent's capped points for.
 
@@ -338,15 +344,48 @@ Applied in **both** `getStandings()` and the ladder's `rankCourtPlayers()`
 through the one shared helper — ladder movement has to agree with the table it
 feeds.
 
-**This is a standings-time transform, never storage-time.** Raw scores stay in
-`pb_scores` and display as entered, so the rule can be tuned or reverted and
-standings simply recompute. Capping on write would have destroyed the originals.
+### Points — D+D Weekly Partners only
+
+`leaguePoints(rawScore, won)`:
+
+- **Half a point per point scored, plus 2 for winning.**
+- An 11–6 gives the winners **7.5** each and the losers **3.0**.
+- Caps differ by side: **winner 11 → 7.5 max**, **loser 10 → 5.0 max**.
+  Losing 15–13 banks 5.0.
+- The loser's cap is 10 rather than 11 so a losing scoreline can never match
+  the winner's 5.5 scoring half.
+
+Computed for every format (it costs nothing) but only surfaces for
+`dd_partners`, where it leads the sort with Win%, +/− and wins as tiebreakers.
+Every other format keeps Win% as the headline.
+
+`formatPoints()` rounds at the display edge, because Points accumulate as floats
+and 7.499999 must not render inconsistently.
+
+> ### ⚠️ The two caps are different, on purpose
+>
+> PF caps the loser at **9**; Points caps the loser at **10**. So a 15–13 shows
+> **PF 9** next to **Points 5.0** — and 9 ÷ 2 ≠ 5. A player checking the
+> arithmetic across columns will find it doesn't work.
+>
+> This is intended, not a bug, and the standings footnote says so. If it ever
+> needs to reconcile, the clean fix is moving the PF loser cap from 9 to 10 —
+> that would affect no score under 10.
+
+### Both are standings-time transforms, never storage-time
+
+Raw scores stay in `pb_scores` and display as entered, so either rule can be
+tuned or reverted and standings simply recompute. Capping on write would have
+destroyed the originals permanently.
 
 ### Other standings rules
 
 - **Only locked weeks count.** The commissioner locks a week to admit its scores.
-- Ranked by **Win%**, then +/−, then wins.
-- Players whose check-in was `sub` or `out` earn nothing for that week.
+- Players whose check-in was `sub` or `out` earn nothing for that week — no
+  points, no Points, no win, no loss, and their match count doesn't rise, so
+  Win% reflects only weeks they played.
+- **`rankCourtPlayers()` does not know about check-ins**, so ladder rotation
+  ignores sit-outs. No live ladder leagues exist, so it hasn't mattered yet.
 
 ---
 
@@ -454,6 +493,7 @@ controls (WCAG 1.4.11 wants 3:1).
 | **v1.9.0** | D+D Weekly Partners; staleness-aware refresh |
 | **v1.9.1** | D+D: one court per matchup |
 | **v1.10.0** | Players see all courts; contrast audit; capped standings points |
+| **v1.11.0** | Points stat for D+D (0.5/point + 2 for a win); D+D ranks on it |
 
 **Version policy:** patch = fixes, minor = features, major = milestones.
 Bump **three** files: `package.json`, `src/lib/constants.js` (`APP_INFO.version`),
@@ -480,6 +520,14 @@ and `public/sw.js` (`CACHE_VERSION`) on any release that changes assets.
 
 6. **No push notifications.** Genuinely a separate project (VAPID keys, push
    endpoint, permission flow).
+
+7. **PF and Points use different loser caps** (9 vs 10), so the two columns
+   don't reconcile on long games. Deliberate, documented in the standings
+   footnote, but a likely source of "is this a bug?" questions.
+
+8. **Ladder rotation ignores check-ins.** `rankCourtPlayers()` never receives
+   them, so an absent player is ranked on empty results and drifts down a
+   court. Moot today — there are no live ladder leagues.
 
 ---
 

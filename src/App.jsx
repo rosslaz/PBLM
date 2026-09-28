@@ -26,7 +26,7 @@ import {
   buildCourtMatches, generateDDPartnersSchedule, DD_PARTNERS_PLAYERS, DD_PARTNERS_WEEKS,
 } from "./lib/scheduling.js";
 import { S, genderBadgeStyle } from "./styles.js";
-import { standingsPoints, leaguePoints } from "./lib/scoring.js";
+import { standingsPoints, leaguePoints, dropsForLockedWeeks } from "./lib/scoring.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
@@ -580,10 +580,31 @@ export default function App() {
     // Build a sorted standings array from a given subset of locked weeks.
     // Factored out so we can compute "now" and "before the most recent
     // locked week" snapshots with the same logic.
+    //
+    // Tallies are kept PER WEEK rather than as running totals, because D+D
+    // drops each player's lowest-scoring weeks and you can't subtract a week
+    // from a total you never broke down. Formats without drops simply count
+    // every week, so the same code path serves both.
     function buildSorted(weeks) {
-      const stats = {};
-      regs.forEach(r => { stats[r.playerId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, points: 0 }; });
+      const blank = () => ({ wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, points: 0 });
+      const perWeek = {};   // playerId -> Map(weekNumber -> tally)
+      regs.forEach(r => { perWeek[r.playerId] = new Map(); });
+
+      const tallyFor = (pid, weekNum) => {
+        const m = perWeek[pid];
+        if (!m) return null;                       // not registered in this league
+        if (!m.has(weekNum)) m.set(weekNum, blank());
+        return m.get(weekNum);
+      };
+
       weeks.forEach(w => {
+        // Seed an empty tally for every registered player, so a week someone
+        // sat out (or that simply went unscored) exists as a real zero. It has
+        // to be present to be droppable - otherwise a missed week would be
+        // invisible rather than discarded, and drops would silently apply to a
+        // player's played weeks instead.
+        regs.forEach(r => { tallyFor(r.playerId, w.week); });
+
         w.courts.forEach(ct => ct.matches.forEach(match => {
           const score = getScore(leagueId, match.week, match.id);
           if (!score) return;
@@ -596,29 +617,64 @@ export default function App() {
           // and on screen; only what counts toward standings is capped.
           const pts = standingsPoints(hs, as);
           sideA.forEach(pid => {
-            if (!stats[pid]) return;
+            if (!perWeek[pid]) return;
             if (playerSatOutThisWeek(pid, match.week)) return;
-            stats[pid].pointsFor += pts.homePF;
-            stats[pid].pointsAgainst += pts.homePA;
+            const t = tallyFor(pid, match.week);
+            t.pointsFor += pts.homePF;
+            t.pointsAgainst += pts.homePA;
             // Raw score, not the capped PF - league Points has its own caps
             // (winner 11, loser 10) which differ from the PF caps.
-            stats[pid].points += leaguePoints(hs, aWon);
-            if (aWon) stats[pid].wins++; else stats[pid].losses++;
+            t.points += leaguePoints(hs, aWon);
+            if (aWon) t.wins++; else t.losses++;
           });
           sideB.forEach(pid => {
-            if (!stats[pid]) return;
+            if (!perWeek[pid]) return;
             if (playerSatOutThisWeek(pid, match.week)) return;
-            stats[pid].pointsFor += pts.awayPF;
-            stats[pid].pointsAgainst += pts.awayPA;
-            stats[pid].points += leaguePoints(as, !aWon);
-            if (!aWon) stats[pid].wins++; else stats[pid].losses++;
+            const t = tallyFor(pid, match.week);
+            t.pointsFor += pts.awayPF;
+            t.pointsAgainst += pts.awayPA;
+            t.points += leaguePoints(as, !aWon);
+            if (!aWon) t.wins++; else t.losses++;
           });
         }));
       });
-      return Object.entries(stats).map(([id, s]) => {
-        const matches = s.wins + s.losses;
-        const winPct = matches > 0 ? s.wins / matches : 0;
-        return { id, ...s, matches, winPct };
+
+      // How many weeks each player discards. Clamped so at least one week
+      // always survives, however the thresholds are later tuned.
+      const dropAllowance = usesLeaguePoints ? dropsForLockedWeeks(weeks.length) : 0;
+
+      return Object.entries(perWeek).map(([id, weekMap]) => {
+        const all = [...weekMap.entries()].map(([week, t]) => ({ week, ...t }));
+        const dropCount = Math.min(dropAllowance, Math.max(0, all.length - 1));
+
+        // Lowest Points first; ties broken by week number so the choice is
+        // deterministic rather than dependent on Map iteration order.
+        const droppedWeeks = dropCount > 0
+          ? [...all].sort((a, b) => a.points - b.points || a.week - b.week)
+              .slice(0, dropCount).map(x => x.week).sort((a, b) => a - b)
+          : [];
+        const dropped = new Set(droppedWeeks);
+
+        // A dropped week is excluded from EVERY stat, not just Points.
+        // Leaving its wins or PF in would let a discarded week decide a tie
+        // through Win% or +/-, which is exactly what dropping is meant to stop.
+        const agg = all.reduce((acc, x) => {
+          if (dropped.has(x.week)) return acc;
+          acc.wins += x.wins; acc.losses += x.losses;
+          acc.pointsFor += x.pointsFor; acc.pointsAgainst += x.pointsAgainst;
+          acc.points += x.points;
+          return acc;
+        }, blank());
+
+        const matches = agg.wins + agg.losses;
+        return {
+          id,
+          ...agg,
+          matches,
+          winPct: matches > 0 ? agg.wins / matches : 0,
+          droppedWeeks,
+          countedWeeks: all.length - droppedWeeks.length,
+        };
       }).sort((a, b) => {
         // D+D ranks on accumulated Points; every other format ranks on Win%.
         // Points already folds scoring and winning together, so Win% drops to

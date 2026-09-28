@@ -1,6 +1,6 @@
 # Next Up — Backlog
 
-**Status:** v1.10.0 is live. Everything previously in this file has shipped.
+**Status:** v1.11.0 is live. Everything previously in this file has shipped.
 Nothing is currently in progress or uncommitted.
 
 Read `PROJECT.md` first for architecture. This is the candidate list, roughly
@@ -27,6 +27,10 @@ combinatorial template); staleness-aware background refresh; one court per match
 
 **v1.10.0** — Players see all courts (scoring still scoped to their own);
 contrast audit with measured ratios; per-game standings points cap.
+
+**v1.11.0** — Points stat for D+D Weekly Partners: half a point per point
+scored plus 2 for a win, with per-side caps (winner 7.5, loser 5.0). D+D
+standings now rank on it; every other format still ranks on Win%.
 
 **Data work** — orphan rows purged; three duplicate player records merged; a
 junk club (created when someone pasted a join code into the club-name field)
@@ -75,6 +79,14 @@ for real users. A phase, not a session. **Don't start it mid-season.**
 - **`league_19` needs 4 more players** before it can generate.
 - **A stale `buildCourtMatches` doc comment** in `scheduling.js` ended up above
   the D+D template block during an edit; it now describes the wrong function.
+- **Decide whether PF and Points should reconcile.** They use different loser
+  caps (9 vs 10), so a 15–13 shows PF 9 beside Points 5.0 and the arithmetic
+  visibly doesn't work. Intended and documented, but if it draws questions,
+  moving the PF loser cap to 10 aligns them and changes no score under 10.
+- **Ladder rotation ignores check-ins.** `rankCourtPlayers()` never receives
+  them, so an absent player ranks on empty results and drifts down a court
+  rather than holding position. Needs a decision — hold or drop — before it's
+  worth coding. No live ladder leagues, so there's no urgency.
 
 ---
 
