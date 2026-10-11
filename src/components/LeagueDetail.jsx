@@ -2,7 +2,7 @@ import { useState } from "react";
 import { S, genderBadgeStyle } from "../styles.js";
 import { COLORS, COURT_COLORS, MAX_PER_COURT, MIN_PER_COURT, courtNames } from "../lib/constants.js";
 import { formatDate, formatPlayerName, playerFullName, playerInitial, formatPhone, openPlayWeeks, isOpenPlay } from "../lib/format.js";
-import { useIsMobile, buildDisplayWeeks } from "../lib/session.js";
+import { useIsMobile, buildDisplayWeeks, splitWeeksByStatus } from "../lib/session.js";
 import { distributePlayersToCourts } from "../lib/scheduling.js";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
@@ -309,7 +309,12 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               // Build these once per LeagueDetail render so all week cards
               // share the same stable references (helps any future React.memo)
               const getPlayerEmail = pid => db.players[pid]?.email;
-              return weeks.map(w => (
+              const { active, completed } = splitWeeksByStatus(weeks, isWeekLocked);
+              // The first still-open week is the one the commissioner almost
+              // always wants, so it opens by default instead of needing a tap.
+              const firstOpenWeek = active[0]?.week;
+
+              const card = (w) => (
                 <CourtWeekCard
                   key={w.week}
                   weekData={w}
@@ -325,12 +330,32 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                   onEditDateTime={onEditWeekDateTime}
                   onRebalance={onRebalanceWeek}
                   isLocked={isWeekLocked(w.week)}
+                  defaultExpanded={w.week === firstOpenWeek}
                   isAdmin
                   regs={regs}
                   getCheckInForPlayer={(pid) => getCheckIn(league.id, w.week, pid)}
                   onSetPlayerCheckIn={onSetPlayerCheckIn}
                 />
-              ));
+              );
+
+              return (
+                <>
+                  {active.map(card)}
+                  {completed.length > 0 && (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      margin: active.length > 0 ? "24px 0 12px" : "0 0 12px",
+                    }}>
+                      <div style={{ flex: 1, height: 1, background: "var(--color-border-tertiary)" }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                        🔒 {completed.length} completed week{completed.length !== 1 ? "s" : ""}
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: "var(--color-border-tertiary)" }} />
+                    </div>
+                  )}
+                  {completed.map(card)}
+                </>
+              );
             })()}
           </div>
         )}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { COLORS, CSC, MAX_PER_COURT } from "../lib/constants.js";
 import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime, todayISO, openPlayWeeks, isOpenPlay } from "../lib/format.js";
+import { splitWeeksByStatus } from "../lib/session.js";
 import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh, AppMark } from "./ui.jsx";
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
@@ -558,22 +559,52 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
                     </div>
                   )}
                   {myWeeks.length === 0 && <EmptyState msg="Schedule coming soon! Your matches will appear here once the commissioner generates the season." />}
-                  {myWeeks.map(w => (
-                    <CourtWeekCard
-                      key={w.week}
-                      weekData={w}
-                      league={selectedLeague}
-                      leagueId={selectedLeagueId}
-                      getScore={getScore}
-                      getPlayerName={getPlayerName}
-                      onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })}
-                      onSubmitScore={(home, away, match, actionId) => submitScoreInline(selectedLeagueId, home, away, match, actionId)}
-                      myId={player.id}
-                      isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"}
-                      isCurrentWeek={currentWeek?.week === w.week && selectedLeague.status !== "archived"}
-                      myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)}
-                      onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />
-                  ))}
+                  {(() => {
+                    // Completed weeks pile up at the top as a season runs and
+                    // push the week you actually need to score below the fold.
+                    // Locked weeks move to an archive section underneath, and
+                    // the first still-open week opens by default.
+                    const { active, completed } = splitWeeksByStatus(
+                      myWeeks,
+                      wk => isWeekLocked(selectedLeagueId, wk) || selectedLeague.status === "archived"
+                    );
+                    const firstOpenWeek = active[0]?.week;
+                    const card = (w) => (
+                      <CourtWeekCard
+                        key={w.week}
+                        weekData={w}
+                        league={selectedLeague}
+                        leagueId={selectedLeagueId}
+                        getScore={getScore}
+                        getPlayerName={getPlayerName}
+                        onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })}
+                        onSubmitScore={(home, away, match, actionId) => submitScoreInline(selectedLeagueId, home, away, match, actionId)}
+                        myId={player.id}
+                        isLocked={isWeekLocked(selectedLeagueId, w.week) || selectedLeague.status === "archived"}
+                        isCurrentWeek={currentWeek?.week === w.week && selectedLeague.status !== "archived"}
+                        defaultExpanded={w.week === firstOpenWeek}
+                        myCheckIn={getCheckIn(selectedLeagueId, w.week, player.id)}
+                        onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)} />
+                    );
+                    return (
+                      <>
+                        {active.map(card)}
+                        {completed.length > 0 && (
+                          <div style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            margin: active.length > 0 ? "24px 0 12px" : "0 0 12px",
+                          }}>
+                            <div style={{ flex: 1, height: 1, background: "var(--color-border-tertiary)" }} />
+                            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                              🔒 {completed.length} completed week{completed.length !== 1 ? "s" : ""}
+                            </span>
+                            <div style={{ flex: 1, height: 1, background: "var(--color-border-tertiary)" }} />
+                          </div>
+                        )}
+                        {completed.map(card)}
+                      </>
+                    );
+                  })()}
                 </div>
               );
             })()}

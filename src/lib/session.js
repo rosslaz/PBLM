@@ -76,6 +76,26 @@ export function sortLeagues(leagues) {
 // Round-Robin leagues already contain all weeks from generation.
 // Stored placeholders (from commissioner editing date/time before generation)
 // are kept as-is.
+// Split a week list into the ones still needing attention and the ones that
+// are done, preserving week order within each group.
+//
+// Locked is the dividing line, not "has scores": a fully-scored week that
+// hasn't been locked still needs the commissioner to lock it, so it belongs
+// with the active weeks rather than the archive.
+//
+// Exists because by mid-season the completed weeks pile up at the top of the
+// schedule and push the week you actually need to score below the fold.
+export function splitWeeksByStatus(weeks, isLocked) {
+  const active = [];
+  const completed = [];
+  (weeks || []).forEach(w => {
+    (isLocked(w.week) ? completed : active).push(w);
+  });
+  return { active, completed };
+}
+
+// Pad a league's stored schedule out to its full week count, inserting
+// placeholders for any weeks not yet generated.
 export function buildDisplayWeeks(league, schedule) {
   const real = (schedule?.weeks || []);
   const totalWeeks = league.weeks || 0;

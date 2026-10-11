@@ -156,8 +156,11 @@ function InlineScoreEntry({ match, onSubmit, accentColor }) {
 // isAdmin: full commissioner access
 // league: the league record (used to resolve league-level court defaults)
 // onSetPlayerCheckIn: (v1.6.0) admin-only — set any player's RSVP on their behalf
-export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, myCheckIn, onSetCheckIn, onSetPlayerCheckIn, regs, getCheckInForPlayer }) {
-  const [expanded, setExpanded] = useState(false);
+export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, defaultExpanded = false, myCheckIn, onSetCheckIn, onSetPlayerCheckIn, regs, getCheckInForPlayer }) {
+  // Opens expanded when this is the week the user is most likely to act on
+  // (the first week still unlocked). Everything else stays collapsed so a
+  // mid-season schedule remains scannable.
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const isMobile = useIsMobile();
 
   // Compute the time summary for the week header.
