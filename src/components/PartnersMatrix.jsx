@@ -38,6 +38,32 @@ function weekPartnerships(week) {
 
 const pairKey = (a, b) => [a, b].sort().join("|");
 
+// Column headers use initials rather than numbers, so a square can be read
+// without counting across to a key.
+//
+// Built from the already-formatted display name ("Ross L." -> "RL") so it
+// follows whatever naming convention the rest of the app uses. Initials can
+// collide with eight players, so any duplicates get a trailing index - the
+// full name is still on the row label and in each cell's tooltip, making the
+// header a pointer rather than the only identification.
+function buildInitials(ids, getPlayerName) {
+  const raw = ids.map(id => {
+    const parts = String(getPlayerName(id) || "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    const first = parts[0][0] || "";
+    const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+    return (first + last).toUpperCase().replace(/[^A-Z0-9]/g, "") || "?";
+  });
+  const seen = {};
+  raw.forEach(v => { seen[v] = (seen[v] || 0) + 1; });
+  const used = {};
+  return raw.map(v => {
+    if (seen[v] === 1) return v;
+    used[v] = (used[v] || 0) + 1;
+    return `${v}${used[v]}`;
+  });
+}
+
 export function PartnersMatrix({ playerIds, weeks, isWeekLocked, getPlayerName, color, myId }) {
   const c = color || COLORS.csc;
   const isMobile = useIsMobile();
@@ -83,6 +109,7 @@ export function PartnersMatrix({ playerIds, weeks, isWeekLocked, getPlayerName, 
     }
   }
   const neverMet = totalPairs - metOnce - metTwice;
+  const initials = buildInitials(ordered, getPlayerName);
 
   // Cell styling. Hardcoded colour pairs rather than a fixed background with
   // theme-variable text - that combination is exactly what produced the
@@ -166,7 +193,7 @@ export function PartnersMatrix({ playerIds, weeks, isWeekLocked, getPlayerName, 
                 Player
               </th>
               {ordered.map((id, i) => (
-                <th key={id} style={headCell} title={getPlayerName(id)}>{i + 1}</th>
+                <th key={id} style={headCell} title={getPlayerName(id)}>{initials[i]}</th>
               ))}
             </tr>
           </thead>
@@ -183,7 +210,7 @@ export function PartnersMatrix({ playerIds, weeks, isWeekLocked, getPlayerName, 
                     fontWeight: isMyRow ? 700 : 400,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}>
-                    <span style={{ color: "var(--color-text-tertiary)", marginRight: 6, fontSize: 11 }}>{ri + 1}</span>
+                    <span style={{ color: "var(--color-text-tertiary)", marginRight: 6, fontSize: 11 }}>{initials[ri]}</span>
                     {getPlayerName(rowId)}
                   </td>
                   {ordered.map(colId => {
@@ -210,7 +237,7 @@ export function PartnersMatrix({ playerIds, weeks, isWeekLocked, getPlayerName, 
       </div>
 
       <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: SPACE.sm }}>
-        Numbered columns match the numbered rows. Hover or tap a square for the full pairing.
+        Column initials match the row labels. Hover or tap a square for the full pairing.
       </p>
     </div>
   );
