@@ -1,6 +1,7 @@
 import { useState, Fragment } from "react";
-import { S } from "../styles.js";
-import { CSC, COLORS, SPACE } from "../lib/constants.js";
+import { S, accentText, accentTint } from "../styles.js";
+import { pressable } from "../lib/a11y.js";
+import { COLORS, SPACE } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 import { formatPoints } from "../lib/scoring.js";
 import { EmptyState } from "./ui.jsx";
@@ -246,14 +247,23 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                 <tr
                   onClick={() => hasBreakdown && toggleOpen(s.id)}
                   style={{
-                    background: isMe ? c.light : i%2===0 ? "transparent" : "var(--color-background-secondary)",
+                    background: isMe ? accentTint(c.bg) : i%2===0 ? "transparent" : "var(--color-background-secondary)",
                     borderTop: "0.5px solid var(--color-border-tertiary)",
                     cursor: hasBreakdown ? "pointer" : "default",
                   }}>
-                  <td style={{ padding: "12px 12px", fontWeight: isMe?700:400, color: isMe?c.bg:"var(--color-text-primary)" }}>
+                  <td style={{ padding: "12px 12px", fontWeight: isMe?700:400, color: isMe?accentText(c.bg):"var(--color-text-primary)" }}>
                     <span style={{ marginRight: 8, color: "var(--color-text-tertiary)", fontSize: 12 }}>#{i+1}</span>
                     <TrendArrow trend={s.trend} />
-                    {getPlayerName(s.id)}
+                    {hasBreakdown ? (
+                      // v1.15.2 — a real button so the drill-down is reachable
+                      // by keyboard. No onClick of its own: the click bubbles to
+                      // the row's handler, so mouse and keyboard share one path.
+                      <button type="button" aria-expanded={isOpen}
+                        aria-label={`${getPlayerName(s.id)} — ${isOpen ? "hide" : "show"} week-by-week stats`}
+                        style={{ background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
+                        {getPlayerName(s.id)}
+                      </button>
+                    ) : getPlayerName(s.id)}
                     {isMe && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>You</span>}
                     {showPoints && s.droppedWeeks?.length > 0 && (
                       <span
@@ -263,7 +273,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                       </span>
                     )}
                     {hasBreakdown && (
-                      <span style={{
+                      <span aria-hidden="true" style={{
                         marginLeft: 8, fontSize: 10, color: "var(--color-text-tertiary)",
                         display: "inline-block",
                         transform: isOpen ? "rotate(180deg)" : "none",
@@ -272,16 +282,16 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                     )}
                   </td>
                   {showPoints && (
-                    <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:700,fontSize:16,color:isMe?c.bg:"var(--color-text-primary)" }}>
+                    <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:700,fontSize:16,color:isMe?accentText(c.bg):"var(--color-text-primary)" }}>
                       {formatPoints(s.points || 0)}
                     </td>
                   )}
-                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:showPoints?500:700,fontSize:14,color:showPoints?"var(--color-text-secondary)":(isMe?c.bg:"var(--color-text-primary)") }}>
+                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:showPoints?500:700,fontSize:14,color:showPoints?"var(--color-text-secondary)":(isMe?accentText(c.bg):"var(--color-text-primary)") }}>
                     {s.matches > 0 ? `${Math.round(s.winPct * 100)}%` : "—"}
                   </td>
-                  <td style={{ padding:"12px 8px",textAlign:"center",color:diff>=0?CSC.blue:"#A32D2D",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
-                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:600,color:CSC.blue }}>{s.wins}</td>
-                  <td style={{ padding:"12px 8px",textAlign:"center",color:"#A32D2D" }}>{s.losses}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",color:diff>=0?"var(--color-text-info)":"var(--color-text-danger)",fontWeight:700,fontSize:15 }}>{diff>0?"+":""}{diff}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",fontWeight:600,color:"var(--color-text-info)" }}>{s.wins}</td>
+                  <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-danger)" }}>{s.losses}</td>
                   <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsFor}</td>
                   <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsAgainst}</td>
                 </tr>
@@ -340,9 +350,11 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
   const hasBreakdown = (stat.weekly || []).length > 0;
   return (
     <div
-      onClick={() => hasBreakdown && onToggle && onToggle()}
+      {...(hasBreakdown && onToggle
+        ? pressable(onToggle, { expanded: isOpen, label: `${name} — ${isOpen ? "hide" : "show"} week-by-week stats` })
+        : {})}
       style={{
-        background: isMe ? c.light : "var(--color-background-primary)",
+        background: isMe ? accentTint(c.bg) : "var(--color-background-primary)",
         border: isMe ? `1px solid ${c.bg}40` : "0.5px solid var(--color-border-tertiary)",
         borderRadius: 10,
         padding: `${SPACE.md}px ${SPACE.lg}px`,
@@ -364,7 +376,7 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
           flex: 1,
           fontSize: 15,
           fontWeight: isMe ? 700 : 600,
-          color: isMe ? c.bg : "var(--color-text-primary)",
+          color: isMe ? accentText(c.bg) : "var(--color-text-primary)",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -378,7 +390,7 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
           </span>
         )}
         {hasBreakdown && (
-          <span style={{
+          <span aria-hidden="true" style={{
             fontSize: 11, color: "var(--color-text-tertiary)",
             display: "inline-block",
             transform: isOpen ? "rotate(180deg)" : "none",
@@ -401,7 +413,7 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
           value={showPoints
             ? formatPoints(stat.points || 0)
             : (hasMatches ? `${Math.round(stat.winPct * 100)}%` : "—")}
-          color={isMe ? c.bg : "var(--color-text-primary)"}
+          color={isMe ? accentText(c.bg) : "var(--color-text-primary)"}
         />
         <HeadlineStat
           label={showPoints ? "Win%" : "+/-"}
@@ -409,8 +421,8 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
             ? (hasMatches ? `${Math.round(stat.winPct * 100)}%` : "—")
             : (hasMatches ? `${diff > 0 ? "+" : ""}${diff}` : "—")}
           color={showPoints
-            ? (isMe ? c.bg : "var(--color-text-primary)")
-            : (!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? CSC.blue : "#A32D2D")}
+            ? (isMe ? accentText(c.bg) : "var(--color-text-primary)")
+            : (!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? "var(--color-text-info)" : "var(--color-text-danger)")}
         />
       </div>
 
@@ -422,13 +434,13 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
         gap: SPACE.xs,
         marginTop: SPACE.sm,
       }}>
-        <DetailStat label="W" value={stat.wins} color={CSC.blue} />
-        <DetailStat label="L" value={stat.losses} color="#A32D2D" />
+        <DetailStat label="W" value={stat.wins} color="var(--color-text-info)" />
+        <DetailStat label="L" value={stat.losses} color="var(--color-text-danger)" />
         {showPoints && (
           <DetailStat
             label="+/-"
             value={hasMatches ? `${diff > 0 ? "+" : ""}${diff}` : "—"}
-            color={!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? CSC.blue : "#A32D2D"} />
+            color={!hasMatches ? "var(--color-text-tertiary)" : diff >= 0 ? "var(--color-text-info)" : "var(--color-text-danger)"} />
         )}
         <DetailStat label="PF" value={stat.pointsFor} color="var(--color-text-secondary)" />
         <DetailStat label="PA" value={stat.pointsAgainst} color="var(--color-text-secondary)" />
@@ -448,11 +460,11 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
           textAlign: "center",
         }}>
           {aheadDiff > 0 && (
-            <span>Behind #{rank - 1} by <strong style={{ color: "#A32D2D" }}>{aheadDiff}</strong></span>
+            <span>Behind #{rank - 1} by <strong style={{ color: "var(--color-text-danger)" }}>{aheadDiff}</strong></span>
           )}
           {aheadDiff > 0 && behindDiff > 0 && <span> · </span>}
           {behindDiff > 0 && (
-            <span>Ahead of #{rank + 1} by <strong style={{ color: CSC.blue }}>{behindDiff}</strong></span>
+            <span>Ahead of #{rank + 1} by <strong style={{ color: "var(--color-text-info)" }}>{behindDiff}</strong></span>
           )}
         </p>
       )}
@@ -537,7 +549,7 @@ function TrendArrow({ trend }) {
         marginRight: 6,
         fontSize: 11,
         fontWeight: 700,
-        color: up ? "#3B6D11" : "#A32D2D",
+        color: up ? "var(--color-text-success)" : "var(--color-text-danger)",
         lineHeight: 1,
       }}>
       {up ? "▲" : "▼"}

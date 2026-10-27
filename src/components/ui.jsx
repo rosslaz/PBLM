@@ -190,8 +190,9 @@ export function AvatarMenu({ initial, items, ariaLabel = "Account menu" }) {
         onClick={() => setOpen(v => !v)}
         style={{
           width: 36, height: 36, borderRadius: "50%",
-          background: "rgba(255,255,255,0.2)",
-          border: "1px solid rgba(255,255,255,0.4)",
+          // v1.15.2 — dark overlay, not white: see headerBtn in styles.js.
+          background: "rgba(0,0,0,0.18)",
+          border: "1px solid rgba(255,255,255,0.45)",
           color: "#fff",
           fontSize: 15,
           fontWeight: 700,
@@ -378,8 +379,9 @@ export function RefreshButton({ onClick, isRefreshing, disabled, alwaysShow }) {
       disabled={disabled || isBusy}
       style={{
         width: 32, height: 32, borderRadius: "50%",
-        background: "rgba(255,255,255,0.15)",
-        border: "0.5px solid rgba(255,255,255,0.3)",
+        // v1.15.2 — dark overlay, not white: see headerBtn in styles.js.
+        background: "rgba(0,0,0,0.18)",
+        border: "0.5px solid rgba(255,255,255,0.45)",
         color: "#fff",
         cursor: (disabled || isBusy) ? "default" : "pointer",
         opacity: disabled ? 0.4 : 1,
@@ -514,7 +516,6 @@ export function PullToRefresh({ children, onRefresh, isRefreshing }) {
       document.removeEventListener("touchcancel", onTouchEnd);
     };
     // Empty deps — listeners mount once and use refs for live state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const visible = pullDistance > 0 || isRefreshing || committing;
@@ -614,12 +615,12 @@ export function PWAInstallBanner() {
     if (!isIOSSafari()) return;
     try {
       if (localStorage.getItem(PWA_DISMISS_KEY)) return;
-    } catch (_) { /* localStorage unavailable — show anyway */ }
+    } catch { /* localStorage unavailable — show anyway */ }
     setVisible(true);
   }, []);
 
   function dismiss() {
-    try { localStorage.setItem(PWA_DISMISS_KEY, "1"); } catch (_) {}
+    try { localStorage.setItem(PWA_DISMISS_KEY, "1"); } catch {}
     setVisible(false);
   }
 

@@ -1,7 +1,7 @@
 # Pickleball League Manager — Setup & Deployment
 
 **Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
-**Current version:** 1.15.1
+**Current version:** 1.15.2
 
 This guide covers standing up a fresh instance from scratch. If you're picking
 up the existing deployment, read `PROJECT.md` instead — this file is for
@@ -186,7 +186,7 @@ pickleball-deploy/
     ├── styles.js             ← S.* style objects
     ├── index.css             ← CSS variables, resets, PWA safe-area
     ├── lib/                  ← constants, clubs, format, session,
-    │                            scheduling, scoring, supabase, backup
+    │                            scheduling, scoring, supabase, backup, a11y
     └── components/           ← ~25 components (see PROJECT.md)
 ```
 
@@ -275,7 +275,10 @@ have. A blocked write is honest; a silently lost one isn't.
 
 ### Updates after a deploy
 
-A new build's service worker installs, precaches, and then **waits**. The app
+The app checks for a new version whenever it's reopened or brought back to the
+foreground (and hourly while open), so an installed copy on a phone notices a
+deploy without being fully closed. A new build's service worker installs,
+precaches, and then **waits**. The app
 shows a blue **"A new version is available · Reload"** banner, and only when the
 user clicks Reload does the new worker activate and the page refresh.
 

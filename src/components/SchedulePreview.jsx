@@ -10,7 +10,7 @@
 // NOT re-run; the rest of the schedule is left alone. Commit writes the
 // edited proposal as-is.
 import { useState, useEffect } from "react";
-import { S } from "../styles.js";
+import { S, accentText } from "../styles.js";
 import { CSC, COURT_COLORS, MIN_PER_COURT, MAX_PER_COURT } from "../lib/constants.js";
 import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime } from "../lib/format.js";
 import { useIsMobile } from "../lib/session.js";
@@ -39,7 +39,7 @@ function WeekEditor({ week, league, onChange, playerNamesById, onDone }) {
     try {
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", `${playerId}|${fromCourtIdx}`);
-    } catch (_) { /* some browsers throw on restricted setData */ }
+    } catch { /* some browsers throw on restricted setData */ }
   }
 
   function handleDragEnd() {
@@ -173,14 +173,14 @@ function WeekEditor({ week, league, onChange, playerNamesById, onDone }) {
               }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
-                <span style={{ fontWeight: 700, fontSize: 11, color, letterSpacing: "0.4px" }}>
+                <span style={{ fontWeight: 700, fontSize: 11, color: accentText(color), letterSpacing: "0.4px" }}>
                   {displayName.toUpperCase()}
                 </span>
                 <span style={{
                   marginLeft: "auto",
                   fontSize: 11,
                   fontWeight: 600,
-                  color: status === "ok" ? "var(--color-text-tertiary)" : "#A32D2D",
+                  color: status === "ok" ? "var(--color-text-tertiary)" : "var(--color-text-danger)",
                 }}>
                   {court.players.length} player{court.players.length !== 1 ? "s" : ""}
                 </span>
@@ -249,11 +249,11 @@ function PreviewWeek({ week, league, canEdit, onEditClick }) {
         return (
           <div key={court.courtName} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: color + "12", border: `0.5px solid ${color}40` }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
-            <span style={{ fontWeight: 700, fontSize: 11, color, letterSpacing: "0.4px", minWidth: 60 }}>
+            <span style={{ fontWeight: 700, fontSize: 11, color: accentText(color), letterSpacing: "0.4px", minWidth: 60 }}>
               {displayName.toUpperCase()}
             </span>
             {showCourtTime && (
-              <span style={{ fontSize: 11, fontWeight: 600, color, opacity: 0.85 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: accentText(color) }}>
                 {formatTime(courtTime)}
               </span>
             )}

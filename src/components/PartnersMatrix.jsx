@@ -1,4 +1,5 @@
 import { COLORS, SPACE } from "../lib/constants.js";
+import { accentText, accentTint } from "../styles.js";
 import { useIsMobile } from "../lib/session.js";
 import { EmptyState } from "./ui.jsx";
 
@@ -201,12 +202,12 @@ export function PartnersMatrix({ playerIds, weeks, isWeekLocked, getPlayerName, 
             {ordered.map((rowId, ri) => {
               const isMyRow = myId && rowId === myId;
               return (
-                <tr key={rowId} style={{ background: isMyRow ? c.light : "transparent" }}>
+                <tr key={rowId} style={{ background: isMyRow ? accentTint(c.bg) : "transparent" }}>
                   <td style={{
                     padding: isMobile ? "7px 8px" : "9px 12px",
                     fontSize: isMobile ? 12 : 13,
                     borderTop: "0.5px solid var(--color-border-tertiary)",
-                    color: isMyRow ? c.bg : "var(--color-text-primary)",
+                    color: isMyRow ? accentText(c.bg) : "var(--color-text-primary)",
                     fontWeight: isMyRow ? 700 : 400,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}>
@@ -249,11 +250,14 @@ function LegendSwatch({ bg, fg, label, border }) {
       <span style={{
         width: 14, height: 14, borderRadius: 3,
         background: bg,
-        border: border ? "1px solid var(--color-border-secondary)" : "none",
+        border: border ? "1px solid var(--color-border-secondary)" : (fg ? `1px solid ${fg}` : "none"),
         display: "inline-block",
         flexShrink: 0,
       }} />
-      <span style={{ color: fg || "var(--color-text-secondary)" }}>{label}</span>
+      {/* v1.15.2 — label in the theme's secondary colour. In the swatch's own
+          colour it measured 2.4-3.2:1 on the dark page; the swatch already
+          carries the colour, so the text doesn't need to. */}
+      <span style={{ color: "var(--color-text-secondary)" }}>{label}</span>
     </span>
   );
 }

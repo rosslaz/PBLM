@@ -89,8 +89,11 @@ VALUES (1, ARRAY['ross.lazar@gmail.com'], '{"league":1,"player":1}')
 ON CONFLICT (id) DO NOTHING;
 
 -- ── Auto-update timestamps on every write ────────────────────────────────────
+-- SET search_path = '' pins name resolution so the function can't be steered by
+-- a caller's search_path (Supabase security advisor 0011). now() lives in
+-- pg_catalog, which is always searched, so the body needs no qualification.
 CREATE OR REPLACE FUNCTION pb_touch_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $$;
 

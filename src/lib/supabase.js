@@ -361,7 +361,8 @@ export async function dbRestoreLeague(id) {
   const { data: existing, error: e1 } = await supabase
     .from("pb_leagues").select("data").eq("id", id).single();
   if (e1) throw e1;
-  const { deletedAt, ...rest } = existing.data;
+  const rest = { ...existing.data };
+  delete rest.deletedAt;
   const { error } = await supabase.from("pb_leagues").upsert({ id, data: rest });
   if (error) throw error;
 }
@@ -670,7 +671,8 @@ export async function dbRestorePlayer(playerId) {
   const { data: existing, error: e1 } = await supabase
     .from("pb_players").select("data").eq("id", playerId).single();
   if (e1) throw e1;
-  const { deletedAt, ...rest } = existing.data;
+  const rest = { ...existing.data };
+  delete rest.deletedAt;
   const { error } = await supabase.from("pb_players").upsert({ id: playerId, data: rest });
   if (error) throw error;
 }

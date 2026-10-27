@@ -68,7 +68,6 @@ export function CheckInRow({ current, currentSubName, setByAdmin, onSet, isLocke
       >
         {CHECKIN_OPTS.map((opt, i) => {
           const active = current === opt.key;
-          const isFirst = i === 0;
           // Each segment shares its right border with the next segment's left,
           // so we render the right border on every segment except the last.
           const isLast = i === CHECKIN_OPTS.length - 1;

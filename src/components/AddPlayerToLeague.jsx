@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { pressable } from "../lib/a11y.js";
 import { S, genderBadgeStyle } from "../styles.js";
 import { CSC } from "../lib/constants.js";
 import { formatPlayerName, playerInitial, playerSearchString, playerFitsLeagueGender } from "../lib/format.js";
@@ -41,7 +42,7 @@ export function AddPlayerToLeague({ players, leagueId, leagueGender, existing, o
       )}
       <div style={{ maxHeight: 300, overflowY: "auto" }}>
         {available.map(p => (
-          <div key={p.id} style={{ ...S.card, marginBottom: 8, cursor: "pointer", padding: "12px 16px" }} onClick={() => { onRegister(leagueId, p.id); onClose(); }}>
+          <div key={p.id} style={{ ...S.card, marginBottom: 8, cursor: "pointer", padding: "12px 16px" }} {...pressable(() => { onRegister(leagueId, p.id); onClose(); }, { label: `Add ${formatPlayerName(p)}` })}>
             <div style={S.row}>
               <div style={{ width: 36, height: 36, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 14, flexShrink: 0 }}>{playerInitial(p)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>

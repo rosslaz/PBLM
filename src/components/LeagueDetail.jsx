@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { S, genderBadgeStyle } from "../styles.js";
+import { S, genderBadgeStyle, accentText, accentTint } from "../styles.js";
 import { COLORS, COURT_COLORS, MAX_PER_COURT, MIN_PER_COURT, courtNames } from "../lib/constants.js";
 import { formatDate, formatPlayerName, playerFullName, playerInitial, formatPhone, openPlayWeeks, isOpenPlay } from "../lib/format.js";
 import { useIsMobile, buildDisplayWeeks, splitWeeksByStatus } from "../lib/session.js";
@@ -210,10 +210,13 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
   return (
     <div>
       {/* Banner */}
-      <div style={{ ...S.card, margin: "16px 20px", borderLeft: `4px solid ${c.bg}`, background: c.light }}>
+      {/* v1.15.2 — tinted into the theme's card colour rather than the pale
+          hardcoded c.light, whose Edit / Archive buttons (theme text) measured
+          1.1:1 in dark mode. */}
+      <div style={{ ...S.card, margin: "16px 20px", borderLeft: `4px solid ${c.bg}`, background: accentTint(c.bg) }}>
         <div style={{ ...S.row, justifyContent: "space-between", flexWrap: "wrap", rowGap: 12 }}>
           <div>
-            <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text, fontWeight: 600 }}>
+            <p style={{ margin: "0 0 4px", fontSize: 13, color: accentText(c.bg), fontWeight: 600 }}>
               {league.gender || "Mixed"} · {league.format || "Singles"} · {league.weeks} weeks
               <span style={{ ...S.badge(league.competitionType === "ladder" ? "purple" : league.competitionType === "open" ? "success" : league.competitionType === "dd_partners" ? "purple" : "info"), marginLeft: 8, fontSize: 10 }}>
                 {league.competitionType === "ladder" ? "🪜 Ladder" : league.competitionType === "open" ? "🌓 Open Play" : league.competitionType === "dd_partners" ? "🤝 Weekly Partners" : "🔀 Round-Robin"}
@@ -221,8 +224,8 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               {league.status === "archived" && <span style={{ ...S.badge("warning"), marginLeft: 8, fontSize: 10 }}>📦 Archived</span>}
               {league.status === "completed" && <span style={{ ...S.badge("info"), marginLeft: 8, fontSize: 10 }}>Completed</span>}
             </p>
-            <p style={{ margin: "0 0 4px", fontSize: 13, color: c.text }}>{n} players · {paidCount} paid · Starts {formatDate(league.startDate)}</p>
-            {league.location && <p style={{ margin: 0, fontSize: 13, color: c.text }}>📍 {league.location}</p>}
+            <p style={{ margin: "0 0 4px", fontSize: 13, color: "var(--color-text-primary)" }}>{n} players · {paidCount} paid · Starts {formatDate(league.startDate)}</p>
+            {league.location && <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-primary)" }}>📍 {league.location}</p>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button style={S.btnSm("secondary")} onClick={onEdit}>Edit</button>
@@ -231,7 +234,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                 {league.status === "archived" ? "Unarchive" : "Archive"}
               </button>
             )}
-            <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D" }} onClick={onDelete}>Delete</button>
+            <button style={{ ...S.btnSm("secondary"), color: "var(--color-text-danger)", borderColor: "var(--color-text-danger)" }} onClick={onDelete}>Delete</button>
           </div>
         </div>
       </div>
@@ -333,15 +336,15 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                             <span style={{ color: "#fff", fontSize: 20, fontWeight: 700 }}>{sz}</span>
                             {full && <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 10, display: "block", marginTop: -2 }}>FULL</span>}
                           </div>
-                        ) : <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>–</span>}
+                        ) : <span aria-hidden="true" style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>–</span>}
                       </div>
-                      <p style={{ margin: "8px 0 0", fontSize: 11, color: sz ? color : "var(--color-text-tertiary)", fontWeight: sz ? 600 : 400 }}>{name}</p>
+                      <p style={{ margin: "8px 0 0", fontSize: 11, color: sz ? accentText(color) : "var(--color-text-tertiary)", fontWeight: sz ? 600 : 400 }}>{name}</p>
                     </div>
                   );
                 })}
               </div>
-              {capacityOk && n < maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#854F0B" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
-              {capacityOk && n === maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "#3B6D11" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
+              {capacityOk && n < maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--color-text-warning)" }}>{maxPlayers-n} more player{maxPlayers-n!==1?"s":""} needed for {numCourts} full court{numCourts!==1?"s":""} of {MAX_PER_COURT}.</p>}
+              {capacityOk && n === maxPlayers && <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--color-text-success)" }}>✓ Perfect — {numCourts} court{numCourts!==1?"s":""} of {MAX_PER_COURT} players each.</p>}
             </div>
             )}
 
@@ -365,7 +368,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                   {scheduleState.title}
                 </p>
                 {scheduleState.hint && (
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: stateStyle.text, opacity: 0.85 }}>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: stateStyle.text }}>
                     {scheduleState.hint}
                   </p>
                 )}
@@ -482,12 +485,12 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                     </div>
                   </div>
                   <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 8 }}>
-                    <button style={r.paid ? { ...S.btnSm("secondary"), color: "#854F0B", borderColor: "#854F0B", fontSize: 11 } : { ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onTogglePaid(p.id)}>
+                    <button style={r.paid ? { ...S.btnSm("secondary"), color: "var(--color-text-warning)", borderColor: "var(--color-text-warning)", fontSize: 11 } : { ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onTogglePaid(p.id)}>
                       {r.paid ? "Undo Payment" : "Mark as Paid"}
                     </button>
                     {!rosterLocked && (
                       <button
-                        style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }}
+                        style={{ ...S.btnSm("secondary"), color: "var(--color-text-danger)", borderColor: "var(--color-text-danger)", fontSize: 11 }}
                         onClick={() => {
                           // Say what does and doesn't happen — the old wording
                           // gave no hint that the schedule was at stake.

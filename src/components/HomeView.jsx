@@ -178,7 +178,7 @@ export function HomeView({ hasBanner, leagues, players, db, onPlayerLogin, onCre
                   {playerFullName(rememberedPlayer)}
                 </p>
               </div>
-              <span style={{ fontSize: 22, color: CSC.blue, flexShrink: 0 }}>›</span>
+              <span aria-hidden="true" style={{ fontSize: 22, color: CSC.blue, flexShrink: 0 }}>›</span>
             </button>
             <div style={{
               borderTop: "0.5px solid var(--color-border-tertiary)",
@@ -259,7 +259,7 @@ export function HomeView({ hasBanner, leagues, players, db, onPlayerLogin, onCre
             onClick={() => setModal({ type: "createClub" })}
             style={{
               background: "none", border: "none", padding: 0,
-              color: CSC.blue, textDecoration: "underline",
+              color: "var(--color-text-info)", textDecoration: "underline",
               cursor: "pointer", fontFamily: "inherit", fontSize: 13,
               fontWeight: 600,
             }}>
@@ -271,7 +271,7 @@ export function HomeView({ hasBanner, leagues, players, db, onPlayerLogin, onCre
             onClick={() => setModal({ type: "joinClub" })}
             style={{
               background: "none", border: "none", padding: 0,
-              color: CSC.blue, textDecoration: "underline",
+              color: "var(--color-text-info)", textDecoration: "underline",
               cursor: "pointer", fontFamily: "inherit", fontSize: 13,
               fontWeight: 600,
             }}>

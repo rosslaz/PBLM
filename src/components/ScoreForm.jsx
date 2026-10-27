@@ -151,6 +151,10 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
       fontWeight: 600,
       border,
       background: bg,
+      // v1.15.2 — the winner's field switches to a hardcoded pale green, so its
+      // digits need a hardcoded dark colour too; inheriting the theme's text
+      // colour put near-white digits on pale green (1.1:1) in dark mode.
+      ...(bg === "#EAF3DE" ? { color: "#1F3D08" } : {}),
       transition: "background-color 160ms ease, border-color 160ms ease",
     };
   };
@@ -170,8 +174,9 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 12, alignItems: "end", marginBottom: 12 }}>
         <div style={{ textAlign: "center" }}>
-          <label style={{ ...S.label, textAlign: "center", whiteSpace: "normal" }}>{labelA}</label>
+          <label htmlFor="score-home" style={{ ...S.label, textAlign: "center", whiteSpace: "normal" }}>{labelA}</label>
           <input
+            id="score-home"
             ref={homeRef}
             className="score-input"
             style={fieldStyle(home !== "", homeWins)}
@@ -192,8 +197,9 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
         </div>
         <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 22, paddingBottom: 14 }}>–</div>
         <div style={{ textAlign: "center" }}>
-          <label style={{ ...S.label, textAlign: "center", whiteSpace: "normal" }}>{labelB}</label>
+          <label htmlFor="score-away" style={{ ...S.label, textAlign: "center", whiteSpace: "normal" }}>{labelB}</label>
           <input
+            id="score-away"
             ref={awayRef}
             className="score-input"
             style={fieldStyle(away !== "", awayWins)}

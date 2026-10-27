@@ -59,7 +59,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
             const lc = COLORS[l.color] || COLORS.csc;
             const eta = purgeETA(l.deletedAt);
             return (
-              <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}`, opacity: 0.85 }}>
+              <div key={l.id} style={{ ...S.card, borderLeft: `4px solid ${lc.bg}` }}>
                 <div style={S.row}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 15 }}>{l.name}</p>
@@ -69,7 +69,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
                     <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
                       Deleted {deletedAgo(l.deletedAt)}
                       {eta && (
-                        <span style={{ marginLeft: 8, color: eta.urgent ? "#A32D2D" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
+                        <span style={{ marginLeft: 8, color: eta.urgent ? "var(--color-text-danger)" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
                           · {eta.label}
                         </span>
                       )}
@@ -79,7 +79,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
                     <button style={{ ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onRestoreLeague(l)}>
                       Restore
                     </button>
-                    <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }} onClick={() => onHardDeleteLeague(l)}>
+                    <button style={{ ...S.btnSm("secondary"), color: "var(--color-text-danger)", borderColor: "var(--color-text-danger)", fontSize: 11 }} onClick={() => onHardDeleteLeague(l)}>
                       Delete Forever
                     </button>
                   </div>
@@ -102,7 +102,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
             const eta = purgeETA(p.deletedAt);
             return (
               <div key={p.id} style={S.card}>
-                <div style={{ ...S.row, opacity: 0.85 }}>
+                <div style={{ ...S.row }}>
                   <div style={{ width: 38, height: 38, borderRadius: "50%", background: CSC.blueLight, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: CSC.blue, fontSize: 14, flexShrink: 0 }}>
                     {playerInitial(p)}
                   </div>
@@ -112,7 +112,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
                     <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
                       Deleted {deletedAgo(p.deletedAt)}
                       {eta && (
-                        <span style={{ marginLeft: 8, color: eta.urgent ? "#A32D2D" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
+                        <span style={{ marginLeft: 8, color: eta.urgent ? "var(--color-text-danger)" : "var(--color-text-tertiary)", fontWeight: eta.urgent ? 600 : 400 }}>
                           · {eta.label}
                         </span>
                       )}
@@ -122,7 +122,7 @@ export function TrashTab({ trashedLeagues, trashedPlayers, onRestoreLeague, onRe
                     <button style={{ ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onRestorePlayer(p)}>
                       Restore
                     </button>
-                    <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }} onClick={() => onHardDeletePlayer(p)}>
+                    <button style={{ ...S.btnSm("secondary"), color: "var(--color-text-danger)", borderColor: "var(--color-text-danger)", fontSize: 11 }} onClick={() => onHardDeletePlayer(p)}>
                       Delete Forever
                     </button>
                   </div>

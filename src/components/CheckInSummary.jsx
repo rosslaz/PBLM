@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { pressable } from "../lib/a11y.js";
 import { S } from "../styles.js";
 import { CHECKIN_OPTS } from "../lib/constants.js";
 
@@ -201,7 +202,7 @@ export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPl
     <div style={{ margin: "12px 16px 0", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: "var(--color-background-secondary)", overflow: "hidden" }}>
       <div
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", cursor: "pointer" }}
-        onClick={() => setExpanded(!expanded)}>
+        {...pressable(() => setExpanded(!expanded), { expanded, label: "Check-ins" })}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 600 }}>Check-ins:</span>
           <span style={{ ...S.badge("success"), fontSize: 11 }}>✓ {counts.in} in</span>
@@ -230,17 +231,19 @@ export function CheckInSummary({ regs, getCheckInForPlayer, getPlayerName, getPl
             onClick={e => { e.stopPropagation(); copyReport(); }}>
             Copy Report
           </button>
-          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+          <span aria-hidden="true" style={{ fontSize: 11, color: "var(--color-text-tertiary)", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
         </div>
       </div>
       {expanded && (
         <div style={{ padding: "0 12px 10px" }}>
           {[
-            ["in", "In", "#3B6D11"],
-            ["maybe", "Maybe", "#854F0B"],
-            ["sub", "Sub (found a sub)", "#534AB7"],
-            ["out", "Out", "#A32D2D"],
-            ["none", "No response", "#78716c"],
+            // v1.15.2 — theme-aware text colours (the raw hexes measured
+            // 2.2-2.4:1 on the dark card).
+            ["in", "In", "var(--color-text-success)"],
+            ["maybe", "Maybe", "var(--color-text-warning)"],
+            ["sub", "Sub (found a sub)", "var(--color-text-purple)"],
+            ["out", "Out", "var(--color-text-danger)"],
+            ["none", "No response", "var(--color-text-secondary)"],
           ].map(([k, label, color]) => (
             buckets[k].length > 0 && (
               <div key={k} style={{ marginTop: 8 }}>

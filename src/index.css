@@ -5,8 +5,13 @@
   --color-background-secondary: #f5f5f4;
   --color-background-tertiary: #e8e8e6;
   --color-text-primary: #1c1917;
-  --color-text-secondary: #78716c;
-  --color-text-tertiary: #a8a29e;
+  /* v1.15.2 — secondary and tertiary text darkened. The old values (#78716c,
+     #a8a29e) were measured in a full render audit at 4.4:1 and 2.1-2.5:1 on
+     the surfaces they actually sit on (the grey page and card backgrounds),
+     so most of the app's meta text failed WCAG AA (4.5:1) even in light mode.
+     These clear 4.5:1 on white, #f5f5f4, the #e8e8e6 page and 12% tints. */
+  --color-text-secondary: #57534e;
+  --color-text-tertiary: #6b645f;
   --color-border-secondary: #d6d3d1;
   --color-border-tertiary: #e7e5e4;
   /* Input and control outlines need 3:1 against their surface (WCAG 1.4.11).
@@ -15,6 +20,22 @@
      themes - score boxes read as faint smudges rather than fields. A
      translucent value composites correctly over whatever surface it lands on. */
   --color-input-border: rgba(0, 0, 0, 0.45);
+
+  /* v1.15.2 — semantic TEXT colours that adapt to the theme. The light values
+     are the existing badge/brand colours; in dark mode those same hexes land
+     at 2.2-3.3:1 on the near-black surfaces, so each gets a lighter twin.
+     Use these whenever coloured text sits on a themed surface. Text on a
+     hardcoded pale tint (badges, amber notices) keeps its hardcoded pair. */
+  --color-text-danger: #a32d2d;
+  --color-text-warning: #854f0b;
+  --color-text-success: #3b6d11;
+  --color-text-info: #185fa5;
+  --color-text-purple: #534ab7;
+  /* League-coloured text (the viewer's own row, etc.) is mixed toward the
+     theme's text colour by this much — darker in light mode, lighter in dark —
+     so any league colour stays readable. See accentText() in styles.js. */
+  --accent-mix: 80%;
+  --tint-mix: 12%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,10 +45,17 @@
     --color-background-tertiary: #0c0a09;
     --color-text-primary: #fafaf9;
     --color-text-secondary: #a8a29e;
-    --color-text-tertiary: #78716c;
+    --color-text-tertiary: #9d9691;
     --color-border-secondary: #44403c;
     --color-border-tertiary: #292524;
     --color-input-border: rgba(255, 255, 255, 0.45);
+    --color-text-danger: #eb8585;
+    --color-text-warning: #d9973d;
+    --color-text-success: #7fc24a;
+    --color-text-info: #6eaeee;
+    --color-text-purple: #a29cf0;
+    --accent-mix: 50%;
+    --tint-mix: 20%;
   }
 }
 
@@ -237,4 +265,12 @@ input[type="number"]::-webkit-outer-spin-button {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+
+/* v1.15.2 — visible keyboard focus. Clickable week headers, standings rows
+   and league cards are now reachable with Tab; without a ring there'd be no
+   way to see where focus is. :focus-visible keeps it off mouse/touch taps. */
+:focus-visible {
+  outline: 2px solid var(--color-text-info);
+  outline-offset: 2px;
 }

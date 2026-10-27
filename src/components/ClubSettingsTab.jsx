@@ -288,7 +288,7 @@ function RegenerateCodeSection({ club, onRequest }) {
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button
-          style={{ ...S.btnSm("secondary"), color: "#854F0B", borderColor: "#854F0B", fontSize: 12 }}
+          style={{ ...S.btnSm("secondary"), color: "var(--color-text-warning)", borderColor: "var(--color-text-warning)", fontSize: 12 }}
           onClick={onRequest}>
           Regenerate code
         </button>
@@ -398,7 +398,7 @@ function DeleteClubSection({ club, onRequest }) {
       background: "var(--color-background-primary)",
     }}>
       <div style={{ marginBottom: SPACE.sm }}>
-        <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#A32D2D", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "var(--color-text-danger)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
           Danger zone
         </p>
         <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12, color: "var(--color-text-secondary)" }}>

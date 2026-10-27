@@ -72,3 +72,32 @@ export function genderBadgeStyle(gender) {
   if (gender === "Female") return S.badge("pink");
   return S.badge("info");
 }
+
+// ─── Theme-safe league colouring (v1.15.2) ──────────────────────────────────
+// League colours are fixed hexes, but they get drawn on surfaces that flip
+// between near-white and near-black. Used raw, they fail contrast in at least
+// one theme (the render audit found the viewer's own standings row at 1.1:1 in
+// dark mode, because a pale hardcoded tint sat under theme-coloured text).
+//
+// accentText: the league colour mixed toward the theme's text colour by
+//   --accent-mix (80% in light, 50% in dark), so it reads as "the league's
+//   colour" in both themes while clearing 4.5:1.
+// accentTint: the league colour mixed into the themed card surface (12% in
+//   light, 20% in dark). Theme-coloured text inside it stays legible — the
+//   same idea as the translucent week headers from v1.10.0, but opaque, so
+//   it doesn't depend on what's underneath.
+export const accentText = hex =>
+  `color-mix(in srgb, ${hex} var(--accent-mix), var(--color-text-primary))`;
+export const accentTint = (hex, base = "var(--color-background-primary)") =>
+  `color-mix(in srgb, ${hex} var(--tint-mix), ${base})`;
+
+// Small button on a coloured header. A translucent WHITE fill lightened the
+// header colour under white text (measured 2.9-3.6:1); a translucent black
+// fill darkens it instead, so the label gains contrast rather than losing it.
+export const headerBtn = {
+  ...S.btnSm("secondary"),
+  background: "rgba(0,0,0,0.18)",
+  border: "0.5px solid rgba(255,255,255,0.45)",
+  color: "#fff",
+  fontSize: 11,
+};

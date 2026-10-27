@@ -14,7 +14,9 @@
 // confirming the join (we don't enroll the player on a single tap; a mistap
 // is too easy on a phone).
 import { S } from "../styles.js";
-import { COLORS, MAX_PER_COURT } from "../lib/constants.js";
+import { COLORS } from "../lib/constants.js";
+import { leagueCapacity } from "../lib/scheduling.js";
+import { pressable } from "../lib/a11y.js";
 import { formatDate, formatPlayerName } from "../lib/format.js";
 
 // How many roster names to show before "+ N more"
@@ -31,9 +33,9 @@ export function LeagueRegistrationCard({ league, regs, players, onSelect }) {
   const previewNames = rosterPlayers.slice(0, ROSTER_PREVIEW_COUNT).map(formatPlayerName);
   const extraCount = Math.max(0, rosterPlayers.length - ROSTER_PREVIEW_COUNT);
 
-  const capacity = (league.numCourts || 4) * MAX_PER_COURT;
+  const capacity = leagueCapacity(league);   // null = no cap (Open Play)
   const filled = rosterPlayers.length;
-  const full = filled >= capacity;
+  const full = capacity != null && filled >= capacity;
 
   return (
     <div
@@ -43,17 +45,17 @@ export function LeagueRegistrationCard({ league, regs, players, onSelect }) {
         cursor: full ? "not-allowed" : "pointer",
         opacity: full ? 0.6 : 1,
       }}
-      onClick={() => { if (!full) onSelect(league); }}>
+      {...pressable(() => onSelect(league), { disabled: full, label: full ? `${league.name} (full)` : `Join ${league.name}` })}>
       {/* Title row */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
         <p style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>{league.name}</p>
         <span style={{
-          ...S.badge(full ? "danger" : filled >= capacity * 0.8 ? "warning" : "success"),
+          ...S.badge(full ? "danger" : capacity != null && filled >= capacity * 0.8 ? "warning" : "success"),
           fontSize: 10,
           whiteSpace: "nowrap",
           flexShrink: 0,
         }}>
-          {full ? "Full" : `${filled} of ${capacity}`}
+          {full ? "Full" : capacity == null ? `${filled} joined` : `${filled} of ${capacity}`}
         </span>
       </div>
       {/* Meta line: format · gender · weeks · start date */}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { S } from "../styles.js";
+import { S, accentText } from "../styles.js";
 import { COURT_COLORS, SPACE } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 
@@ -101,7 +101,7 @@ export function EditWeekForm({ weekData, league, onSubmit, onCancel }) {
                     gap: SPACE.xs,
                     fontSize: 12,
                     fontWeight: 600,
-                    color,
+                    color: accentText(color),
                   }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
                     {ct.courtName || `Court ${i + 1}`}

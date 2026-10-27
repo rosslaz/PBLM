@@ -1,6 +1,6 @@
 # Pickleball League Manager — Project Reference
 
-**Current version: 1.15.1** — deployed and live. Docs verified against the
+**Current version: 1.15.2** — deployed and live. Docs verified against the
 running code and the production database on this date.
 
 This is the canonical handoff. Read this first, then `NEXT-UP.md` for planned
@@ -72,6 +72,9 @@ Deploy: commit → push to `main` → Vercel builds → live in ~1–2 min.
   comments often fail to match. Anchor on plain-ASCII code lines instead.
 - **`dryRun: true` is the way to probe** whether a string exists in a file
   without a full read — much cheaper than reading a 100KB file.
+- **Device folder access** — since v1.15.2 the project folder is a *connected
+  folder*, so finished files can be copied across whole (stage → write) instead
+  of replaying dozens of `edit_file` calls. Prefer that for multi-file releases.
 - **Supabase MCP** — full DB access.
 - **Vercel MCP** — deployment state. Preview URLs are SSO-protected and can't be
   fetched directly.
@@ -115,6 +118,7 @@ pickleball-deploy/
     ├── styles.js             ← S.* style objects, genderBadgeStyle
     ├── index.css             ← CSS vars, resets, PWA safe-area classes
     ├── lib/
+    │   ├── a11y.js           ← pressable(): keyboard support for clickable boxes
     │   ├── backup.js         ← club-scoped JSON export (v1.15.1)
     │   ├── constants.js      ← APP_INFO.version, palette, COLORS, SPACE,
     │   │                        MIN/MAX_PER_COURT, storage keys, retention
@@ -532,6 +536,29 @@ pointless. **Don't add it back.**
 > the version in the footer first** — that distinguishes "not deployed" from
 > "not loaded." This wasted time once already this session.
 
+### Noticing new versions (v1.15.2)
+
+Browsers only re-check `sw.js` on a navigation (or about once a day). This app
+is a single page that never navigates, and an installed PWA can sit suspended
+for days — so a phone could run an old build long after a deploy. `index.html`
+now calls `reg.update()` whenever the app returns to the foreground
+(`visibilitychange` / `focus`, throttled to once a minute) and hourly while it's
+open. A changed `sw.js` then flows through the normal installed → waiting →
+banner path.
+
+**First install no longer reloads the page.** The first worker's
+`clients.claim()` also fires `controllerchange`, and the handler used to reload
+on it — so every first visit reloaded itself about a second in, wiping anything
+already typed. The handler now only reloads when there was a controller before
+(i.e. a real update).
+
+Club logos in `/public` (`/csc-pickleball.png`, `/dink-drink.png`) are in the
+precache list, since a club's logo is in the header on every screen.
+
+Verified end to end in a headless browser: first visit doesn't reload; after a
+simulated deploy, refocusing shows the banner; Reload swaps to the new cache and
+deletes the old one.
+
 ### Offline
 
 `loadDB()` caches each snapshot to localStorage. On boot, if the live fetch
@@ -569,9 +596,70 @@ Logos are currently bundled in `/public` and referenced by path. The field is a
 plain string, so switching to uploaded Supabase Storage URLs later needs no
 schema change and no migration.
 
+**League colours were darkened a step in v1.15.2** so white header and button
+text clears 4.5:1: green `#4F8C1B → #3F7A12` (also `CSC.greenDark`, which is
+court 2's colour), coral `#D85A30 → #C24E26`, amber `#BA7517 → #9E6312`. Same
+hues; existing leagues pick them up automatically since leagues store the colour
+*key*, not the hex. CSC blue and purple already passed.
+
 ---
 
 ## 12. Accessibility
+
+### v1.15.2 — measured render audit: 1,544 failures → 0
+
+The app was rendered in headless Chromium against a fixture database shaped
+exactly like production (two clubs, a D+D league mid-season, a Round-Robin, an
+Open Play, a Ladder, trashed records), across **26 screens × light and dark**.
+Every visible text run was measured against its *composited* background
+(walking up through translucent layers and ancestor opacity) and checked
+against WCAG AA (4.5:1, or 3:1 for large text). Decorative glyphs marked
+`aria-hidden` and disabled controls are exempt.
+
+| | Light | Dark |
+|---|---|---|
+| Before (v1.15.1) | 894 | 650 |
+| After (v1.15.2) | **0** | **0** |
+
+Most of it was a handful of tokens, not components:
+
+- **`--color-text-secondary` / `--color-text-tertiary`** were 4.4:1 and
+  2.1–2.5:1 on the surfaces they actually sit on (the grey page and cards).
+  Now `#57534e` / `#6b645f` in light; tertiary `#9d9691` in dark.
+- **Semantic text tokens** — `--color-text-danger/-warning/-success/-info/-purple`.
+  The light values are the existing hexes; each has a lighter dark-mode twin,
+  because `#A32D2D` etc. measured 2.2–3.3:1 on near-black. **Use these whenever
+  coloured text sits on a themed surface.** Text on a hardcoded pale tint
+  (badges, amber notices) keeps its hardcoded pair.
+- **`accentText(hex)` / `accentTint(hex)`** in `styles.js` — league-coloured
+  text mixed toward the theme's text colour (`--accent-mix`), and league tints
+  mixed into the card colour (`--tint-mix`). Used for the viewer's own row in
+  Standings and the Partners matrix (was a pale hardcoded `c.light` under theme
+  text: **1.1:1** in dark), the league banner, and court-name labels.
+- **`headerBtn`** — buttons on coloured headers use a translucent *black*
+  fill. The old translucent white lightened the header under white text
+  (2.9–3.6:1). Header text is no longer opacity-dimmed.
+- Opacity used as "de-emphasis" (past Open Play weeks, trashed cards, hint
+  lines) was removed — it took whole cards below 4.5:1.
+
+### Keyboard (v1.15.2)
+
+Week headers, the RSVP summary bar, mobile standings cards, league cards and
+add-player rows were `<div onClick>`s: unreachable by Tab, inert to Enter. They
+now spread `pressable(onActivate, { expanded, label })` from `lib/a11y.js`
+(role, tabIndex, `aria-expanded`, Enter/Space — ignoring keys that belong to a
+nested button). Desktop standings rows got a real `<button>` around the player
+name whose click bubbles to the row. A global `:focus-visible` ring makes focus
+visible. Score-form labels are now tied to their inputs. All verified with
+scripted Tab/Enter/Space runs in a real browser.
+
+### The rule, restated
+
+> **A hardcoded background paired with theme-variable text is always a dark-mode
+> bug — and so is hardcoded coloured text on a themed background.** Either both
+> are hardcoded (badge pairs) or both adapt (tokens, `accentText`/`accentTint`).
+
+### History
 
 A contrast audit in v1.10.0 (ratios computed, not eyeballed) found and fixed
 four failures. The general rule it exposed:
@@ -617,6 +705,7 @@ controls (WCAG 1.4.11 wants 3:1).
 | **v1.14.1** | Partners matrix columns use initials rather than numbers |
 | **v1.15.0** | Weekly drill-down: expand a standings row for its per-week stats |
 | **v1.15.1** | Code-review fixes: roster changes no longer wipe the schedule; D+D roster locks once the season starts; no Rebalance or hand-editing for D+D; hero card sees both D+D rounds; club backup download |
+| **v1.15.2** | Polish: render-audited contrast (1,544 → 0 failures, both themes); keyboard access; capacity labels; PWA update check on resume, no first-visit reload; lint clean; `npm audit fix`; dropped legacy `app_config` table, pinned trigger `search_path` |
 
 **Version policy:** patch = fixes, minor = features, major = milestones.
 Bump **three** files: `package.json`, `src/lib/constants.js` (`APP_INFO.version`),
@@ -652,7 +741,7 @@ section 15.
    endpoint, permission flow).
 
 8. **Open findings from the October 2026 code review** are queued as v1.16.0
-   in `NEXT-UP.md` section 0 — notably schedule dates landing a day early after
+   in `NEXT-UP.md` section 0 (the polish batch shipped in v1.15.2) — notably schedule dates landing a day early after
    the spring clock change (every generator except Open Play), success toasts
    after failed saves, an ID-allocation race on sign-up, and trashed players
    staying on league rosters.

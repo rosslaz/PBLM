@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 import { COLORS, CSC, MIN_PER_COURT, MAX_PER_COURT, courtName } from "./lib/constants.js";
 import { formatDate, formatPlayerName, playerInitial, playerFitsLeagueGender, formatPhone } from "./lib/format.js";
-import { useIsMobile, sortLeagues, loadSession, saveSession, saveLastEmail, loadLastClub, saveLastClub } from "./lib/session.js";
+import { sortLeagues, loadSession, saveSession, saveLastEmail, loadLastClub, saveLastClub } from "./lib/session.js";
 import {
   isClubOwner, isClubAdmin,
   getClubsForPlayer, getClubsWhereAdmin, getClubMemberIds,
@@ -25,9 +25,10 @@ import {
   generateCourtSchedule, assignBalancedCourts, laddderRotate, buildLadderWeek,
   buildCourtMatches, generateDDPartnersSchedule, DD_PARTNERS_PLAYERS, DD_PARTNERS_WEEKS,
 } from "./lib/scheduling.js";
-import { S, genderBadgeStyle } from "./styles.js";
+import { S, genderBadgeStyle, headerBtn } from "./styles.js";
 import { standingsPoints, leaguePoints, dropsForLockedWeeks } from "./lib/scoring.js";
 import { buildClubBackup, backupFilename, downloadJSON } from "./lib/backup.js";
+import { pressable } from "./lib/a11y.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
@@ -102,7 +103,6 @@ function DeleteClubConfirm({ onConfirm, onCancel, saving }) {
 }
 
 export default function App() {
-  const isMobile = useIsMobile();
   const [db, setDB] = useState(null);
   const [view, setView] = useState("home");
   const [adminTab, setAdminTab] = useState("leagues");
@@ -541,7 +541,6 @@ export default function App() {
   const trashedPlayers = allPlayers.filter(p =>
     isTrashed(p) && clubMemberIds.has(p.id)
   );
-  const sortedLeagues = sortLeagues(leagues);
 
   // Pre-index registrations so league/player lookups are O(1). Single pass
   // through the registration list builds both indexes — used by getLeagueRegs
@@ -1970,7 +1969,7 @@ export default function App() {
             <p style={{ fontSize: 15, margin: "0 0 12px" }}>
               Permanently delete <b>{modal.league.name}</b>?
             </p>
-            <p style={{ fontSize: 13, color: "#A32D2D", margin: "0 0 20px" }}>
+            <p style={{ fontSize: 13, color: "var(--color-text-danger)", margin: "0 0 20px" }}>
               This removes the league plus all its registrations, schedule, scores, locked weeks, and check-ins. This action cannot be undone.
             </p>
             <div style={S.row}>
@@ -1989,7 +1988,7 @@ export default function App() {
             <p style={{ fontSize: 15, margin: "0 0 12px" }}>
               Permanently delete <b>{formatPlayerName(modal.player)}</b>?
             </p>
-            <p style={{ fontSize: 13, color: "#A32D2D", margin: "0 0 20px" }}>
+            <p style={{ fontSize: 13, color: "var(--color-text-danger)", margin: "0 0 20px" }}>
               This removes the player plus all their registrations and check-ins. This action cannot be undone.
             </p>
             <div style={S.row}>
@@ -2081,7 +2080,7 @@ export default function App() {
                   </li>
                 </ul>
               </div>
-              <p style={{ fontSize: 13, color: "#A32D2D", margin: "0 0 16px" }}>
+              <p style={{ fontSize: 13, color: "var(--color-text-danger)", margin: "0 0 16px" }}>
                 After 30 days, everything is permanently deleted. <b>Restore is not available in-app</b> — if you change your mind during the 30-day window, contact support.
               </p>
               <DeleteClubConfirm
@@ -2106,18 +2105,23 @@ export default function App() {
                   subtitle="Commissioner Panel" />}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, opacity: 0.65 }}>{adminEmail}</span>
-            <span style={{ fontSize: 12, opacity: 0.5 }}>{saving ? "Saving…" : "●"}</span>
+            {/* v1.15.2 — full-opacity text: at 0.65 the email measured 2.7-3.2:1
+                on the header colours. The idle dot is decoration, so it's hidden
+                from assistive tech and allowed to stay dim. */}
+            <span style={{ fontSize: 11 }}>{adminEmail}</span>
+            {saving
+              ? <span style={{ fontSize: 12 }}>Saving…</span>
+              : <span aria-hidden="true" style={{ fontSize: 12, opacity: 0.5 }}>●</span>}
             <RefreshButton onClick={refresh} isRefreshing={currentActionId === "refresh"} disabled={!!currentActionId && currentActionId !== "refresh"} />
             {currentPlayer && (
               <button
-                style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.2)", border: "0.5px solid rgba(255,255,255,0.5)", color: "#fff", fontSize: 11 }}
+                style={headerBtn}
                 onClick={() => { setSelectedLeague(null); setView("player"); }}
                 title="Switch back to player view">
                 👤 Player Mode
               </button>
             )}
-            <button style={{ ...S.btnSm("secondary"), background: "rgba(255,255,255,0.1)", border: "0.5px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: 11 }} onClick={logout}>Log Out</button>
+            <button style={headerBtn} onClick={logout}>Log Out</button>
           </div>
         </div>
 
@@ -2192,14 +2196,14 @@ export default function App() {
                           const sched = getLeagueSchedule(l.id);
                           const archived = l.status === "archived";
                           return (
-                            <div key={l.id} style={{ ...S.card, cursor: "pointer", borderLeft: `4px solid ${lc.bg}`, opacity: archived ? 0.6 : 1 }} onClick={() => setSelectedLeague(l.id)}>
+                            <div key={l.id} style={{ ...S.card, cursor: "pointer", borderLeft: `4px solid ${lc.bg}`, opacity: archived ? 0.6 : 1 }} {...pressable(() => setSelectedLeague(l.id), { label: `Open ${l.name}` })}>
                               <div style={S.row}>
                                 <div style={{ flex: 1 }}>
                                   <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 16 }}>{l.name}</p>
                                   <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-secondary)" }}>{regs.length} players · {l.weeks} weeks · {sched.weeks?.length > 0 ? `${sched.weeks.length} weeks scheduled` : "No schedule yet"}</p>
                                   <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Start: {formatDate(l.startDate)} · {l.gender || "Mixed"} · {l.format || "Singles"}</p>
                                 </div>
-                                <span style={{ fontSize: 20, color: lc.bg }}>›</span>
+                                <span aria-hidden="true" style={{ fontSize: 20, color: lc.bg }}>›</span>
                               </div>
                             </div>
                           );
@@ -2256,7 +2260,7 @@ export default function App() {
                     <div style={{ ...S.row, justifyContent: "flex-end", gap: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 10 }}>
                       <button style={S.btnSm("secondary")} onClick={() => setModal({ type: "editPlayer", player: p })}>Edit</button>
                       <button
-                        style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }}
+                        style={{ ...S.btnSm("secondary"), color: "var(--color-text-danger)", borderColor: "var(--color-text-danger)", fontSize: 11 }}
                         onClick={() => setModal({ type: "confirmDeletePlayer", player: p })}>
                         Delete
                       </button>

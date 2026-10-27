@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { S } from "../styles.js";
-import { COLORS, CSC, MAX_PER_COURT } from "../lib/constants.js";
+import { COLORS, CSC } from "../lib/constants.js";
+import { leagueCapacity } from "../lib/scheduling.js";
 import { formatDate, formatTime, playerFullName, playerInitial, resolveCourtName, resolveCourtTime, todayISO, openPlayWeeks, isOpenPlay } from "../lib/format.js";
 import { splitWeeksByStatus } from "../lib/session.js";
 import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, PullToRefresh, AppMark } from "./ui.jsx";
@@ -258,7 +259,7 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
         const leagueRegs = regsByLeague[league.id] || [];
         const filled = leagueRegs.length;
         const leagueIsOpenPlay = isOpenPlay(league);
-        const capacity = (league.numCourts || 4) * MAX_PER_COURT;
+        const capacity = leagueCapacity(league);   // null for Open Play
         return (
           <Modal title="Join this league?" onClose={() => setModal(null)}>
             <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--color-background-secondary)", borderRadius: 8, borderLeft: `4px solid ${lc.bg}` }}>
@@ -275,7 +276,7 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
                 </p>
               )}
               <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--color-text-tertiary)" }}>
-                {leagueIsOpenPlay
+                {leagueIsOpenPlay || capacity == null
                   ? `${filled} player${filled !== 1 ? "s" : ""} signed up`
                   : `${filled} of ${capacity} spots filled`}
               </p>

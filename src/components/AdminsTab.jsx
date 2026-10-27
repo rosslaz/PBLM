@@ -66,7 +66,7 @@ export function AdminsTab({ club, currentAdminEmail, isOwner, isAdmin, onAdd, on
               <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 Club join code
               </p>
-              <p style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.5px", color: CSC.blueDark, wordBreak: "break-all" }}>
+              <p style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.5px", color: "var(--color-text-info)", wordBreak: "break-all" }}>
                 {joinCode}
               </p>
             </div>
@@ -150,7 +150,7 @@ function AdminRow({ email, roleBadge, roleBadgeStyle, isMe, showRemove, onRemove
         </div>
         {showRemove && (
           <button
-            style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11, flexShrink: 0 }}
+            style={{ ...S.btnSm("secondary"), color: "var(--color-text-danger)", borderColor: "var(--color-text-danger)", fontSize: 11, flexShrink: 0 }}
             onClick={() => { if (confirm(`Remove ${email} as commissioner?`)) onRemove(email); }}>
             Remove
           </button>

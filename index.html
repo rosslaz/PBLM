@@ -77,8 +77,16 @@
         // When the newly-activated worker takes control, reload so the page
         // is running the code that matches the freshly-cached assets.
         // Guarded so we only ever reload once.
+        //
+        // v1.15.2 — but NOT on a first install. The very first worker calls
+        // clients.claim(), which also fires controllerchange; nothing was
+        // updated, yet the page used to reload itself about a second after
+        // opening, wiping anything already typed. Only a change FROM an
+        // existing controller is an update.
         var reloading = false;
+        var hadController = !!navigator.serviceWorker.controller;
         navigator.serviceWorker.addEventListener("controllerchange", function () {
+          if (!hadController) { hadController = true; return; }
           if (reloading) return;
           reloading = true;
           window.location.reload();
@@ -93,6 +101,29 @@
               if (reg.waiting && navigator.serviceWorker.controller) {
                 announceUpdate(reg.waiting);
               }
+
+              // Case C (v1.15.2): ask for a new version whenever the app comes
+              // back to the foreground, and hourly while it stays open.
+              //
+              // Browsers only re-check sw.js on a navigation (or roughly once a
+              // day). This app never navigates — it's one page — and an
+              // installed PWA can sit suspended in the background for days, so
+              // a phone could keep running an old build long after a deploy.
+              // That's how a new league type once "wasn't there" until a hard
+              // refresh. update() fetches sw.js; if it changed, the normal
+              // installed -> waiting -> banner flow below takes over. Throttled
+              // to once a minute so tab-switching doesn't hammer the server.
+              var lastUpdateCheck = Date.now();
+              function checkForUpdate() {
+                if (document.visibilityState !== "visible") return;
+                var now = Date.now();
+                if (now - lastUpdateCheck < 60 * 1000) return;
+                lastUpdateCheck = now;
+                reg.update().catch(function () { /* offline: try next time */ });
+              }
+              document.addEventListener("visibilitychange", checkForUpdate);
+              window.addEventListener("focus", checkForUpdate);
+              setInterval(checkForUpdate, 60 * 60 * 1000);
 
               // Case B: an update is found while this page is open.
               reg.addEventListener("updatefound", function () {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { S } from "../styles.js";
+import { S, accentText } from "../styles.js";
 import { MAX_COURTS, MAX_PER_COURT, COURT_COLORS, SPACE } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 
@@ -190,7 +190,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
                 gap: SPACE.sm,
                 alignItems: "center",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: SPACE.xs, fontSize: 12, fontWeight: 600, color }}>
+                <div style={{ display: "flex", alignItems: "center", gap: SPACE.xs, fontSize: 12, fontWeight: 600, color: accentText(color) }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
                   Court {i + 1}
                 </div>

@@ -59,7 +59,7 @@
 // Keep it in step with package.json / APP_INFO.version. It doesn't strictly
 // have to match, but a version-shaped name makes it obvious in DevTools which
 // build a client is actually running.
-const CACHE_VERSION = "v1.15.1";
+const CACHE_VERSION = "v1.15.2";
 const CACHE_NAME = `csc-pickleball-${CACHE_VERSION}`;
 
 // The app shell. Everything here is fetched and cached on install, so a cold
@@ -75,7 +75,10 @@ const APP_SHELL = [
   "/manifest.webmanifest",
   "/favicon.png",
   "/app-logo.png",
+  // Club logos bundled in /public. A club's logo shows in the header on every
+  // screen, so without these an offline start rendered a broken image.
   "/csc-pickleball.png",
+  "/dink-drink.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-512-maskable.png",

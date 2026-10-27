@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { pressable } from "../lib/a11y.js";
 import { S } from "../styles.js";
 import { CSC, COURT_COLORS } from "../lib/constants.js";
 import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtTime, isCurrentOrPastWeek, isPastWeek } from "../lib/format.js";
@@ -144,7 +145,7 @@ function InlineScoreEntry({ match, onSubmit, accentColor }) {
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           fontFamily: "inherit",
         }}>
-        {isPending ? <Spinner marginRight={0} /> : "✓"}
+        {isPending ? <Spinner marginRight={0} /> : <span aria-hidden="true">✓</span>}
       </button>
     </>
   );
@@ -231,7 +232,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
     }}>
       <div
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: headerBg, borderBottom: expanded ? "0.5px solid var(--color-border-tertiary)" : "none" }}
-        onClick={() => setExpanded(!expanded)}>
+        {...pressable(() => setExpanded(!expanded), { expanded, label: `Week ${weekData.week}` })}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600, fontSize: 15 }}>Week {weekData.week}</span>
           <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
@@ -270,7 +271,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
           )}
           {isAdmin && onRebalance && !weekData.placeholder && !isLocked && (
             <button
-              style={{ ...S.btnSm("secondary"), fontSize: 11, color: "#534AB7", borderColor: "#534AB7" }}
+              style={{ ...S.btnSm("secondary"), fontSize: 11, color: "var(--color-text-purple)", borderColor: "var(--color-text-purple)" }}
               onClick={e => { e.stopPropagation(); onRebalance(weekData); }}
               title="Rebalance courts based on RSVP status">
               ⚖ Rebalance
@@ -281,7 +282,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
               {isMobile ? `${scoredMatches}/${totalMatches} matches` : `${scoredMatches} of ${totalMatches} matches scored`}
             </span>
           )}
-          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+          <span aria-hidden="true" style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
         </div>
       </div>
 
@@ -444,9 +445,9 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
                         {hasScore ? (
                           <>
-                            <span style={{ fontSize: 17, fontWeight: 700, color: sideAWon ? CSC.blue : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.homeScore}</span>
+                            <span style={{ fontSize: 17, fontWeight: 700, color: sideAWon ? "var(--color-text-info)" : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.homeScore}</span>
                             <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>–</span>
-                            <span style={{ fontSize: 17, fontWeight: 700, color: !sideAWon ? CSC.blue : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.awayScore}</span>
+                            <span style={{ fontSize: 17, fontWeight: 700, color: !sideAWon ? "var(--color-text-info)" : "var(--color-text-secondary)", minWidth: 20, textAlign: "center" }}>{score.awayScore}</span>
                           </>
                         ) : canEdit && onSubmitScore ? (
                           // Inline score entry — replaces the modal round-trip

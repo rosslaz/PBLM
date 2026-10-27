@@ -52,7 +52,7 @@ export function LeagueContactsModal({ regs, players, onClose }) {
         await navigator.clipboard.writeText(text);
         return true;
       }
-    } catch (_) { /* fall through */ }
+    } catch { /* fall through */ }
     try {
       const ta = document.createElement("textarea");
       ta.value = text;
@@ -63,7 +63,7 @@ export function LeagueContactsModal({ regs, players, onClose }) {
       document.execCommand("copy");
       document.body.removeChild(ta);
       return true;
-    } catch (_) { return false; }
+    } catch { return false; }
   }
 
   async function copyAll() {

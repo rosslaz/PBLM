@@ -11,7 +11,7 @@
 // Surfaced in the About modal (accessible from the avatar menu). Update on
 // every release. Keep this in sync with `version` in package.json.
 export const APP_INFO = {
-  version: "1.15.1",
+  version: "1.15.2",
   createdBy: "Ross Lazar",
   description: "Pickleball league manager — schedules, scoring, standings, and weekly check-ins for your club.",
 };
@@ -35,7 +35,9 @@ export const CSC = {
   blueDark:    "#0E3A6B",  // dark blue (logo text/title)
   blueLight:   "#E5F0FA",  // pale blue tint for backgrounds
   green:       "#7FC93D",  // bright lime (logo dolphin/swoosh)
-  greenDark:   "#4F8C1B",  // accessible green for text/badges
+  // v1.15.2: was #4F8C1B, which measured 4.1:1 under white text and 3.8:1 as
+  // text on the grey surfaces — not the "accessible green" it claimed to be.
+  greenDark:   "#3F7A12",  // accessible green for text/badges
   yellow:      "#FFE82E",  // pickleball ball yellow
 };
 
@@ -45,15 +47,17 @@ export const COLORS = {
   csc:    { bg: CSC.blue,   light: CSC.blueLight, accent: CSC.green, text: CSC.blueDark },
   // Other per-league themes for visual differentiation
   green:  { bg: CSC.greenDark, light: "#EAF6DC", accent: CSC.green, text: "#1F3D08" },
-  coral:  { bg: "#D85A30", light: "#FAECE7", accent: "#993C1D", text: "#4A1B0C" },
+  // v1.15.2: coral and amber backgrounds darkened a step (were #D85A30 /
+  // #BA7517) so white header and button text clears 4.5:1 (was 3.9 / 3.7).
+  coral:  { bg: "#C24E26", light: "#FAECE7", accent: "#993C1D", text: "#4A1B0C" },
   purple: { bg: "#534AB7", light: "#EEEDFE", accent: "#7F77DD", text: "#26215C" },
-  amber:  { bg: "#BA7517", light: "#FAEEDA", accent: "#EF9F27", text: "#412402" },
+  amber:  { bg: "#9E6312", light: "#FAEEDA", accent: "#EF9F27", text: "#412402" },
   // Backward-compat aliases for any existing leagues created with old keys
   teal:   { bg: CSC.blue, light: CSC.blueLight, accent: CSC.green, text: CSC.blueDark },
   blue:   { bg: CSC.blue, light: CSC.blueLight, accent: CSC.green, text: CSC.blueDark },
 };
 export const LEAGUE_COLORS = ["csc", "green", "coral", "purple", "amber"];
-export const COURT_COLORS = [CSC.blue, CSC.greenDark, "#D85A30", "#534AB7"];
+export const COURT_COLORS = [CSC.blue, CSC.greenDark, "#C24E26", "#534AB7"];
 
 // Check-in status options shown to players
 export const CHECKIN_OPTS = [

@@ -1,8 +1,8 @@
 # Next Up — Backlog
 
-**Status:** v1.15.1 — the data-safety fixes from the October 2026 full code
-review. The rest of that review is queued below as **v1.16.0** (section 0);
-nothing else is in progress.
+**Status:** v1.15.2 — the polish batch from the October 2026 code review, after
+v1.15.1's data-safety fixes. The rest of that review is queued below as
+**v1.16.0** (section 0); nothing else is in progress.
 
 Read `PROJECT.md` first for architecture. This is the candidate list, roughly
 ordered by value per unit of risk.
@@ -58,6 +58,15 @@ lock once the season starts. Rebalance and drag-editing are off for D+D (both
 silently rebuilt weeks with the generic doubles template). The player hero card
 now sees both D+D rounds. And a club-scoped **Download backup** in Settings.
 
+**v1.15.2** — Polish. A rendered contrast audit (26 screens, light and dark)
+went from 1,544 failing text runs to zero — mostly by fixing a few tokens, plus
+theme-aware semantic colours and league-colour helpers. Clickable week headers,
+standings rows and league cards work from the keyboard, with a visible focus
+ring. D+D shows "x of 8" and Open Play no longer shows "Full". The PWA checks for
+a new version whenever it's reopened, and first visits no longer reload
+themselves. Lint is clean, `npm audit fix` applied, and the legacy `app_config`
+table is gone (security advisor now reports nothing).
+
 **Data work** — orphan rows purged; three duplicate player records merged; a
 junk club (created when someone pasted a join code into the club-name field)
 trashed; the create-club form now catches that mistake as it's made.
@@ -104,23 +113,9 @@ next one starts.
    number only, so half-typed inline scores carry across leagues; `LeagueDetail`'s
    tab goes wrong after a competition-type change.
 
-**Polish batch (any time):**
-
-- **Dark mode** — ~12 spots break the hardcoded-background rule. Worst: the
-  viewer's own row in Standings and the Partners matrix (`c.light` under theme
-  text, 1.1:1), the winning digits in `ScoreForm`, the Open Play "this week"
-  header, the league banner's Edit/Archive buttons, the join-code chip.
-- **Keyboard** — week headers, standings rows, registration cards and
-  add-player rows are clickable `div`/`tr`s with no role or key handler.
-- **Capacity** — D+D shows "8 of 10"; Open Play shows "Full" at 20.
-- **PWA** — call `reg.update()` on visibility change so a long-open installed
-  app notices new versions; precache `/dink-drink.png`.
-- **Supabase** — `ALTER FUNCTION … SET search_path = ''` on
-  `touch_updated_at` and `pb_touch_updated_at` (advisor warnings); drop the
-  empty legacy `app_config` table, which still has an anon full-access policy.
-- **Dependencies** — `npm audit fix` (dev/Node-only advisories). Don't jump to
-  Vite 8 or React 19 mid-season.
-- **Lint** — 19 unused-variable warnings.
+**Polish batch — shipped in v1.15.2.** One leftover: `npm audit` still reports
+an esbuild advisory that only affects the local dev server (`npm run dev`); the
+fix is a Vite major upgrade. Off-season.
 
 **Candidate feature: replace a D+D player for the remaining weeks.** Swap one
 id for another in every unlocked week, keeping locked weeks as played. Now that
@@ -163,8 +158,6 @@ for real users. A phase, not a session. **Don't start it mid-season.**
   (`findLivePlayerByEmail`) cover every creation path today, but nothing stops a
   direct insert. A partial unique index on `lower(data->>'email')` where
   `deletedAt IS NULL` would make it structural.
-- **A stale `buildCourtMatches` doc comment** in `scheduling.js` ended up above
-  the D+D template block during an edit; it now describes the wrong function.
 - **Decide whether PF and Points should reconcile.** They use different loser
   caps (9 vs 10), so a 15–13 shows PF 9 beside Points 5.0 and the arithmetic
   visibly doesn't work. Intended and documented, but if it draws questions,
@@ -245,7 +238,11 @@ something else justifies standing up a backend.**
 - **In D+D a player is on two courts a week.** "Which court is this player
   on?" must be `filter`, not `find`.
 - **Don't reintroduce `skipWaiting()`** in `sw.js`. It's absent on purpose.
-- **A hardcoded background with theme-variable text is always a dark-mode bug.**
+- **A hardcoded background with theme-variable text is always a dark-mode bug**
+  — and so is hardcoded coloured text on a themed background. Use the
+  `--color-text-*` tokens and `accentText()` / `accentTint()` (PROJECT.md §12).
+- **Clickable boxes that aren't `<button>`s spread `pressable()`** from
+  `lib/a11y.js`, or keyboard users can't reach them.
 - **After deploying, check the version footer** before believing a change is
   missing — the service worker deliberately serves the old bundle until reload.
 - **Verify the filesystem path by reading a file**, not by trusting a directory

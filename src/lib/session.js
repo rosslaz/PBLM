@@ -8,14 +8,14 @@ export function loadSession() {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return {};
     return JSON.parse(raw) || {};
-  } catch (_) { return {}; }
+  } catch { return {}; }
 }
 
 export function saveSession(s) {
   try {
     if (!s || (!s.playerId && !s.adminEmail)) localStorage.removeItem(SESSION_KEY);
     else localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-  } catch (_) {}
+  } catch {}
 }
 
 // ─── Remembered email (separate from session) ───────────────────────────────
@@ -27,14 +27,14 @@ export function saveSession(s) {
 export function loadLastEmail() {
   try {
     return localStorage.getItem(LAST_EMAIL_KEY) || "";
-  } catch (_) { return ""; }
+  } catch { return ""; }
 }
 
 export function saveLastEmail(email) {
   try {
     if (!email) localStorage.removeItem(LAST_EMAIL_KEY);
     else localStorage.setItem(LAST_EMAIL_KEY, email.toLowerCase().trim());
-  } catch (_) {}
+  } catch {}
 }
 
 // ─── Remembered club (also separate from session) ───────────────────────
@@ -49,14 +49,14 @@ export function saveLastEmail(email) {
 export function loadLastClub() {
   try {
     return localStorage.getItem(LAST_CLUB_KEY) || null;
-  } catch (_) { return null; }
+  } catch { return null; }
 }
 
 export function saveLastClub(clubId) {
   try {
     if (!clubId) localStorage.removeItem(LAST_CLUB_KEY);
     else localStorage.setItem(LAST_CLUB_KEY, clubId);
-  } catch (_) {}
+  } catch {}
 }
 
 // Sort leagues for display: active first, then open/completed (newest first

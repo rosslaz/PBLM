@@ -141,15 +141,6 @@ export function assignBalancedCourts(shuffledPlayers, sizes, playerGenders) {
   return groups;
 }
 
-// ─── Build a single court's matches ─────────────────────────────────────────
-// Used both by the master generator (initial schedule) and by the schedule
-// preview editor (recomputing matches after the commissioner moves players
-// between courts). The function is intentionally stateless — it doesn't
-// touch any opponent-frequency tracking — so it can be called any number of
-// times for the same week/court without side effects.
-//
-// `weekNum` is 1-indexed (matches the convention used elsewhere — week 1
-// for the first week of the season). `courtIdx` is 0-indexed.
 // D+D Weekly Partners
 //
 // A fixed 8-player, 14-week format. Every week the 8 players are re-paired
@@ -203,6 +194,18 @@ export const DD_PARTNERS_TEMPLATE = [
 export const DD_PARTNERS_PLAYERS = 8;
 export const DD_PARTNERS_WEEKS = DD_PARTNERS_TEMPLATE.length; // 14
 export const DD_PARTNERS_GAMES_PER_MATCHUP = 2;
+
+// v1.15.2 — how many players a league can take, or null when there's no cap.
+// The join surfaces each computed numCourts × MAX_PER_COURT, which was wrong
+// for two formats: D+D stores numCourts = 2 (two rounds), so it advertised
+// "8 of 10" for a league that's full at 8; and Open Play has no courts, so it
+// showed "Full" at 20 for a league with no limit at all.
+export function leagueCapacity(league) {
+  if (!league) return null;
+  if (league.competitionType === "dd_partners") return DD_PARTNERS_PLAYERS;
+  if (league.competitionType === "open") return null;
+  return (league.numCourts || 4) * MAX_PER_COURT;
+}
 
 // Build one week. Returns a week object in the shape the rest of the app
 // expects, with the two ROUNDS occupying the courts slots - all 8 players are
@@ -277,6 +280,18 @@ export function generateDDPartnersSchedule(playerIds, startDate, seed) {
   return { weeks };
 }
 
+// ─── Build a single court's matches ─────────────────────────────────────────
+// Used both by the master generator (initial schedule) and by the schedule
+// preview editor (recomputing matches after the commissioner moves players
+// between courts). The function is intentionally stateless — it doesn't
+// touch any opponent-frequency tracking — so it can be called any number of
+// times for the same week/court without side effects.
+//
+// `weekNum` is 1-indexed (matches the convention used elsewhere — week 1
+// for the first week of the season). `courtIdx` is 0-indexed.
+//
+// (v1.15.2: this comment had drifted above the D+D block during an edit and
+// was describing the wrong function; moved back to the function it documents.)
 export function buildCourtMatches(group, weekNum, courtIdx, format, dateStr) {
   const isDoubles = format === "Doubles" || format === "Mixed Doubles";
   const raw = isDoubles

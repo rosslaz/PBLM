@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { pressable } from "../lib/a11y.js";
 import { S } from "../styles.js";
 import { CSC } from "../lib/constants.js";
-import { formatDate, isPastWeek, isCurrentOrPastWeek, todayISO } from "../lib/format.js";
+import { formatDate, isPastWeek, todayISO } from "../lib/format.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
 
@@ -38,13 +39,19 @@ function OpenPlayWeekCard({
     });
   }
 
-  const headerBg = isCurrentWeek ? CSC.blueLight : "var(--color-background-secondary)";
+  // v1.15.2 — translucent blue, not CSC.blueLight. A pale hardcoded header
+  // under theme-coloured text measured 1.1:1 in dark mode (the same bug the
+  // court week headers had before v1.10.0).
+  const headerBg = isCurrentWeek ? "rgba(27, 108, 193, 0.14)" : "var(--color-background-secondary)";
 
   return (
-    <div style={{ ...S.card, marginBottom: 12, padding: 0, overflow: "hidden", opacity: past && !isCurrentWeek ? 0.85 : 1 }}>
+    // v1.15.2 — no opacity dimming for past weeks: fading the whole card took
+    // its RSVP badges and secondary text below 4.5:1. The date already says
+    // the week is over.
+    <div style={{ ...S.card, marginBottom: 12, padding: 0, overflow: "hidden" }}>
       <div
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: headerBg, borderBottom: expanded ? "0.5px solid var(--color-border-tertiary)" : "none" }}
-        onClick={() => setExpanded(!expanded)}>
+        {...pressable(() => setExpanded(!expanded), { expanded, label: `Week ${weekData.week}` })}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600, fontSize: 15 }}>Week {weekData.week}</span>
           <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{formatDate(weekData.date)}</span>
@@ -66,7 +73,7 @@ function OpenPlayWeekCard({
                 : "Tap to RSVP"}
             </span>
           )}
-          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+          <span aria-hidden="true" style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
         </div>
       </div>
 

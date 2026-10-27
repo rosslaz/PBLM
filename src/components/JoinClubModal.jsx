@@ -29,7 +29,6 @@ export function JoinClubModal({ db, initialCode, onSubmit, onCancel }) {
   const [codeInput, setCodeInput] = useState(initialCode || "");
   const [foundClub, setFoundClub] = useState(null);
   const [emailInput, setEmailInput] = useState("");
-  const [matchedPlayer, setMatchedPlayer] = useState(null);
   const [error, setError] = useState("");
 
   function lookupCode() {
@@ -56,7 +55,6 @@ export function JoinClubModal({ db, initialCode, onSubmit, onCancel }) {
     if (existing) {
       // Already a member of this club? Just confirm and proceed — the
       // upsert will be a no-op and they'll log in cleanly.
-      setMatchedPlayer(existing);
       // Skip straight to submit-existing — there's nothing else to ask.
       onSubmit({ kind: "existing", clubId: foundClub.id, player: existing });
       return;

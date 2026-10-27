@@ -137,7 +137,6 @@ export function ClubSwitcher({ clubs, activeClubId, onSwitch, subtitle, color })
             <span style={{
               marginLeft: SPACE.xs,
               fontSize: 14,
-              opacity: 0.8,
               display: "inline-block",
               transform: open ? "rotate(180deg)" : "none",
               transition: "transform 0.15s",
@@ -231,8 +230,9 @@ const titleStyle = {
   lineHeight: 1.2,
 };
 
+// v1.15.2 — full opacity. At 0.75 the subtitle measured 3.0-3.7:1 on the
+// league header colours; weight and size already mark it as secondary.
 const subtitleStyle = {
   margin: "2px 0 0",
   fontSize: 12,
-  opacity: 0.75,
 };
