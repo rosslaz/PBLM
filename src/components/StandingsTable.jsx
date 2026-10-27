@@ -63,8 +63,18 @@ function WeeklyBreakdown({ weekly, getPlayerName, showPoints, isMobile }) {
               <td style={{ ...cell({ textAlign: "left" }), ...dim, whiteSpace: "nowrap" }}>
                 Week {w.week}
                 {w.dropped && (
-                  <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, textDecoration: "none", display: "inline-block", color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                    dropped
+                  // Same size as the row's own text - at 9px this read as a
+                  // different kind of element rather than a label on this row.
+                  // Not struck through: it's an annotation, not discarded data.
+                  <span style={{
+                    marginLeft: 6,
+                    fontSize: isMobile ? 11 : 12,
+                    fontWeight: 600,
+                    textDecoration: "none",
+                    display: "inline-block",
+                    color: "var(--color-text-tertiary)",
+                  }}>
+                    (dropped)
                   </span>
                 )}
               </td>
