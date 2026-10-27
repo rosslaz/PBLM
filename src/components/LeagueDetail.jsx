@@ -6,6 +6,7 @@ import { useIsMobile, buildDisplayWeeks, splitWeeksByStatus } from "../lib/sessi
 import { distributePlayersToCourts } from "../lib/scheduling.js";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
+import { PartnersMatrix } from "./PartnersMatrix.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { EmptyState } from "./ui.jsx";
 
@@ -192,7 +193,14 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
       </div>
 
       <div style={S.tabBar}>
-        {(openPlay ? ["rsvps", "players"] : ["schedule", "players", "standings"]).map(t => <button key={t} style={S.tab(tab===t, c.bg)} onClick={() => setTab(t)}>{t === "rsvps" ? "RSVPs" : t[0].toUpperCase()+t.slice(1)}</button>)}
+        {(openPlay
+          ? ["rsvps", "players"]
+          // Partners only means something where partners rotate weekly, so
+          // the tab is limited to the format built around that.
+          : league.competitionType === "dd_partners"
+            ? ["schedule", "players", "standings", "partners"]
+            : ["schedule", "players", "standings"]
+        ).map(t => <button key={t} style={S.tab(tab===t, c.bg)} onClick={() => setTab(t)}>{t === "rsvps" ? "RSVPs" : t[0].toUpperCase()+t.slice(1)}</button>)}
       </div>
 
       <div style={S.section}>
@@ -404,6 +412,15 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               );
             })}
           </div>
+        )}
+
+        {tab === "partners" && (
+          <PartnersMatrix
+            playerIds={regs.map(r => r.playerId)}
+            weeks={weeks}
+            isWeekLocked={isWeekLocked}
+            getPlayerName={getPlayerName}
+            color={c} />
         )}
 
         {tab === "standings" && (() => {

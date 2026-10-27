@@ -7,6 +7,7 @@ import { Toast, Modal, EmptyState, AvatarMenu, VersionFooter, RefreshButton, Pul
 import { ScoreForm } from "./ScoreForm.jsx";
 import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
+import { PartnersMatrix } from "./PartnersMatrix.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { LeagueRegistrationCard } from "./LeagueRegistrationCard.jsx";
 import { ClubSwitcher } from "./ClubSwitcher.jsx";
@@ -148,6 +149,12 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
   const selectedLeague = rawLeague && !rawLeague.deletedAt ? rawLeague : null;
   const c = selectedLeague ? (COLORS[selectedLeague.color] || COLORS.csc) : COLORS.teal;
   const openPlay = isOpenPlay(selectedLeague);
+  // playerTab lives in App state and survives switching between leagues, so a
+  // tab that only exists for one format can outlive the league it belongs to.
+  // Fall back to the schedule rather than rendering an empty pane.
+  const activeTab = (playerTab === "partners" && selectedLeague?.competitionType !== "dd_partners")
+    ? "schedule"
+    : playerTab;
   const sched = selectedLeagueId ? getLeagueSchedule(selectedLeagueId) : { weeks: [] };
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
 
@@ -497,10 +504,13 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
           ) : (
           <>
           <div style={S.tabBar}>
-            {["schedule","standings"].map(t => <button key={t} style={S.tab(playerTab===t,c.bg)} onClick={() => setPlayerTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
+            {(selectedLeague.competitionType === "dd_partners"
+              ? ["schedule", "standings", "partners"]
+              : ["schedule", "standings"]
+            ).map(t => <button key={t} style={S.tab(activeTab===t,c.bg)} onClick={() => setPlayerTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
           </div>
           <div style={S.section}>
-            {playerTab === "schedule" && (() => {
+            {activeTab === "schedule" && (() => {
               // Season progress: `today`, `allWeeks`, and `currentWeek` are
               // computed once at the top of PlayerView so the hero card and
               // this tab share the same definitions.
@@ -608,7 +618,16 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
                 </div>
               );
             })()}
-            {playerTab === "standings" && (() => {
+            {activeTab === "partners" && (
+              <PartnersMatrix
+                playerIds={(regsByLeague[selectedLeagueId] || []).map(r => r.playerId)}
+                weeks={sched.weeks || []}
+                isWeekLocked={wk => isWeekLocked(selectedLeagueId, wk)}
+                getPlayerName={getPlayerName}
+                color={c}
+                myId={player.id} />
+            )}
+            {activeTab === "standings" && (() => {
               const weeks = sched.weeks || [];
               const pendingWeeks = weeks.filter(w => !isWeekLocked(selectedLeagueId, w.week) && w.courts.some(ct => ct.matches.some(m => getScore(selectedLeagueId, w.week, m.id)))).length;
               return <StandingsTable standings={getStandings(selectedLeagueId)} getPlayerName={getPlayerName} color={c} myId={player.id} pendingWeeks={pendingWeeks} showPoints={selectedLeague.competitionType === "dd_partners"} />;
