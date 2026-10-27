@@ -1,7 +1,7 @@
 # Pickleball League Manager — Setup & Deployment
 
 **Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
-**Current version:** 1.11.0
+**Current version:** 1.14.1
 
 This guide covers standing up a fresh instance from scratch. If you're picking
 up the existing deployment, read `PROJECT.md` instead — this file is for
@@ -145,6 +145,16 @@ This is also the only format that ranks on **Points** rather than win
 percentage: half a point for every point you score, plus 2 for winning. An 11–6
 is 7.5 for the winners and 3 for the losers. Long games are capped so they
 can't out-earn short ones — a winner tops out at 7.5 and a loser at 5.
+
+It also has **drop weeks**: only a player's best 12 of 14 weeks count toward
+final standings. The allowance phases in — the lowest week starts being dropped
+once 6 weeks are locked, the two lowest once 12 are — and a dropped week is
+excluded from every stat, not just Points.
+
+And a **Partners tab**, showing a grid of how many times each pair has
+partnered so far. It counts locked weeks plus the current one (not the whole
+generated schedule, which would show every pair at 2 from day one) and
+highlights this week's pairings.
 
 ---
 

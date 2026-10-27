@@ -593,7 +593,10 @@ export default function App() {
       const tallyFor = (pid, weekNum) => {
         const m = perWeek[pid];
         if (!m) return null;                       // not registered in this league
-        if (!m.has(weekNum)) m.set(weekNum, blank());
+        // `partners` is a Set because a week can involve more than one
+        // partner in rotating-doubles formats. D+D fixes partners for the
+        // whole week, so it holds exactly one name there.
+        if (!m.has(weekNum)) m.set(weekNum, { ...blank(), partners: new Set() });
         return m.get(weekNum);
       };
 
@@ -626,6 +629,7 @@ export default function App() {
             // (winner 11, loser 10) which differ from the PF caps.
             t.points += leaguePoints(hs, aWon);
             if (aWon) t.wins++; else t.losses++;
+            sideA.forEach(mate => { if (mate !== pid) t.partners.add(mate); });
           });
           sideB.forEach(pid => {
             if (!perWeek[pid]) return;
@@ -635,6 +639,7 @@ export default function App() {
             t.pointsAgainst += pts.awayPA;
             t.points += leaguePoints(as, !aWon);
             if (!aWon) t.wins++; else t.losses++;
+            sideB.forEach(mate => { if (mate !== pid) t.partners.add(mate); });
           });
         }));
       });
@@ -644,7 +649,9 @@ export default function App() {
       const dropAllowance = usesLeaguePoints ? dropsForLockedWeeks(weeks.length) : 0;
 
       return Object.entries(perWeek).map(([id, weekMap]) => {
-        const all = [...weekMap.entries()].map(([week, t]) => ({ week, ...t }));
+        const all = [...weekMap.entries()]
+          .map(([week, t]) => ({ week, ...t, partners: [...t.partners] }))
+          .sort((a, b) => a.week - b.week);
         const dropCount = Math.min(dropAllowance, Math.max(0, all.length - 1));
 
         // Lowest Points first; ties broken by week number so the choice is
@@ -674,6 +681,10 @@ export default function App() {
           winPct: matches > 0 ? agg.wins / matches : 0,
           droppedWeeks,
           countedWeeks: all.length - droppedWeeks.length,
+          // Per-week breakdown for the drill-down view. These are the same
+          // tallies the totals above were summed from, so the expanded rows
+          // can never disagree with the row they expand out of.
+          weekly: all.map(x => ({ ...x, dropped: dropped.has(x.week) })),
         };
       }).sort((a, b) => {
         // D+D ranks on accumulated Points; every other format ranks on Win%.

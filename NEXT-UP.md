@@ -1,6 +1,6 @@
 # Next Up — Backlog
 
-**Status:** v1.11.0 is live. Everything previously in this file has shipped.
+**Status:** v1.14.1 is live. Everything previously in this file has shipped.
 Nothing is currently in progress or uncommitted.
 
 Read `PROJECT.md` first for architecture. This is the candidate list, roughly
@@ -31,6 +31,18 @@ contrast audit with measured ratios; per-game standings points cap.
 **v1.11.0** — Points stat for D+D Weekly Partners: half a point per point
 scored plus 2 for a win, with per-side caps (winner 7.5, loser 5.0). D+D
 standings now rank on it; every other format still ranks on Win%.
+
+**v1.12.0** — Drop weeks for D+D: best 12 of 14 count, phasing in at 6 and 12
+locked weeks. Standings now tally per week rather than as running totals.
+
+**v1.13.0** — Completed weeks moved below the active ones with a labelled
+divider, and the first still-open week auto-expands. Prompted by real usage —
+four weeks in, the locked weeks had pushed the week needing scores below the
+fold.
+
+**v1.14.0 / v1.14.1** — Partners matrix tab for D+D: how many times each pair
+has partnered, counting locked weeks plus the current one, with this week's
+pairings highlighted. Columns keyed by initials.
 
 **Data work** — orphan rows purged; three duplicate player records merged; a
 junk club (created when someone pasted a join code into the club-name field)
@@ -73,10 +85,6 @@ for real users. A phase, not a session. **Don't start it mid-season.**
   (`findLivePlayerByEmail`) cover every creation path today, but nothing stops a
   direct insert. A partial unique index on `lower(data->>'email')` where
   `deletedAt IS NULL` would make it structural.
-- **Fix Dink & Drink's `logoUrl`** — it's `dink-drink.png`, missing the leading
-  slash. Works only because the SPA never leaves `/`. One-character fix in
-  Settings.
-- **`league_19` needs 4 more players** before it can generate.
 - **A stale `buildCourtMatches` doc comment** in `scheduling.js` ended up above
   the D+D template block during an edit; it now describes the wrong function.
 - **Decide whether PF and Points should reconcile.** They use different loser
@@ -87,6 +95,11 @@ for real users. A phase, not a session. **Don't start it mid-season.**
   them, so an absent player ranks on empty results and drifts down a court
   rather than holding position. Needs a decision — hold or drop — before it's
   worth coding. No live ladder leagues, so there's no urgency.
+- **Drop weeks currently forgive absences completely.** A missed week banks 0,
+  so it's the first thing dropped. Usually the intent, but with 8 players and
+  rotating partners an absence also disrupts someone else's matchup. If that
+  starts to feel unfair, exclude sat-out weeks from the drop pool so drops only
+  apply to weeks actually played.
 
 ---
 
@@ -127,8 +140,9 @@ something else justifies standing up a backend.**
 ## Suggested order
 
 1. **B** — now. Cheap and mostly one-liners.
-2. **Run a real season.** The app has four competition types and almost no
-   real scores. Actual use will prioritise better than this list can.
+2. **Finish the current season.** D+D Season 3 is at week 8 of 14 and is the
+   first format to run end to end. The last few releases all came from real
+   usage rather than this list, which is the pattern to keep.
 3. **A** — off-season, as a dedicated phase.
 4. **C / D / E** — as the season motivates.
 

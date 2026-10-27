@@ -1,6 +1,6 @@
 # Pickleball League Manager — Project Reference
 
-**Current version: 1.11.0** — deployed and live. Docs verified against the
+**Current version: 1.14.1** — deployed and live. Docs verified against the
 running code and the production database on this date.
 
 This is the canonical handoff. Read this first, then `NEXT-UP.md` for planned
@@ -127,13 +127,14 @@ pickleball-deploy/
     │   │                        rotation, D+D Weekly Partners template
     │   ├── scoring.js        ← standingsPoints() PF cap + leaguePoints() Points
     │   └── supabase.js       ← client + all dbXxx functions + loadDB + cache
-    └── components/           ← ~25 files, see below
+    └── components/           ← ~26 files, see below
 ```
 
 **Components:** `ui.jsx` (Modal, Toast, EmptyState, AppMark, CSCMark,
 VersionFooter, RefreshButton, PullToRefresh, AvatarMenu, PWAInstallBanner),
 `StatusBanners.jsx`, `Spinner.jsx`, `HomeView.jsx`, `PlayerView.jsx`,
 `LeagueDetail.jsx`, `CourtWeekCard.jsx`, `OpenPlayWeeks.jsx`,
+`PartnersMatrix.jsx`,
 `CheckInRow.jsx`, `CheckInSummary.jsx`, `StandingsTable.jsx`,
 `SchedulePreview.jsx`, `ScoreForm.jsx`, `PlayerForm.jsx`, `LeagueForm.jsx`,
 `EditWeekForm.jsx`, `AddPlayerToLeague.jsx`, `LeagueContactsModal.jsx`,
@@ -193,20 +194,15 @@ in a block comment at the top of `supabase.js`.
 
 | | |
 |---|---|
-| Clubs | **3 live** — CSC Pickleball (29 members, 0 leagues), Dink & Drink (4), Test (11); 1 trashed |
-| Players | **39 live**, 1 trashed |
-| Memberships | 44 live |
-| Leagues | **2 live**, both `dd_partners`: `league_18` "test" (Test club, 8 players), `league_19` "Dink & Drink Season 3" (4 players); 3 trashed |
-| Registrations / scores / locked weeks / check-ins | 35 / 8 / 1 / 35 |
-| `next_id` | `{club: 6, league: 20, player: 85}` |
+| Clubs | **2 live** — CSC Pickleball, Dink & Drink (logo `/dink-drink.png`) |
+| Leagues | **1 live** — `league_19` "Dink & Drink Season 3", `dd_partners`, 14 weeks, **7 locked** (week 8 in progress) |
+| Partner progress | Through week 8: 10 pairs partnered twice, 12 once, 6 not yet — no pair over 2, so the template's guarantee is holding |
 
-**Two things worth knowing about this data:**
+Earlier CSC leagues and the Test club have since been deleted. Re-query rather
+than trusting these numbers — they move faster than the docs do.
 
-1. **`league_19` has only 4 of the required 8 players.** D+D Weekly Partners
-   can't generate until it has exactly 8.
-2. **Dink & Drink's `logoUrl` is `"dink-drink.png"` with no leading slash.** It
-   works today only because the SPA never changes the URL from `/`. It should be
-   `/dink-drink.png` — fix it if the app ever gains routing.
+**Known data quirks:** none outstanding. Dink & Drink's `logoUrl` was missing
+its leading slash and has been corrected.
 
 ---
 
@@ -323,7 +319,27 @@ The 8-player cap is enforced **at registration**, not at generation, because a
 9th player can't be absorbed by regenerating.
 
 **D+D is also the only format that ranks on Points** rather than Win% — see
-section 9.
+section 9 — and the only one with **drop weeks** and a **Partners tab**.
+
+### The Partners matrix (v1.14.x)
+
+`PartnersMatrix.jsx` renders an N×N grid of how many times each pair has
+partnered, shown as a tab in both the commissioner and player views.
+
+**Which weeks count is the whole subtlety.** D+D generates all 14 weeks up
+front, so counting the full schedule would show every pair at 2 from day one
+and convey nothing. Only **locked weeks plus the current one** (the first still
+unlocked) are counted; future weeks are excluded. The current week's pairings
+are highlighted amber rather than hidden, since "who am I with this week" is
+the main reason to open it.
+
+Pairs are read off `match.team1` / `match.team2` and deduped with a Set — the
+same pair appears many times across a week (two games per matchup, each team
+playing in both rounds). Reading teams off matches rather than `court.players`
+keeps it correct for any doubles format.
+
+Column headers use initials derived from the formatted display name, with a
+trailing index on collisions (`TP1`, `TP2`).
 
 ---
 
@@ -361,6 +377,29 @@ Every other format keeps Win% as the headline.
 
 `formatPoints()` rounds at the display edge, because Points accumulate as floats
 and 7.499999 must not render inconsistently.
+
+### Drop weeks — D+D Weekly Partners only
+
+Only a player's **best 12 of 14 weeks** count. `dropsForLockedWeeks()` phases
+the allowance in: **0 drops below 6 locked weeks, 1 from 6, 2 from 12.** Applying
+two drops from week one would leave everyone on zero.
+
+This is why `buildSorted()` tallies **per week** rather than as running totals —
+you can't subtract a week from a total you never broke down. Formats without
+drops use the same path with an allowance of zero.
+
+A dropped week is excluded from **every** stat, not just Points. Leaving its
+wins or PF in would let a discarded week decide a tie through Win% or +/−.
+
+> **Sit-outs are absorbed by the drops.** A missed week banks 0, which makes it
+> the player's lowest and therefore the first thing dropped. That's usually the
+> intent of a drop-week rule, but it does mean **missing up to two weeks carries
+> no standings cost at all.** If that ever needs changing, the fix is excluding
+> sat-out weeks from the drop pool so drops only apply to weeks actually played.
+
+Every registered player gets a seeded empty tally for every locked week, so a
+missed week exists as a real zero. Without that it would be invisible rather
+than droppable, and drops would silently eat a *played* week instead.
 
 > ### ⚠️ The two caps are different, on purpose
 >
@@ -494,6 +533,10 @@ controls (WCAG 1.4.11 wants 3:1).
 | **v1.9.1** | D+D: one court per matchup |
 | **v1.10.0** | Players see all courts; contrast audit; capped standings points |
 | **v1.11.0** | Points stat for D+D (0.5/point + 2 for a win); D+D ranks on it |
+| **v1.12.0** | Drop weeks for D+D — best 12 of 14 count |
+| **v1.13.0** | Completed weeks move below the active ones; first open week auto-expands |
+| **v1.14.0** | Partners matrix tab for D+D |
+| **v1.14.1** | Partners matrix columns use initials rather than numbers |
 
 **Version policy:** patch = fixes, minor = features, major = milestones.
 Bump **three** files: `package.json`, `src/lib/constants.js` (`APP_INFO.version`),
@@ -513,21 +556,18 @@ and `public/sw.js` (`CACHE_VERSION`) on any release that changes assets.
 
 3. **`App.jsx` is ~100KB.** Not broken, just heavy — every edit is expensive.
 
-4. **`league_19` has 4 of 8 required players** and can't generate until it's at 8.
-
-5. **Dink & Drink's `logoUrl` lacks a leading slash** — works only because the
-   SPA never leaves `/`.
-
-6. **No push notifications.** Genuinely a separate project (VAPID keys, push
-   endpoint, permission flow).
-
-7. **PF and Points use different loser caps** (9 vs 10), so the two columns
+4. **PF and Points use different loser caps** (9 vs 10), so the two columns
    don't reconcile on long games. Deliberate, documented in the standings
    footnote, but a likely source of "is this a bug?" questions.
 
-8. **Ladder rotation ignores check-ins.** `rankCourtPlayers()` never receives
+5. **Ladder rotation ignores check-ins.** `rankCourtPlayers()` never receives
    them, so an absent player is ranked on empty results and drifts down a
    court. Moot today — there are no live ladder leagues.
+
+6. **Drop weeks forgive absences entirely.** See section 9.
+
+7. **No push notifications.** Genuinely a separate project (VAPID keys, push
+   endpoint, permission flow).
 
 ---
 

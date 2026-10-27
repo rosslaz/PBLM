@@ -1,8 +1,96 @@
+import { useState, Fragment } from "react";
 import { S } from "../styles.js";
 import { CSC, COLORS, SPACE } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
 import { formatPoints } from "../lib/scoring.js";
 import { EmptyState } from "./ui.jsx";
+
+// ─── Weekly breakdown ───────────────────────────────────────────────────────
+// The per-week rows a standings total was summed from. Rendered inside an
+// expanded standings row so "why am I on this many points" is answered one
+// tap from where the question is asked.
+//
+// The numbers come straight from the same tallies getStandings aggregated,
+// not from a second pass over the schedule, so the breakdown can't drift
+// from the row it expands out of.
+//
+// Dropped weeks are shown struck through rather than hidden: seeing what a
+// discarded week would have been worth is most of the point of showing this
+// at all.
+function WeeklyBreakdown({ weekly, getPlayerName, showPoints, isMobile }) {
+  if (!weekly || weekly.length === 0) {
+    return (
+      <p style={{ margin: 0, padding: `${SPACE.md}px`, fontSize: 12, color: "var(--color-text-secondary)" }}>
+        No weeks have been locked yet.
+      </p>
+    );
+  }
+
+  const anyPartner = weekly.some(w => (w.partners || []).length > 0);
+  const cell = (extra = {}) => ({
+    padding: isMobile ? "6px 4px" : "7px 8px",
+    fontSize: isMobile ? 11 : 12,
+    textAlign: "center",
+    borderTop: "0.5px solid var(--color-border-tertiary)",
+    ...extra,
+  });
+
+  return (
+    <table className="tabular-nums" style={{ width: "100%", borderCollapse: "collapse" }}>
+      <thead>
+        <tr>
+          <th style={{ ...cell({ textAlign: "left", borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>Week</th>
+          {anyPartner && (
+            <th style={{ ...cell({ textAlign: "left", borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>Partner</th>
+          )}
+          {showPoints && <th style={{ ...cell({ borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>Pts</th>}
+          <th style={{ ...cell({ borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>W</th>
+          <th style={{ ...cell({ borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>L</th>
+          <th style={{ ...cell({ borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>PF</th>
+          <th style={{ ...cell({ borderTop: "none" }), fontWeight: 500, color: "var(--color-text-secondary)" }}>PA</th>
+        </tr>
+      </thead>
+      <tbody>
+        {weekly.map(w => {
+          const played = w.wins + w.losses > 0;
+          // Dropped weeks are de-emphasised but still legible - greying them
+          // into illegibility would defeat the purpose of showing them.
+          const dim = w.dropped
+            ? { color: "var(--color-text-tertiary)", textDecoration: "line-through" }
+            : {};
+          return (
+            <tr key={w.week} style={{ background: w.dropped ? "var(--color-background-tertiary)" : "transparent" }}>
+              <td style={{ ...cell({ textAlign: "left" }), ...dim, whiteSpace: "nowrap" }}>
+                Week {w.week}
+                {w.dropped && (
+                  <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, textDecoration: "none", display: "inline-block", color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                    dropped
+                  </span>
+                )}
+              </td>
+              {anyPartner && (
+                <td style={{ ...cell({ textAlign: "left" }), ...dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? 90 : 160 }}>
+                  {(w.partners || []).length > 0
+                    ? w.partners.map(getPlayerName).join(", ")
+                    : <span style={{ color: "var(--color-text-tertiary)" }}>—</span>}
+                </td>
+              )}
+              {showPoints && (
+                <td style={{ ...cell(), ...dim, fontWeight: w.dropped ? 400 : 700 }}>
+                  {played ? formatPoints(w.points) : "—"}
+                </td>
+              )}
+              <td style={{ ...cell(), ...dim }}>{played ? w.wins : "—"}</td>
+              <td style={{ ...cell(), ...dim }}>{played ? w.losses : "—"}</td>
+              <td style={{ ...cell(), ...dim }}>{played ? w.pointsFor : "—"}</td>
+              <td style={{ ...cell(), ...dim }}>{played ? w.pointsAgainst : "—"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
 
 // ─── Standings ──────────────────────────────────────────────────────────────
 // Two layouts: desktop shows the traditional table; mobile shows per-player
@@ -13,6 +101,10 @@ import { EmptyState } from "./ui.jsx";
 export function StandingsTable({ standings, getPlayerName, color, myId, pendingWeeks = 0, showPoints = false }) {
   const c = color || COLORS.csc;
   const isMobile = useIsMobile();
+  // Which player's weekly breakdown is open. One at a time - several
+  // 14-row tables open at once turns the standings into a wall.
+  const [openId, setOpenId] = useState(null);
+  const toggleOpen = id => setOpenId(cur => (cur === id ? null : id));
 
   if (standings.length === 0) {
     return (
@@ -100,6 +192,9 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
               isMe={myId && s.id === myId}
               themeColor={c}
               showPoints={showPoints}
+              getPlayerName={getPlayerName}
+              isOpen={openId === s.id}
+              onToggle={() => toggleOpen(s.id)}
               // Pass adjacent rows so we can compute "you vs the player above
               // and below" gaps. Only used for the "you" card.
               ahead={i > 0 ? standings[i - 1] : null}
@@ -133,8 +228,18 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
             {standings.map((s, i) => {
               const isMe = myId && s.id === myId;
               const diff = s.pointsFor - s.pointsAgainst;
+              const isOpen = openId === s.id;
+              const hasBreakdown = (s.weekly || []).length > 0;
+              const colSpan = showPoints ? 8 : 7;
               return (
-                <tr key={s.id} style={{ background: isMe ? c.light : i%2===0 ? "transparent" : "var(--color-background-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                <Fragment key={s.id}>
+                <tr
+                  onClick={() => hasBreakdown && toggleOpen(s.id)}
+                  style={{
+                    background: isMe ? c.light : i%2===0 ? "transparent" : "var(--color-background-secondary)",
+                    borderTop: "0.5px solid var(--color-border-tertiary)",
+                    cursor: hasBreakdown ? "pointer" : "default",
+                  }}>
                   <td style={{ padding: "12px 12px", fontWeight: isMe?700:400, color: isMe?c.bg:"var(--color-text-primary)" }}>
                     <span style={{ marginRight: 8, color: "var(--color-text-tertiary)", fontSize: 12 }}>#{i+1}</span>
                     <TrendArrow trend={s.trend} />
@@ -146,6 +251,14 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                         style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
                         drops W{s.droppedWeeks.join(", W")}
                       </span>
+                    )}
+                    {hasBreakdown && (
+                      <span style={{
+                        marginLeft: 8, fontSize: 10, color: "var(--color-text-tertiary)",
+                        display: "inline-block",
+                        transform: isOpen ? "rotate(180deg)" : "none",
+                        transition: "transform 0.15s",
+                      }}>▼</span>
                     )}
                   </td>
                   {showPoints && (
@@ -162,6 +275,23 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
                   <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsFor}</td>
                   <td style={{ padding:"12px 8px",textAlign:"center",color:"var(--color-text-secondary)" }}>{s.pointsAgainst}</td>
                 </tr>
+                {isOpen && (
+                  <tr>
+                    <td colSpan={colSpan} style={{ padding: 0, background: "var(--color-background-secondary)", borderTop: `2px solid ${c.bg}` }}>
+                      <div style={{ padding: `${SPACE.sm}px ${SPACE.md}px ${SPACE.md}px` }}>
+                        <p style={{ margin: `0 0 ${SPACE.xs}px`, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--color-text-secondary)" }}>
+                          {getPlayerName(s.id)} · week by week
+                        </p>
+                        <WeeklyBreakdown
+                          weekly={s.weekly}
+                          getPlayerName={getPlayerName}
+                          showPoints={showPoints}
+                          isMobile={false} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -185,7 +315,7 @@ export function StandingsTable({ standings, getPlayerName, color, myId, pendingW
 //   └─────────────────────────────────────────────┘
 // The "You" card uses the league-theme tint for the background so the user
 // can spot themselves in a long list at a glance.
-function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, showPoints = false }) {
+function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, showPoints = false, getPlayerName, isOpen = false, onToggle }) {
   const diff = stat.pointsFor - stat.pointsAgainst;
   const c = themeColor;
   const hasMatches = stat.matches > 0;
@@ -197,14 +327,17 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
   const aheadDiff = ahead ? (ahead.pointsFor - ahead.pointsAgainst) - diff : null;
   const behindDiff = behind ? diff - (behind.pointsFor - behind.pointsAgainst) : null;
   const showGapLine = isMe && hasMatches && (aheadDiff != null || behindDiff != null);
+  const hasBreakdown = (stat.weekly || []).length > 0;
   return (
     <div
+      onClick={() => hasBreakdown && onToggle && onToggle()}
       style={{
         background: isMe ? c.light : "var(--color-background-primary)",
         border: isMe ? `1px solid ${c.bg}40` : "0.5px solid var(--color-border-tertiary)",
         borderRadius: 10,
         padding: `${SPACE.md}px ${SPACE.lg}px`,
         marginBottom: SPACE.sm,
+        cursor: hasBreakdown ? "pointer" : "default",
       }}>
       {/* Top row: rank + trend + name + you-badge */}
       <div style={{ display: "flex", alignItems: "center", gap: SPACE.sm, marginBottom: SPACE.sm }}>
@@ -233,6 +366,14 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
           <span style={{ fontSize: 10, color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
             drops W{stat.droppedWeeks.join(", W")}
           </span>
+        )}
+        {hasBreakdown && (
+          <span style={{
+            fontSize: 11, color: "var(--color-text-tertiary)",
+            display: "inline-block",
+            transform: isOpen ? "rotate(180deg)" : "none",
+            transition: "transform 0.15s",
+          }}>▼</span>
         )}
       </div>
 
@@ -304,6 +445,26 @@ function StandingsCard({ rank, stat, name, isMe, themeColor, ahead, behind, show
             <span>Ahead of #{rank + 1} by <strong style={{ color: CSC.blue }}>{behindDiff}</strong></span>
           )}
         </p>
+      )}
+      {/* Weekly breakdown, revealed on tap. Kept inside the card so the
+          totals it explains stay visible directly above it. */}
+      {isOpen && hasBreakdown && (
+        <div style={{
+          marginTop: SPACE.md,
+          paddingTop: SPACE.sm,
+          borderTop: `2px solid ${c.bg}`,
+        }}>
+          <p style={{ margin: `0 0 ${SPACE.xs}px`, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--color-text-secondary)" }}>
+            Week by week
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <WeeklyBreakdown
+              weekly={stat.weekly}
+              getPlayerName={getPlayerName}
+              showPoints={showPoints}
+              isMobile />
+          </div>
+        </div>
       )}
     </div>
   );
