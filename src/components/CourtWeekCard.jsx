@@ -251,7 +251,11 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
               ✏ Edit
             </button>
           )}
-          {isAdmin && onToggleLock && !weekData.placeholder && (
+          {/* v1.15.1 — a locked placeholder (a lock row with no generated
+              week behind it, left over from the old roster-change wipe) still
+              gets an Unlock button. Regeneration is now refused while ANY
+              lock row exists, so without this there'd be no way out. */}
+          {isAdmin && onToggleLock && (!weekData.placeholder || isLocked) && (
             <button
               style={{ ...S.btnSm(isLocked ? "primary" : "secondary", isLocked ? "#854F0B" : undefined), fontSize: 11 }}
               onClick={e => { e.stopPropagation(); onToggleLock(weekData.week); }}

@@ -10,9 +10,10 @@ import { PartnersMatrix } from "./PartnersMatrix.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { EmptyState } from "./ui.jsx";
 
-export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onShowContacts, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn, onSetPlayerCheckIn }) {
+export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onShowContacts, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn, onSetPlayerCheckIn, rosterLocked = false }) {
   const isMobile = useIsMobile();
   const openPlay = isOpenPlay(league);
+  const isDD = league.competitionType === "dd_partners";
   const [tab, setTab] = useState(openPlay ? "rsvps" : "schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = buildDisplayWeeks(league, schedule);
@@ -28,6 +29,50 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
   const paidCount = regs.filter(r => r.paid).length;
   const courtList = courtNames(numCourts);
 
+  // ─── Roster vs schedule drift (v1.15.1) ─────────────────────────────────────
+  // Adding or removing a player used to wipe the whole schedule. It no longer
+  // touches it, so the two can now disagree — and the commissioner needs to
+  // see that rather than discover it on court.
+  //
+  // Only unlocked weeks are compared: a locked week is a record of who
+  // actually played, not a plan, and a departed player belongs on it. A player
+  // marked "out" for a week isn't counted as missing from it either, because
+  // Rebalance deliberately leaves them off.
+  const rosterDrift = (() => {
+    if (openPlay) return null;
+    const regIds = new Set(regs.map(r => r.playerId));
+    const missing = new Set();
+    const extra = new Set();
+    const affectedWeeks = [];
+    realWeeks.forEach(w => {
+      if (isWeekLocked(w.week)) return;
+      const onWeek = new Set((w.courts || []).flatMap(ct => ct.players || []));
+      let affected = false;
+      regIds.forEach(pid => {
+        if (onWeek.has(pid)) return;
+        if (getCheckIn(league.id, w.week, pid)?.status === "out") return;
+        missing.add(pid);
+        affected = true;
+      });
+      onWeek.forEach(pid => {
+        if (!regIds.has(pid)) { extra.add(pid); affected = true; }
+      });
+      if (affected) affectedWeeks.push(w.week);
+    });
+    if (affectedWeeks.length === 0) return null;
+    return { missing: [...missing], extra: [...extra], weeks: affectedWeeks };
+  })();
+
+  const nameList = ids => {
+    const names = ids.map(getPlayerName);
+    return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} +${names.length - 3} more`;
+  };
+  const weekList = nums => {
+    if (nums.length === 1) return `Week ${nums[0]}`;
+    const contiguous = nums.every((w, i) => i === 0 || w === nums[i - 1] + 1);
+    return contiguous ? `Weeks ${nums[0]}–${nums[nums.length - 1]}` : `Weeks ${nums.join(", ")}`;
+  };
+
   // ─── Schedule state widget data ─────────────────────────────────────────
   // Consolidates the "what's the system waiting on?" question into one
   // widget. The state machine: first matching state wins.
@@ -38,7 +83,6 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
   //   action  { label, disabled? } or null when no action is available
   const scheduleState = (() => {
     const isLadder = league.competitionType === "ladder";
-    const isDD = league.competitionType === "dd_partners";
     const allDone = realWeeksCount >= league.weeks;
     const hasLockedWeeks = realWeeks.some(w => isWeekLocked(w.week));
 
@@ -247,6 +291,27 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                 </div>
               );
             })()}
+            {/* v1.15.1 — roster changed since these weeks were generated. Amber
+                with hardcoded text colour, so it stays legible in dark mode. */}
+            {rosterDrift && (
+              <div style={{ padding: "12px 16px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>👥</span>
+                <span>
+                  <b>Roster changed since the schedule was generated.</b>{" "}
+                  {rosterDrift.missing.length > 0 && <>Not on {weekList(rosterDrift.weeks)}: {nameList(rosterDrift.missing)}. </>}
+                  {rosterDrift.extra.length > 0 && <>Still scheduled but no longer in the league: {nameList(rosterDrift.extra)}. </>}
+                  {isDD
+                    ? (rosterLocked
+                        ? "The season is under way, so the rotation can't be regenerated around this."
+                        : "Regenerate the season to update it.")
+                    : league.competitionType === "ladder"
+                      ? "The change takes effect from the next week you generate."
+                      : (realWeeks.some(w => isWeekLocked(w.week))
+                          ? "Rebalance each affected week to fold the change in."
+                          : "Replace the schedule, or Rebalance individual weeks, to fold the change in.")}
+                </span>
+              </div>
+            )}
             {/* Court capacity visualizer. Meaningless for D+D Weekly Partners,
                 which is fixed at 8 players in 4 rotating teams. */}
             {league.competitionType !== "dd_partners" && (
@@ -336,7 +401,11 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                   onSubmitScore={onSubmitScore}
                   onToggleLock={onToggleLockWeek}
                   onEditDateTime={onEditWeekDateTime}
-                  onRebalance={onRebalanceWeek}
+                  // v1.15.1 — no Rebalance for D+D: it would rebuild the week
+                  // with the generic doubles template and break the season's
+                  // partner rotation. CourtWeekCard hides the button when
+                  // this is undefined.
+                  onRebalance={isDD ? undefined : onRebalanceWeek}
                   isLocked={isWeekLocked(w.week)}
                   defaultExpanded={w.week === firstOpenWeek}
                   isAdmin
@@ -384,6 +453,16 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                 <button style={{ ...S.btn("primary"), background: c.bg }} onClick={onAddPlayer}>+ Add Player</button>
               </div>
             </div>
+            {rosterLocked && (
+              <div style={{ padding: "12px 16px", marginBottom: 16, background: "#FAEEDA", border: "0.5px solid #ECC580", borderRadius: 8, fontSize: 13, color: "#854F0B", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>🔒</span>
+                <span>
+                  <b>Season under way — the roster is locked.</b> Weekly Partners runs one
+                  14-week rotation across exactly these 8 players, so removing someone
+                  would break it.
+                </span>
+              </div>
+            )}
             {regs.length === 0 && <EmptyState msg="No players yet. Add players to start building the roster." />}
             {regs.map(r => {
               const p = db.players[r.playerId];
@@ -406,7 +485,20 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
                     <button style={r.paid ? { ...S.btnSm("secondary"), color: "#854F0B", borderColor: "#854F0B", fontSize: 11 } : { ...S.btnSm("primary"), background: "#3B6D11", fontSize: 11 }} onClick={() => onTogglePaid(p.id)}>
                       {r.paid ? "Undo Payment" : "Mark as Paid"}
                     </button>
-                    <button style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }} onClick={() => { if (confirm(`Remove ${playerFullName(p)}?`)) onRemovePlayer(p.id); }}>Remove</button>
+                    {!rosterLocked && (
+                      <button
+                        style={{ ...S.btnSm("secondary"), color: "#A32D2D", borderColor: "#A32D2D", fontSize: 11 }}
+                        onClick={() => {
+                          // Say what does and doesn't happen — the old wording
+                          // gave no hint that the schedule was at stake.
+                          const msg = realWeeksCount > 0
+                            ? `Remove ${playerFullName(p)} from this league?\n\nThe schedule won't change — they stay on already-generated weeks until you update it.`
+                            : `Remove ${playerFullName(p)} from this league?`;
+                          if (confirm(msg)) onRemovePlayer(p.id);
+                        }}>
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </div>
               );

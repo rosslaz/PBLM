@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { S } from "../styles.js";
 import { SPACE, CSC } from "../lib/constants.js";
+import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
 // ─── Club settings tab (Phase 4 / v1.3.0 + v1.4.0) ──────────────────────────
 // v1.3.0 Session 1: rename only.
@@ -29,6 +30,7 @@ export function ClubSettingsTab({
   club, isAdmin, isOwner,
   onRename,
   onSetLogo,
+  onDownloadBackup,
   onRegenerateRequest,
   onTransferRequest,
   onDeleteRequest,
@@ -69,6 +71,7 @@ export function ClubSettingsTab({
       <RenameSection club={club} onRename={onRename} />
       <LogoSection club={club} onSetLogo={onSetLogo} />
       <RegenerateCodeSection club={club} onRequest={onRegenerateRequest} />
+      {onDownloadBackup && <BackupSection club={club} onDownload={onDownloadBackup} />}
       {/* Transfer + Delete are owner-only. We render placeholders when the
           current user isn't the owner so it's clear those options exist
           and where to look for them, without showing the actual UI. */}
@@ -288,6 +291,37 @@ function RegenerateCodeSection({ club, onRequest }) {
           style={{ ...S.btnSm("secondary"), color: "#854F0B", borderColor: "#854F0B", fontSize: 12 }}
           onClick={onRequest}>
           Regenerate code
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Backup (v1.15.1) ─────────────────────────────────────────────────────
+// Any admin can download — admins can already see everything in it. The
+// export itself (fresh fetch, club-scoped, table-shaped rows) lives in
+// App.jsx's downloadBackup and lib/backup.js.
+function BackupSection({ club, onDownload }) {
+  const busy = useIsActionPending("download-backup");
+  return (
+    <div style={{ ...S.card, padding: `${SPACE.lg}px ${SPACE.lg}px`, marginBottom: SPACE.lg }}>
+      <div style={{ marginBottom: SPACE.sm }}>
+        <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+          Backup
+        </p>
+        <p style={{ margin: `${SPACE.xs}px 0 0`, fontSize: 12, color: "var(--color-text-secondary)" }}>
+          Download a copy of everything in <b>{club.name}</b> — players, leagues,
+          schedules, scores and RSVPs. Worth doing every week or two during a
+          season. The file includes members' emails and phone numbers, so keep
+          it somewhere private.
+        </p>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          style={{ ...S.btnSm("secondary"), fontSize: 12, minWidth: 150 }}
+          onClick={onDownload}
+          disabled={busy}>
+          {busy ? <><Spinner /> Preparing…</> : "⬇ Download backup"}
         </button>
       </div>
     </div>

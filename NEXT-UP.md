@@ -1,7 +1,8 @@
 # Next Up — Backlog
 
-**Status:** v1.14.1 is live. Everything previously in this file has shipped.
-Nothing is currently in progress or uncommitted.
+**Status:** v1.15.1 — the data-safety fixes from the October 2026 full code
+review. The rest of that review is queued below as **v1.16.0** (section 0);
+nothing else is in progress.
 
 Read `PROJECT.md` first for architecture. This is the candidate list, roughly
 ordered by value per unit of risk.
@@ -44,9 +45,86 @@ fold.
 has partnered, counting locked weeks plus the current one, with this week's
 pairings highlighted. Columns keyed by initials.
 
+**v1.15.0** — Weekly drill-down: expand any standings row for a week-by-week
+breakdown (partner, Points, W, L, PF, PA), with dropped weeks struck through.
+No new computation — it renders the per-week tallies the totals were already
+summed from.
+
+**v1.15.1** — Fixes from a full code review, aimed at the live D+D season.
+Adding or removing a player no longer wipes the whole schedule (it used to, with
+no warning, and the old regenerate guard then let a Generate delete every
+score); an amber notice shows roster/schedule mismatches instead. D+D rosters
+lock once the season starts. Rebalance and drag-editing are off for D+D (both
+silently rebuilt weeks with the generic doubles template). The player hero card
+now sees both D+D rounds. And a club-scoped **Download backup** in Settings.
+
 **Data work** — orphan rows purged; three duplicate player records merged; a
 junk club (created when someone pasted a join code into the club-name field)
 trashed; the create-club form now catches that mistake as it's made.
+
+---
+
+## 0. v1.16.0 — before next season (from the October 2026 code review)
+
+Every item here was confirmed against the code — and, where possible, the live
+DB or a test run. None threatens the current season; all should land before the
+next one starts.
+
+1. **Schedule dates slip a day after the spring clock change.** The generators
+   do `new Date("YYYY-MM-DD")` (UTC midnight) → local `setDate` →
+   `toISOString()`. Reproduced: a Monday league starting 2027-01-11 shows
+   Sundays from 2027-03-14 on. Affects `generateCourtSchedule`, the ladder path
+   in `App.jsx`, `generateDDPartnersSchedule` and `buildDisplayWeeks` (twice),
+   and through them score-entry and RSVP date gating. `openPlayWeeks()` already
+   does it right (local noon) — extract one helper and use it everywhere. The
+   current season is unaffected (fall-back is harmless in US time zones).
+2. **Failed saves can show success.** `action()` swallows errors, and callers
+   then act unconditionally: `toggleLockWeek` toasts "Week N unlocked." over the
+   error; schedule and rebalance commits toast success and close the preview;
+   `joinClub` logs you into the club anyway; forms close and lose their input.
+   Make `action()` return true/false and gate on it.
+3. **ID allocation race.** `dbCreatePlayer/League/Club` read `next_id`, then
+   `upsert` — two simultaneous sign-ups get the same `player_N` and the second
+   silently overwrites the first. Switch creates to `insert` and retry on a
+   unique violation, or use an atomic Postgres function (needs a DB change).
+4. **The ← button from Commissioner mode leaves the home screen club-scoped**
+   (`activeClubId` isn't cleared), so another club's player gets "No player
+   found" on that device — the v1.1.0 login bug by a new route.
+5. **Trashed players stay on league rosters** (`getLeagueRegs` doesn't filter
+   them) and still count toward D+D's 8. Soft-delete is also global: one club
+   trashing a shared player hides them from both, and either club's Delete
+   Forever wipes the other's registrations. Trash should remove the
+   *membership*, not the player.
+6. **Input validation.** Emails aren't trimmed, lower-cased or format-checked
+   on save; `updatePlayer` and the join flow can create duplicate emails; the
+   league form accepts 0 weeks, a blank start date (which crashes generation),
+   and switching an existing Round-Robin league to D+D. Live data is clean today.
+7. **Stale state.** `PlayerView`'s selected league is set once, so a player
+   added to their first league sees a blank page; week cards are keyed by week
+   number only, so half-typed inline scores carry across leagues; `LeagueDetail`'s
+   tab goes wrong after a competition-type change.
+
+**Polish batch (any time):**
+
+- **Dark mode** — ~12 spots break the hardcoded-background rule. Worst: the
+  viewer's own row in Standings and the Partners matrix (`c.light` under theme
+  text, 1.1:1), the winning digits in `ScoreForm`, the Open Play "this week"
+  header, the league banner's Edit/Archive buttons, the join-code chip.
+- **Keyboard** — week headers, standings rows, registration cards and
+  add-player rows are clickable `div`/`tr`s with no role or key handler.
+- **Capacity** — D+D shows "8 of 10"; Open Play shows "Full" at 20.
+- **PWA** — call `reg.update()` on visibility change so a long-open installed
+  app notices new versions; precache `/dink-drink.png`.
+- **Supabase** — `ALTER FUNCTION … SET search_path = ''` on
+  `touch_updated_at` and `pb_touch_updated_at` (advisor warnings); drop the
+  empty legacy `app_config` table, which still has an anon full-access policy.
+- **Dependencies** — `npm audit fix` (dev/Node-only advisories). Don't jump to
+  Vite 8 or React 19 mid-season.
+- **Lint** — 19 unused-variable warnings.
+
+**Candidate feature: replace a D+D player for the remaining weeks.** Swap one
+id for another in every unlocked week, keeping locked weeks as played. Now that
+the roster locks mid-season, it's the only clean answer to someone quitting.
 
 ---
 
@@ -57,7 +135,7 @@ you're them. RLS is enabled but permissive (`anon_all`), so the anon key grants
 full read/write on every table.
 
 **This has changed character.** It was defensible when CSC was the only club.
-**There are now three clubs and 39 players.** Any user of any club can read and
+**There are now two clubs and 39 players.** Any user of any club can read and
 mutate every other club's data. The app is architected for multi-tenancy but
 doesn't enforce it — that gap is the whole point of the Phase 2–4 work.
 
@@ -107,7 +185,8 @@ for real users. A phase, not a session. **Don't start it mid-season.**
 
 Head-to-head records, streaks, per-court history, a season-summary view.
 
-**But:** no season has yet run end to end. There are 8 scores in the database.
+**But:** no season has yet run end to end. D+D Season 3 is the first with real
+data (56 scores, 7 weeks locked).
 Running one real season will teach more about what's missing than speculating
 now. **Wait for data.**
 
@@ -140,22 +219,31 @@ something else justifies standing up a backend.**
 ## Suggested order
 
 1. **B** — now. Cheap and mostly one-liners.
-2. **Finish the current season.** D+D Season 3 is at week 8 of 14 and is the
+2. **0 (v1.16.0)** — before the next season starts; the date fix first if that
+   season runs through March.
+3. **Finish the current season.** D+D Season 3 is at week 8 of 14 and is the
    first format to run end to end. The last few releases all came from real
    usage rather than this list, which is the pattern to keep.
-3. **A** — off-season, as a dedicated phase.
-4. **C / D / E** — as the season motivates.
+4. **A** — off-season, as a dedicated phase.
+5. **C / D / E** — as the season motivates.
 
 ---
 
 ## Standing notes for whoever picks this up
 
+- **Update these docs with every release.** Standing instruction from Ross, and
+  the lesson of two bad drifts. Same commit as the code, or the next one.
 - **Read the code, not just the docs.** These files have drifted badly twice.
   When they disagree with the code, the code wins.
 - **The compound-key underscore trap is real.** `LIKE 'league_1_%'` matches
   `league_10_...`. No `LIKE` remains in the codebase — keep it that way.
-- **Three functions bypass `action()`** (`deleteClub`, `seedTestPlayers`, the
-  schedule commit). Any guard added to the wrapper must be added to them too.
+- **Three functions bypass `action()`** (`deleteClub`, `seedTestPlayers`,
+  `downloadBackup`). Any guard added to the wrapper must be added to them too.
+  (Older notes listed the schedule commit here; it goes through `action()`.)
+- **Roster changes never touch the schedule.** Don't reintroduce a reset in
+  `dbRegisterForLeague` / `dbRemovePlayerFromLeague` — see `PROJECT.md` §7.
+- **In D+D a player is on two courts a week.** "Which court is this player
+  on?" must be `filter`, not `find`.
 - **Don't reintroduce `skipWaiting()`** in `sw.js`. It's absent on purpose.
 - **A hardcoded background with theme-variable text is always a dark-mode bug.**
 - **After deploying, check the version footer** before believing a change is

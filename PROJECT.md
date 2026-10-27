@@ -1,6 +1,6 @@
 # Pickleball League Manager — Project Reference
 
-**Current version: 1.14.1** — deployed and live. Docs verified against the
+**Current version: 1.15.1** — deployed and live. Docs verified against the
 running code and the production database on this date.
 
 This is the canonical handoff. Read this first, then `NEXT-UP.md` for planned
@@ -21,7 +21,7 @@ work. `SETUP.md` covers standing up a fresh instance.
 
 A multi-tenant web app for running pickleball leagues. Built originally for CSC
 Pickleball at Cranbrook Swim Club, then generalised so any club can sign up via
-a public join code. It now runs three clubs.
+a public join code. It now runs two clubs (CSC Pickleball and Dink & Drink).
 
 Three views:
 
@@ -115,6 +115,7 @@ pickleball-deploy/
     ├── styles.js             ← S.* style objects, genderBadgeStyle
     ├── index.css             ← CSS vars, resets, PWA safe-area classes
     ├── lib/
+    │   ├── backup.js         ← club-scoped JSON export (v1.15.1)
     │   ├── constants.js      ← APP_INFO.version, palette, COLORS, SPACE,
     │   │                        MIN/MAX_PER_COURT, storage keys, retention
     │   ├── clubs.js          ← isClubOwner/isClubAdmin, getClubsForPlayer,
@@ -195,7 +196,7 @@ in a block comment at the top of `supabase.js`.
 | | |
 |---|---|
 | Clubs | **2 live** — CSC Pickleball, Dink & Drink (logo `/dink-drink.png`) |
-| Leagues | **1 live** — `league_19` "Dink & Drink Season 3", `dd_partners`, 14 weeks, **7 locked** (week 8 in progress) |
+| Leagues | **1 live** — `league_19` "Dink & Drink Season 3", `dd_partners`, 14 weeks, **7 locked**, 56 scores (week 8 in progress) |
 | Partner progress | Through week 8: 10 pairs partnered twice, 12 once, 6 not yet — no pair over 2, so the template's guarantee is holding |
 
 Earlier CSC leagues and the Test club have since been deleted. Re-query rather
@@ -232,9 +233,11 @@ Guarded by `busyRef` so a background fetch can't land after a write's own
 clears it after. Buttons check it via `useIsActionPending` for inline spinners.
 
 **Three functions deliberately bypass `action()`** and manage their own
-spinner/reload: `deleteClub()`, `seedTestPlayers()`, and the schedule-commit
-path. **If you add a guard to `action()`, check whether these need it too** —
-the v1.5.0 offline block had to be added in three places for this reason.
+spinner/reload: `deleteClub()`, `seedTestPlayers()`, and `downloadBackup()`
+(v1.15.1 — a read, but it re-fetches and has its own offline check). Older
+notes listed the schedule commit here; it goes through `action()`. **If you add
+a guard to `action()`, check whether these need it too** — the v1.5.0 offline
+block had to be added separately for this reason.
 
 ### Soft delete + auto-purge
 
@@ -270,6 +273,44 @@ schema enforces uniqueness. `findLivePlayerByEmail()` is checked by **both**
 `createClub()` and `createPlayer()` before creating a player — otherwise one
 person becomes two records with one club each and no way to switch between them.
 That happened in production twice before it was fixed.
+
+### Roster changes never touch the schedule (v1.15.1)
+
+Until v1.15.1, `dbRegisterForLeague` and `dbRemovePlayerFromLeague` reset the
+league's schedule to `{ weeks: [] }`. That put an irreversible wipe behind an
+ordinary Remove button: one mis-tap mid-season blanked every week and the
+standings, and the schedule couldn't be rebuilt (players are shuffled into
+courts at random; scores are keyed by position, so they mean nothing without
+it). Worse, the regenerate guard asked the *schedule* which weeks were locked —
+an empty schedule said "none", so the next Generate deleted every score.
+
+Now:
+
+- **Adding or removing a player leaves the schedule exactly as it was.**
+  `LeagueDetail` compares each **unlocked** week's players with the roster and
+  shows an amber "Roster changed since the schedule was generated" notice naming
+  who's missing and who's no longer registered. Locked weeks are history, not
+  plans; a player marked `out` for a week isn't counted as missing from it.
+  Updating the schedule is always explicit: Rebalance a week, or
+  Replace/Regenerate the season.
+- **"Has this league started?" reads the rows, not the schedule.**
+  `leagueHasLockedWeek()` / `leagueHasScores()` in `App.jsx` scan the
+  `pb_locked_weeks` / `pb_scores` keys (JS `startsWith`, never `LIKE`). The
+  regenerate guard uses them, so an empty or damaged schedule can't hide locks.
+- **A locked placeholder week still shows Unlock**, so a stray lock row left by
+  the old wipe can't block regeneration forever.
+- **Ladder:** a player who has left drops out of the next week's rotation
+  rather than blocking generation with an error.
+
+### Backups (v1.15.1)
+
+Commissioner → Settings → **Download backup** saves the active club's data as
+JSON (`lib/backup.js`). It re-fetches first (never exports a stale snapshot),
+refuses to run offline, and is **club-scoped** — a club admin never receives
+another club's members' emails and phones. Rows are written exactly as they sit
+in the tables (`id`/`key`/`league_id` + `data`), grouped by table name, so a
+restore is a plain upsert per table. Trashed records are included. There is no
+in-app restore.
 
 ---
 
@@ -317,6 +358,22 @@ invariant under relabelling.
 
 The 8-player cap is enforced **at registration**, not at generation, because a
 9th player can't be absorbed by regenerating.
+
+**The roster locks once the season starts** (any locked week or entered score,
+v1.15.1): the Remove button is hidden and `removePlayer()` refuses. Each week is
+one slice of a single 14-week rotation across exactly these 8 people, so there's
+no regenerating around a departure without discarding results. A "replace player
+for the remaining weeks" feature is the candidate fix (see `NEXT-UP.md`).
+
+**No Rebalance and no hand-editing for D+D** (v1.15.1). Both rebuilt an edited
+court with `buildCourtMatches` — the generic doubles template, 3 games with
+rotating partners — silently turning a D+D week into something else. The
+Rebalance button is hidden for D+D, `computeRebalanceProposal()` refuses it, and
+the schedule preview disables "Edit courts" (Try Again reshuffles safely).
+
+**Every player is on two courts per week** (one per round). Anything asking
+"which court is this player on?" must use `filter`, not `find` — the player hero
+card used `find` until v1.15.1 and never nudged about unscored Round 2 games.
 
 **D+D is also the only format that ranks on Points** rather than Win% — see
 section 9 — and the only one with **drop weeks** and a **Partners tab**.
@@ -400,6 +457,27 @@ wins or PF in would let a discarded week decide a tie through Win% or +/−.
 Every registered player gets a seeded empty tally for every locked week, so a
 missed week exists as a real zero. Without that it would be invisible rather
 than droppable, and drops would silently eat a *played* week instead.
+
+### The per-week tally is load-bearing (v1.15.0)
+
+`buildSorted()` keeps a `Map(weekNumber -> tally)` per player, where a tally is
+`{ wins, losses, pointsFor, pointsAgainst, points, partners:Set }`. **Two
+features depend on it and a third could:**
+
+1. **Drop weeks** need per-week Points to know which weeks to discard.
+2. **The standings drill-down** renders those same tallies directly — expand a
+   row and you get Week / Partner / Pts / W / L / PF / PA, with dropped weeks
+   struck through.
+
+The drill-down deliberately reads the stored tallies rather than re-walking the
+schedule, so **the expanded rows cannot disagree with the row they expand out
+of.** Anything added here — streaks, head-to-head, a weekly grid — should read
+from `row.weekly` for the same reason.
+
+`partners` is a Set because rotating-doubles formats can pair a player with
+more than one person in a week; D+D fixes partners for the whole week, so it
+holds exactly one there. The Partner column only renders when some week has
+one, keeping singles leagues clean.
 
 > ### ⚠️ The two caps are different, on purpose
 >
@@ -537,10 +615,14 @@ controls (WCAG 1.4.11 wants 3:1).
 | **v1.13.0** | Completed weeks move below the active ones; first open week auto-expands |
 | **v1.14.0** | Partners matrix tab for D+D |
 | **v1.14.1** | Partners matrix columns use initials rather than numbers |
+| **v1.15.0** | Weekly drill-down: expand a standings row for its per-week stats |
+| **v1.15.1** | Code-review fixes: roster changes no longer wipe the schedule; D+D roster locks once the season starts; no Rebalance or hand-editing for D+D; hero card sees both D+D rounds; club backup download |
 
 **Version policy:** patch = fixes, minor = features, major = milestones.
 Bump **three** files: `package.json`, `src/lib/constants.js` (`APP_INFO.version`),
 and `public/sw.js` (`CACHE_VERSION`) on any release that changes assets.
+**Update `PROJECT.md`, `NEXT-UP.md` and `SETUP.md` in the same breath** — see
+section 15.
 
 ---
 
@@ -549,7 +631,7 @@ and `public/sw.js` (`CACHE_VERSION`) on any release that changes assets.
 1. **No real authentication.** Email-only, no password. Anyone knowing a
    member's email can sign in as them. RLS is permissive (`anon_all`), so the
    anon key grants full read/write on every table. **This was defensible with
-   one club. There are now three.** See `NEXT-UP.md` — it's the top item.
+   one club. There are now two.** See `NEXT-UP.md` — it's the top item.
 
 2. **No duplicate-email constraint in the schema.** The app-layer guards cover
    all creation paths, but nothing stops it at the DB level.
@@ -569,10 +651,23 @@ and `public/sw.js` (`CACHE_VERSION`) on any release that changes assets.
 7. **No push notifications.** Genuinely a separate project (VAPID keys, push
    endpoint, permission flow).
 
+8. **Open findings from the October 2026 code review** are queued as v1.16.0
+   in `NEXT-UP.md` section 0 — notably schedule dates landing a day early after
+   the spring clock change (every generator except Open Play), success toasts
+   after failed saves, an ID-allocation race on sign-up, and trashed players
+   staying on league rosters.
+
 ---
 
 ## 15. Working with Ross
 
+- **Update these docs as part of every release**, not periodically. They are
+  bumped in the same commit as the code, or the commit immediately after.
+  This is a standing instruction. Twice this project let the docs drift far
+  enough to actively mislead — one version claimed there was no service worker
+  when there was, and nearly caused a working one to be rewritten. Patching one
+  release at a time takes a couple of minutes; catching up six takes an hour
+  and still misses things.
 - **Windows / PowerShell.** No bash.
 - **Push back with reasoning** when a plan is wrong. Don't be relentlessly positive.
 - **DB reads: unrestricted. DB writes: require an explicit yes per call.**

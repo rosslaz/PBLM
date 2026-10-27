@@ -27,6 +27,7 @@ import {
 } from "./lib/scheduling.js";
 import { S, genderBadgeStyle } from "./styles.js";
 import { standingsPoints, leaguePoints, dropsForLockedWeeks } from "./lib/scoring.js";
+import { buildClubBackup, backupFilename, downloadJSON } from "./lib/backup.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
@@ -153,7 +154,7 @@ export default function App() {
 
   // Keep busyRef in step with the in-flight action. Covers every write path,
   // including the three that bypass the action() wrapper and set
-  // currentActionId themselves (deleteClub, seedTestPlayers, schedule commit).
+  // currentActionId themselves (deleteClub, seedTestPlayers, downloadBackup).
   useEffect(() => {
     busyRef.current = currentActionId !== null;
   }, [currentActionId]);
@@ -557,6 +558,20 @@ export default function App() {
   const getScore = (lid, week, mid) => db.scores[`${lid}_${week}_${mid}`] || null;
   const getPlayerName = id => formatPlayerName(db.players[id]);
 
+  // v1.15.1 — "has this league started?" answered from the lock and score
+  // rows themselves, NOT from the stored schedule. The old regenerate guard
+  // asked the schedule which of its weeks were locked; once a roster change
+  // had emptied the schedule, the answer was "none", and the guard waved
+  // through a regenerate that deleted every score. These look at the
+  // underlying rows, so an empty or damaged schedule can't hide them.
+  //
+  // Prefix matching is safe here (JS startsWith, not SQL LIKE): lock keys are
+  // `${leagueId}_w${week}`, and "league_1_w" is never a prefix of "league_10_w…".
+  const leagueHasLockedWeek = lid =>
+    Object.keys(db.lockedWeeks || {}).some(k => k.startsWith(`${lid}_w`));
+  const leagueHasScores = lid =>
+    Object.keys(db.scores || {}).some(k => k.startsWith(`${lid}_`));
+
   function getStandings(leagueId) {
     const regs = getLeagueRegs(leagueId);
     const sched = getLeagueSchedule(leagueId);
@@ -818,6 +833,14 @@ export default function App() {
     const sched = getLeagueSchedule(leagueId);
     const week = sched.weeks?.find(w => w.week === weekNum);
     if (!week) return { error: "Week not found." };
+    // v1.15.1 — D+D weeks come from a verified season template (every pair
+    // partners exactly twice, never against the same teams). Rebalancing would
+    // rebuild the week with the generic doubles template — 3 games with
+    // rotating partners — and break the season-long guarantee. The button is
+    // hidden for D+D; this is the backstop.
+    if (league?.competitionType === "dd_partners") {
+      return { error: "Weekly Partners weeks can't be rebalanced — the partner rotation is fixed for the whole season." };
+    }
 
     // Everyone except explicit "out". Maybe / sub / no-response all still get
     // a court — the commissioner would rather have a spot held than have to
@@ -961,7 +984,7 @@ export default function App() {
         return { error: `D+D Weekly Partners needs exactly ${DD_PARTNERS_PLAYERS} players — no more, no less. This league has ${playerIds.length}.` };
       }
       const existingWeeks = db.schedules[leagueId]?.weeks || [];
-      if (existingWeeks.some(w => isWeekLocked(leagueId, w.week))) {
+      if (leagueHasLockedWeek(leagueId)) {
         return { error: "Cannot regenerate: one or more weeks are locked. Unlock all weeks first." };
       }
       const result = generateDDPartnersSchedule(playerIds, league.startDate, seedOverride);
@@ -1000,8 +1023,7 @@ export default function App() {
     if (!isLadder) {
       // ─── Round-Robin: full season at once ───────────────────────────────────
       const existingWeeks = db.schedules[leagueId]?.weeks || [];
-      const hasLockedWeek = existingWeeks.some(w => isWeekLocked(leagueId, w.week));
-      if (hasLockedWeek) {
+      if (leagueHasLockedWeek(leagueId)) {
         return { error: "Cannot regenerate: one or more weeks are locked. Unlock all weeks first." };
       }
       const playerGenders = {};
@@ -1110,15 +1132,17 @@ export default function App() {
       }
       const prevPlayers = new Set(prevWeek.courts.flatMap(c => c.players));
       const currentPlayers = new Set(playerIds);
-      const missing = [...prevPlayers].filter(p => !currentPlayers.has(p));
-      if (missing.length > 0) {
-        return { error: `Cannot continue ladder: ${missing.length} player${missing.length!==1?"s":""} from last week ${missing.length!==1?"are":"is"} no longer registered. Re-register or remove them first.` };
-      }
       const returning = [...currentPlayers].filter(p => !prevPlayers.has(p));
 
       const prevSizes = prevWeek.courts.map(c => c.players.length);
       const rotated = laddderRotate(prevWeek.courts, db.scores, leagueId, prevWeek.week, prevSizes);
-      const ordered = rotated.flat();
+      // v1.15.1 — players who've left the league since last week simply drop
+      // out of the rotation; everyone below them closes the gap. This used to
+      // be a hard error ("re-register or remove them first"), which was only
+      // reachable because removing a player also wiped the schedule. Now that
+      // removal leaves the schedule alone, a dead end here would freeze the
+      // ladder for the rest of the season.
+      const ordered = rotated.flat().filter(p => currentPlayers.has(p));
       const fullOrder = [...ordered, ...returning];
       courtGroups = [];
       let idx = 0;
@@ -1196,8 +1220,28 @@ export default function App() {
     setModal({ type: "schedulePreview", proposal });
   }
 
+  // v1.15.1 — removal no longer touches the schedule (see dbRemovePlayerFromLeague).
+  // The removed player stays on any already-generated weeks until the
+  // commissioner rebalances or regenerates; LeagueDetail flags the mismatch.
+  //
+  // D+D Weekly Partners can't lose a player once the season is under way: the
+  // partner rotation is one 14-week template across exactly 8 people, so there
+  // is no way to "regenerate around" a departure without discarding results.
+  // LeagueDetail hides the button in that state; this is the backstop.
   async function removePlayer(leagueId, playerId) {
-    await action(() => dbRemovePlayerFromLeague(leagueId, playerId), "Player removed. Regenerate schedule.");
+    const lg = db.leagues[leagueId];
+    if (lg?.competitionType === "dd_partners"
+        && (leagueHasLockedWeek(leagueId) || leagueHasScores(leagueId))) {
+      showToast("This Weekly Partners season is under way — the roster is locked.", "error");
+      return;
+    }
+    const hasSchedule = (db.schedules[leagueId]?.weeks || []).some(w => !w.placeholder && w.courts?.length > 0);
+    await action(
+      () => dbRemovePlayerFromLeague(leagueId, playerId),
+      hasSchedule
+        ? `${getPlayerName(playerId)} removed. The schedule is unchanged — see the Schedule tab.`
+        : `${getPlayerName(playerId)} removed.`
+    );
   }
 
   // Create a player from the commissioner panel (Players tab, or the
@@ -1634,6 +1678,38 @@ export default function App() {
     }
   }
 
+  // v1.15.1 — download the active club's data as a JSON file (see lib/backup.js).
+  //
+  // A read, not a write, so it doesn't go through action(). It re-fetches
+  // first rather than exporting whatever snapshot happens to be in memory: a
+  // backup taken from a 10-minute-old snapshot would silently miss the scores
+  // entered since. For the same reason it refuses to run offline — exporting
+  // the cached snapshot would produce a file that looks current and isn't.
+  async function downloadBackup() {
+    if (!activeClubId) { showToast("No active club selected.", "error"); return; }
+    if (!navigator.onLine) {
+      showToast("You're offline — a backup needs a live connection so it's current.", "error");
+      return;
+    }
+    if (currentActionId) return;
+    setCurrentActionId("download-backup");
+    try {
+      const fresh = await loadDB();
+      setDB(fresh);
+      lastLoadRef.current = Date.now();
+      setSnapshotAge(null);
+      const backup = buildClubBackup(fresh, activeClubId);
+      downloadJSON(backupFilename(backup.club.name), backup);
+      const n = backup.counts;
+      showToast(`Backup saved: ${n.pb_leagues} league${n.pb_leagues !== 1 ? "s" : ""}, ${n.pb_players} players, ${n.pb_scores} scores.`);
+    } catch (e) {
+      console.error("[downloadBackup] failed:", e);
+      showToast(e.message || "Backup failed", "error");
+    } finally {
+      setCurrentActionId(null);
+    }
+  }
+
   async function addAdminEmail(email) {
     if (!email.trim()) return;
     if (!activeClubId) { showToast("No active club.", "error"); return; }
@@ -2065,7 +2141,9 @@ export default function App() {
             onEditWeekDateTime={weekData => setModal({ type: "editWeek", leagueId: league.id, weekData })}
             onRebalanceWeek={weekData => rebalanceWeek(league.id, weekData.week)}
             onSetPlayerCheckIn={(week, playerId, status, subName) =>
-              setPlayerCheckIn(league.id, week, playerId, status, subName)} />
+              setPlayerCheckIn(league.id, week, playerId, status, subName)}
+            rosterLocked={league.competitionType === "dd_partners"
+              && (leagueHasLockedWeek(league.id) || leagueHasScores(league.id))} />
         ) : (
           <>
             <div style={S.tabBar}>
@@ -2205,6 +2283,7 @@ export default function App() {
                 isOwner={isClubOwner(activeClub, adminEmail)}
                 onRename={renameClub}
                 onSetLogo={setClubLogo}
+                onDownloadBackup={downloadBackup}
                 onRegenerateRequest={() => setModal({ type: "confirmRegenerateCode" })}
                 onTransferRequest={(newOwnerEmail) => setModal({ type: "confirmTransferOwnership", newOwnerEmail })}
                 onDeleteRequest={() => setModal({ type: "confirmDeleteClub" })}

@@ -34,9 +34,13 @@ function computeHeroState({ player, allWeeks, today, currentWeek, leagueId, getS
     if (!w.date || w.date > today) continue;          // future
     if (isWeekLocked(leagueId, w.week)) continue;     // already finalized
     if (w.placeholder) continue;
-    const court = w.courts?.find(c => c.players.includes(player.id));
-    if (!court) continue;                              // not on this week
-    const unscored = court.matches.filter(m => {
+    // v1.15.1 — every court the player is on, not just the first. In D+D
+    // Weekly Partners each player is on two courts a week (one per round);
+    // `.find()` only ever saw Round 1, so unscored Round 2 games never
+    // triggered this nudge and the count topped out at 2 instead of 4.
+    const myCourts = (w.courts || []).filter(c => c.players.includes(player.id));
+    if (myCourts.length === 0) continue;               // not on this week
+    const unscored = myCourts.flatMap(c => c.matches).filter(m => {
       const inMatch = m.format === "doubles"
         ? [...(m.team1 || []), ...(m.team2 || [])].includes(player.id)
         : (m.home === player.id || m.away === player.id);
@@ -118,26 +122,44 @@ function findHighlightMatch(player, sched, isWeekLocked, leagueId) {
 }
 
 // Get the specific match (and its court) on a given week that the player is in
+//
+// v1.15.1 — looks across EVERY court the player is on (D+D puts each player on
+// two: one per round). Picks the first court that still has an unscored match
+// of theirs, falling back to their first court. `courts` lists all of them so
+// the hero card can describe a two-round week properly.
 function findPlayerMatchInWeek(week, playerId, isWeekLocked, leagueId, getScore) {
-  const courtIndex = week.courts.findIndex(ct => ct.players.includes(playerId));
-  if (courtIndex === -1) return null;
-  const court = week.courts[courtIndex];
-  // Among matches in their court, prefer one without a score
-  let target = court.matches.find(m => {
-    const inMatch = (m.format === "doubles"
-      ? [...(m.team1||[]), ...(m.team2||[])].includes(playerId)
-      : (m.home === playerId || m.away === playerId));
-    if (!inMatch) return false;
-    const score = getScore(leagueId, m.week, m.id);
-    return !score;
-  });
-  if (!target) {
-    // Fall back to any match they're in
-    target = court.matches.find(m => (m.format === "doubles"
-      ? [...(m.team1||[]), ...(m.team2||[])].includes(playerId)
-      : (m.home === playerId || m.away === playerId)));
+  const inMatch = m => (m.format === "doubles"
+    ? [...(m.team1||[]), ...(m.team2||[])].includes(playerId)
+    : (m.home === playerId || m.away === playerId));
+  const courts = (week.courts || [])
+    .map((court, courtIndex) => ({ court, courtIndex }))
+    .filter(({ court }) => court.players.includes(playerId));
+  if (courts.length === 0) return null;
+  // Prefer the first match of theirs without a score
+  for (const { court, courtIndex } of courts) {
+    const match = court.matches.find(m => inMatch(m) && !getScore(leagueId, m.week, m.id));
+    if (match) return { court, courtIndex, match, courts };
   }
-  return { court, courtIndex, match: target };
+  // Fall back to any match they're in
+  const first = courts[0];
+  return { ...first, match: first.court.matches.find(inMatch), courts };
+}
+
+// v1.15.1 — "Partner: X · vs A & B, then C & D" for a D+D week. The generic
+// "On court with" line lists one court's other three players, which for D+D
+// is only half the night and mixes partner and opponents together. Returns
+// null if the week doesn't have the expected shape.
+function describeDDWeek(courts, playerId, getPlayerName) {
+  const rounds = courts.map(({ court }) => {
+    const m = court.matches.find(mm => (mm.team1 || []).includes(playerId) || (mm.team2 || []).includes(playerId));
+    if (!m) return null;
+    const mine = (m.team1 || []).includes(playerId) ? m.team1 : m.team2;
+    const theirs = mine === m.team1 ? m.team2 : m.team1;
+    return { partner: mine.find(p => p !== playerId), opponents: theirs || [] };
+  }).filter(Boolean);
+  if (rounds.length === 0 || !rounds[0].partner) return null;
+  const vs = rounds.map(r => r.opponents.map(getPlayerName).join(" & ")).join(", then ");
+  return `Partner: ${getPlayerName(rounds[0].partner)} · vs ${vs}`;
 }
 
 // ─── PlayerView ─────────────────────────────────────────────────────────────
@@ -437,6 +459,9 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
         if (!found?.court) return null;
         const isUpcoming = kind === "upcoming";
         const partners = found.court.players.filter(p => p !== player.id);
+        const ddLine = selectedLeague.competitionType === "dd_partners"
+          ? describeDDWeek(found.courts, player.id, getPlayerName)
+          : null;
         const dateLabel = formatDate(hw.date);
         const effectiveTime = resolveCourtTime(found.court, found.courtIndex, selectedLeague, hw.time);
         const timeLabel = effectiveTime ? formatTime(effectiveTime) : null;
@@ -465,9 +490,11 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
                 {dateLabel}{timeLabel ? ` · ${timeLabel}` : ""}
               </p>
               <p style={{ margin: 0, fontSize: 13, opacity: 0.92 }}>
-                {partners.length > 0
-                  ? `${selectedLeague.format === "Singles" ? "Court with" : "On court with"}: ${partners.map(p => getPlayerName(p)).join(" · ")}`
-                  : "Court matchups will appear here once the schedule is published."}
+                {ddLine
+                  ? ddLine
+                  : partners.length > 0
+                    ? `${selectedLeague.format === "Singles" ? "Court with" : "On court with"}: ${partners.map(p => getPlayerName(p)).join(" · ")}`
+                    : "Court matchups will appear here once the schedule is published."}
               </p>
             </div>
           </div>

@@ -342,7 +342,15 @@ export function SchedulePreview({ preview, league, onAccept, onRetry, onCancel }
 
   // Edit mode is desktop only. Drag-and-drop on touch devices is
   // unreliable enough that it would create more friction than it removes.
-  const canEdit = !isMobile && !!league;
+  //
+  // v1.15.1 — never for D+D Weekly Partners. Its season comes from a verified
+  // template (every pair partners exactly twice, never facing the same teams
+  // twice), and moving even one player breaks that. Worse, applyWeekEdit
+  // rebuilds an edited court with buildCourtMatches — the generic doubles
+  // template, 3 games with rotating partners — so the week stops being a D+D
+  // week at all. "Try Again" reshuffles the whole season safely instead.
+  const isFixedTemplate = localProposal.kind === "dd_partners" || league?.competitionType === "dd_partners";
+  const canEdit = !isMobile && !!league && !isFixedTemplate;
 
   function applyEdit(weekNum, newGroups) {
     setLocalProposal(p => {
@@ -389,7 +397,13 @@ export function SchedulePreview({ preview, league, onAccept, onRetry, onCancel }
               : 'Click "Edit courts" on any week to rearrange players. Other weeks won\'t be affected.'}
           </p>
         )}
-        {!canEdit && localProposal.kind === "rebalance" && (
+        {isFixedTemplate && (
+          <p style={{ margin: "6px 0 0", fontSize: 12, color: CSC.blueDark, opacity: 0.85 }}>
+            Weekly Partners seasons can't be hand-edited — moving one player would
+            break the partner rotation. Use Try Again for a different shuffle.
+          </p>
+        )}
+        {!canEdit && !isFixedTemplate && localProposal.kind === "rebalance" && (
           <p style={{ margin: "6px 0 0", fontSize: 12, color: CSC.blueDark, opacity: 0.85 }}>
             Court editing needs a larger screen — on a phone you can still apply
             these assignments as generated.

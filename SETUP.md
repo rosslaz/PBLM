@@ -1,7 +1,7 @@
 # Pickleball League Manager — Setup & Deployment
 
 **Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
-**Current version:** 1.14.1
+**Current version:** 1.15.1
 
 This guide covers standing up a fresh instance from scratch. If you're picking
 up the existing deployment, read `PROJECT.md` instead — this file is for
@@ -139,7 +139,9 @@ and each plays both teams opposite, two games per matchup, with opponents
 swapping between rounds while partners stay. Over the season you partner with
 everyone exactly twice, and never face the same opposing teams the second time.
 The 8-player limit is enforced at registration, since a 9th can't be absorbed by
-regenerating.
+regenerating. Once a season has a locked week or an entered score, the roster
+locks and weeks can't be rebalanced or hand-edited — the rotation only works
+with the same 8 people throughout.
 
 This is also the only format that ranks on **Points** rather than win
 percentage: half a point for every point you score, plus 2 for winning. An 11–6
@@ -155,6 +157,10 @@ And a **Partners tab**, showing a grid of how many times each pair has
 partnered so far. It counts locked weeks plus the current one (not the whole
 generated schedule, which would show every pair at 2 from day one) and
 highlights this week's pairings.
+
+In any format, **clicking a standings row expands it** into a week-by-week
+breakdown — partner, points, wins, losses, points for and against — with any
+dropped weeks struck through.
 
 ---
 
@@ -180,7 +186,7 @@ pickleball-deploy/
     ├── styles.js             ← S.* style objects
     ├── index.css             ← CSS variables, resets, PWA safe-area
     ├── lib/                  ← constants, clubs, format, session,
-    │                            scheduling, scoring, supabase
+    │                            scheduling, scoring, supabase, backup
     └── components/           ← ~25 components (see PROJECT.md)
 ```
 
@@ -202,11 +208,32 @@ elsewhere.
 recoverable from the **Trash** tab for 30 days, then get hard-deleted with full
 cascade on the next load.
 
+**Roster changes never rewrite the schedule.** Adding or removing a player
+leaves already-generated weeks alone. The league's Schedule tab shows an amber
+notice listing who's missing or no longer registered, and you fold the change in
+with **Rebalance** (one week) or **Replace** (the whole season, only before any
+week is locked).
+
 To inspect data directly: Supabase → **Table Editor**, or SQL:
 
 ```sql
 SELECT id, data->>'name', data->>'deletedAt' FROM pb_clubs;
 ```
+
+---
+
+## Backups
+
+Commissioner → **Settings → Backup → Download backup** saves a JSON copy of
+the active club: players, memberships, leagues, schedules, scores, locked weeks
+and RSVPs, trashed records included. It always fetches fresh data and won't run
+offline. Do it every week or two during a season — it's the only copy that
+lives outside Supabase. The file contains members' emails and phone numbers, so
+keep it private.
+
+There's no in-app restore. Each table's rows are saved exactly as they sit in
+the database, so restoring is an upsert per table (e.g. from the Supabase SQL
+editor).
 
 ---
 

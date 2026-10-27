@@ -418,16 +418,25 @@ export async function dbDeleteLeagueScores(leagueId) {
   return keys.length;
 }
 
+// v1.15.1 — roster changes NO LONGER touch the schedule.
+//
+// Both of these used to reset the league's schedule to `{ weeks: [] }` "since
+// the roster changed". That was a silent, irreversible wipe sitting behind an
+// ordinary Remove button: one mis-tap mid-season erased every week, the
+// standings went blank, and the schedule couldn't be rebuilt (players are
+// shuffled into courts/seats at random). The scores survived but are keyed by
+// position, so they were meaningless without it.
+//
+// Now the schedule is left exactly as it was. LeagueDetail compares the
+// schedule's players against the roster and tells the commissioner what's out
+// of step; updating the schedule is always an explicit, previewed action
+// (Rebalance a week, or Replace/Regenerate the season).
 export async function dbRegisterForLeague(leagueId, playerId) {
   const key = `${leagueId}_${playerId}`;
   const reg = { leagueId, playerId, key, paid: false, registeredAt: new Date().toISOString() };
   const { error: rErr } = await supabase
     .from("pb_registrations").upsert({ key, data: reg });
   if (rErr) throw rErr;
-  // Reset schedule for that league since the roster changed
-  const { error: sErr } = await supabase
-    .from("pb_schedules").upsert({ league_id: leagueId, data: { weeks: [] } });
-  if (sErr) throw sErr;
 }
 
 export async function dbRemovePlayerFromLeague(leagueId, playerId) {
@@ -435,9 +444,6 @@ export async function dbRemovePlayerFromLeague(leagueId, playerId) {
   const { error: rErr } = await supabase
     .from("pb_registrations").delete().eq("key", key);
   if (rErr) throw rErr;
-  const { error: sErr } = await supabase
-    .from("pb_schedules").upsert({ league_id: leagueId, data: { weeks: [] } });
-  if (sErr) throw sErr;
 }
 
 export async function dbToggleRegPaid(leagueId, playerId) {
