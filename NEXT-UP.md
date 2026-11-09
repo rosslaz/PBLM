@@ -1,8 +1,9 @@
 # Next Up — Backlog
 
-**Status:** v1.15.2 — the polish batch from the October 2026 code review, after
-v1.15.1's data-safety fixes. The rest of that review is queued below as
-**v1.16.0** (section 0); nothing else is in progress.
+**Status:** v1.16.0 — playoffs for D+D Weekly Partners, built for the end of
+Season 3 (week 14 is Dec 14). The rest of the October 2026 code review is
+queued below as **v1.17.0** (section 0, renumbered from v1.16.0 when playoffs
+jumped the queue); nothing else is in progress.
 
 Read `PROJECT.md` first for architecture. This is the candidate list, roughly
 ordered by value per unit of risk.
@@ -67,13 +68,25 @@ a new version whenever it's reopened, and first visits no longer reload
 themselves. Lint is clean, `npm audit fix` applied, and the legacy `app_config`
 table is gone (security advisor now reports nothing).
 
+**v1.16.0** — Playoffs for D+D, opt-in per league (Edit League). Two weeks
+after the regular season: seeds 1 & 2 v 7 & 8 and 3 & 4 v 5 & 6, then the
+winners for the title and the losers for 3rd, every matchup best of 5. Setup
+opens once all 14 weeks are locked (before that, a projected bracket); setting
+up the finals locks the semifinal scores. The bracket is stored beside the
+season (`schedule.playoffs`), not in it, so standings, drop weeks, the Partners
+matrix and the stats dashboard can't count a playoff game. Week cards grew a
+series mode (numbered games, "if needed", running series score). Tested end to
+end in a headless browser against a stateful mock database: setup, both
+rounds, undo/redo of the finals, date edits, player score entry, champions —
+light and dark, zero contrast failures, standings unchanged.
+
 **Data work** — orphan rows purged; three duplicate player records merged; a
 junk club (created when someone pasted a join code into the club-name field)
 trashed; the create-club form now catches that mistake as it's made.
 
 ---
 
-## 0. v1.16.0 — before next season (from the October 2026 code review)
+## 0. v1.17.0 — before next season (from the October 2026 code review)
 
 Every item here was confirmed against the code — and, where possible, the live
 DB or a test run. None threatens the current season; all should land before the
@@ -174,6 +187,11 @@ for real users. A phase, not a session. **Don't start it mid-season.**
 
 ---
 
+**Candidate: a "clear score" action.** There's no way to delete a score from
+the app — only edit it. Mostly harmless, but it means a wrong playoff semifinal
+score can't be fixed once the finals have results (Undo finals is refused then,
+by design). A commissioner-only "Clear" on the score form would close that.
+
 ## C. Stats and standings
 
 Head-to-head records, streaks, per-court history, a season-summary view.
@@ -212,7 +230,7 @@ something else justifies standing up a backend.**
 ## Suggested order
 
 1. **B** — now. Cheap and mostly one-liners.
-2. **0 (v1.16.0)** — before the next season starts; the date fix first if that
+2. **0 (v1.17.0)** — before the next season starts; the date fix first if that
    season runs through March.
 3. **Finish the current season.** D+D Season 3 is at week 8 of 14 and is the
    first format to run end to end. The last few releases all came from real
@@ -237,6 +255,9 @@ something else justifies standing up a backend.**
   `dbRegisterForLeague` / `dbRemovePlayerFromLeague` — see `PROJECT.md` §7.
 - **In D+D a player is on two courts a week.** "Which court is this player
   on?" must be `filter`, not `find`.
+- **Playoff rounds never go in `schedule.weeks`.** They live in
+  `schedule.playoffs` so nothing that totals the season can count them
+  (`PROJECT.md` §8). They borrow week numbers 15/16 only for row keys.
 - **Don't reintroduce `skipWaiting()`** in `sw.js`. It's absent on purpose.
 - **A hardcoded background with theme-variable text is always a dark-mode bug**
   — and so is hardcoded coloured text on a themed background. Use the

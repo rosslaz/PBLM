@@ -1,7 +1,7 @@
 # Pickleball League Manager — Project Reference
 
-**Current version: 1.15.2** — deployed and live. Docs verified against the
-running code and the production database on this date.
+**Current version: 1.16.0** — playoffs for D+D Weekly Partners. Docs verified
+against the code and the production database on 9 November 2026.
 
 This is the canonical handoff. Read this first, then `NEXT-UP.md` for planned
 work. `SETUP.md` covers standing up a fresh instance.
@@ -130,6 +130,8 @@ pickleball-deploy/
     │   │                        useIsMobile, sortLeagues, buildDisplayWeeks
     │   ├── scheduling.js     ← court distribution, match generation, ladder
     │   │                        rotation, D+D Weekly Partners template
+    │   ├── playoffs.js       ← D+D playoff bracket: seeding, best-of-5 series
+    │   │                        state, finals builder (v1.16.0; pure, no React)
     │   ├── scoring.js        ← standingsPoints() PF cap + leaguePoints() Points
     │   └── supabase.js       ← client + all dbXxx functions + loadDB + cache
     └── components/           ← ~26 files, see below
@@ -139,7 +141,7 @@ pickleball-deploy/
 VersionFooter, RefreshButton, PullToRefresh, AvatarMenu, PWAInstallBanner),
 `StatusBanners.jsx`, `Spinner.jsx`, `HomeView.jsx`, `PlayerView.jsx`,
 `LeagueDetail.jsx`, `CourtWeekCard.jsx`, `OpenPlayWeeks.jsx`,
-`PartnersMatrix.jsx`,
+`PartnersMatrix.jsx`, `PlayoffsPanel.jsx`, `PlayoffSetupForm.jsx`,
 `CheckInRow.jsx`, `CheckInSummary.jsx`, `StandingsTable.jsx`,
 `SchedulePreview.jsx`, `ScoreForm.jsx`, `PlayerForm.jsx`, `LeagueForm.jsx`,
 `EditWeekForm.jsx`, `AddPlayerToLeague.jsx`, `LeagueContactsModal.jsx`,
@@ -168,7 +170,7 @@ VersionFooter, RefreshButton, PullToRefresh, AvatarMenu, PWAInstallBanner),
 | `pb_memberships` | `${clubId}_${playerId}` | player ↔ club link, deletedAt |
 | `pb_players` | `player_1` | global identity: name, email, phone, gender, deletedAt |
 | `pb_leagues` | `league_1` | settings, weeks, format, competitionType, clubId, deletedAt |
-| `pb_schedules` | `league_id` (column) | `{ weeks: [...] }` for one league |
+| `pb_schedules` | `league_id` (column) | `{ weeks: [...], playoffs? }` for one league — `playoffs` only for a D+D bracket (§8) |
 | `pb_registrations` | `${leagueId}_${playerId}` | registration + `paid` |
 | `pb_scores` | `${leagueId}_${week}_${matchId}` | homeScore, awayScore |
 | `pb_locked_weeks` | `${leagueId}_w${week}` | existence = locked |
@@ -200,7 +202,7 @@ in a block comment at the top of `supabase.js`.
 | | |
 |---|---|
 | Clubs | **2 live** — CSC Pickleball, Dink & Drink (logo `/dink-drink.png`) |
-| Leagues | **1 live** — `league_19` "Dink & Drink Season 3", `dd_partners`, 14 weeks, **7 locked**, 56 scores (week 8 in progress) |
+| Leagues | **1 live** — `league_19` "Dink & Drink Season 3", `dd_partners`, 14 weeks, **8 locked**, 64 scores (week 9 in progress, Dec 14 is week 14). Playoffs not yet turned on |
 | Partner progress | Through week 8: 10 pairs partnered twice, 12 once, 6 not yet — no pair over 2, so the template's guarantee is holding |
 
 Earlier CSC leagues and the Test club have since been deleted. Re-query rather
@@ -380,7 +382,77 @@ the schedule preview disables "Edit courts" (Try Again reshuffles safely).
 card used `find` until v1.15.1 and never nudged about unscored Round 2 games.
 
 **D+D is also the only format that ranks on Points** rather than Win% — see
-section 9 — and the only one with **drop weeks** and a **Partners tab**.
+section 9 — and the only one with **drop weeks**, a **Partners tab** and
+**playoffs**.
+
+### Playoffs (v1.16.0)
+
+Opt-in per D+D league: *Playoffs after week 14* in Edit League sets
+`league.playoffs = true` and adds a **Playoffs** tab to both views. The format is
+fixed:
+
+| | |
+|---|---|
+| **Week 1 — semifinals** | seeds 1 & 2 v 7 & 8, and 3 & 4 v 5 & 6 |
+| **Week 2 — finals** | semifinal winners for the title; losers for 3rd |
+| **Every matchup** | best of 5, first to 3 game wins |
+
+Seeds come from the final standings, so **setup is refused until every
+regular-season week is locked** (before that the tab shows "If the season ended
+today" from the live standings). `setupPlayoffs()` re-reads the standings at
+write time rather than trusting the open form. Exact ties fall to the
+standings' own order (Points, Win%, +/−, wins), then registration order.
+
+**Storage — the one rule that matters.** The bracket is `schedule.playoffs` on
+the league's `pb_schedules` row, **beside `weeks`, never inside it.** Standings,
+drop weeks, the Partners matrix, the roster-drift notice and the stats
+dashboard's SQL all read `weeks`; keeping playoff rounds out of it is what
+guarantees no playoff game is ever counted toward the regular season (verified:
+the standings table is byte-identical before and after a full playoff run).
+`buildDisplayWeeks()` stops at `league.weeks`, so playoff rounds can't appear as
+regular weeks either.
+
+Playoff rounds **borrow week numbers `league.weeks + 1` and `+ 2`** (15 and 16)
+purely so the existing row keys work unchanged — score
+`league_19_15_w15_c0_m2`, lock `league_19_w15`, check-in
+`league_19_w15_player_21`. Each round is a week-shaped object (`week`, `date`,
+`time`, `courts`); each court is one series with a `series` descriptor
+(`key` sf1/sf2/final/third, `label`, `seedsA`, `seedsB`, `bestOf`) and five
+ordinary doubles matches (`playoff: true`, `game` 1–5). The finals round is
+stored with `courts: []` until it's drawn, so its date can be shown up front.
+
+**Series mode in `CourtWeekCard`.** A court with a `series` descriptor switches
+the card into series mode: games numbered G1–G5, only the next game needed can
+be scored inline (so the series score can't skip), later games read "After game
+N" / "If needed", games after the decision read "Not needed", and the court label
+shows the running series score. A score that exists after the series was
+already decided (only possible by editing an earlier game) is shown with a "Not
+counted" badge and never changes the result. The header counts decided series
+instead of scored games. New props: `title`, `lockLabels`, `scoresFrozen` /
+`frozenNote`.
+
+**Commissioner flow.**
+
+1. **Set up playoffs** (all weeks locked) → modal shows seeds and semifinal
+   pairings, asks for two dates and a start time (default: one and two weeks
+   after the last regular week, same time).
+2. Scores go in exactly like a regular week — players can score their own
+   series once its date arrives.
+3. **Set up finals** (both semis decided) → draws the championship and
+   3rd-place series and **locks the semifinal round** (`dbSetWeekLock`), because
+   those scores now decide who plays whom. The semifinal card freezes (no edits
+   even for the commissioner) and says why.
+4. **Undo finals** exists only while no finals game has a score; it clears the
+   finals and unlocks the semis so a semifinal score can be fixed.
+5. **Remove playoffs** exists only while no playoff game has a score.
+6. **Edit dates** rewrites both rounds and every match's `date` (the score form
+   and hero card read it).
+
+Players get a hero card for their current series ("Playoffs · Semifinal 1 ·
+With X vs Y & Z · Leads 2–1"), then a champions card once the final is won.
+
+**Known gap:** the app has no "delete a score" action, so once a finals game is
+scored a wrong semifinal score can only be fixed in the database.
 
 ### The Partners matrix (v1.14.x)
 
@@ -706,6 +778,7 @@ controls (WCAG 1.4.11 wants 3:1).
 | **v1.15.0** | Weekly drill-down: expand a standings row for its per-week stats |
 | **v1.15.1** | Code-review fixes: roster changes no longer wipe the schedule; D+D roster locks once the season starts; no Rebalance or hand-editing for D+D; hero card sees both D+D rounds; club backup download |
 | **v1.15.2** | Polish: render-audited contrast (1,544 → 0 failures, both themes); keyboard access; capacity labels; PWA update check on resume, no first-visit reload; lint clean; `npm audit fix`; dropped legacy `app_config` table, pinned trigger `search_path` |
+| **v1.16.0** | Playoffs for D+D: opt-in per league, seeded 1&2 v 7&8 and 3&4 v 5&6, best-of-5 series, finals + 3rd place; stored beside the season so standings never see it; series mode in week cards |
 
 **Version policy:** patch = fixes, minor = features, major = milestones.
 Bump **three** files: `package.json`, `src/lib/constants.js` (`APP_INFO.version`),
@@ -740,8 +813,13 @@ section 15.
 7. **No push notifications.** Genuinely a separate project (VAPID keys, push
    endpoint, permission flow).
 
-8. **Open findings from the October 2026 code review** are queued as v1.16.0
-   in `NEXT-UP.md` section 0 (the polish batch shipped in v1.15.2) — notably schedule dates landing a day early after
+8. **Playoffs: no way to delete a score.** Once a finals game is scored, a
+   wrong semifinal score can only be corrected in the database (Undo finals is
+   refused, by design, once the finals have results). See §8.
+
+9. **Open findings from the October 2026 code review** are queued as v1.17.0
+   in `NEXT-UP.md` section 0 (renumbered when playoffs took v1.16.0; the polish
+   batch shipped in v1.15.2) — notably schedule dates landing a day early after
    the spring clock change (every generator except Open Play), success toasts
    after failed saves, an ID-allocation race on sign-up, and trashed players
    staying on league rosters.
@@ -796,6 +874,8 @@ from the triggering component.
 **D+D Weekly Partners** — fixed 8 players, 14 weeks, new partner each week.
 **Court** — a group of players who play each other; in D+D, one matchup.
 **Locked week** — marked complete. **Only locked weeks count toward standings.**
+**Playoffs** — optional two-week D+D bracket after the regular season (v1.16.0). Stored as `schedule.playoffs`, beside `weeks`; never counted in standings.
+**Series** — one playoff matchup: best of 5, first to 3 game wins.
 **Check-in** — weekly RSVP: in / maybe / sub / out. `sub` and `out` earn no points.
 **Trash** — soft-deleted records; 30 days, then auto-purged on the next `loadDB()`.
 **Action ID** — string identifying an in-flight write, so one button can spin alone.

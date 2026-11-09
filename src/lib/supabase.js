@@ -621,6 +621,35 @@ export async function dbToggleLockWeek(leagueId, week) {
   }
 }
 
+// v1.16.0 — set a lock to an explicit state. The toggle above reads the row
+// first and flips it, which is right for a button but wrong for a step that
+// must leave a week locked (or unlocked) whatever state it was in — setting up
+// the playoff finals locks the semifinal round so its scores can't change
+// underneath the matchups they decided.
+export async function dbSetWeekLock(leagueId, week, locked) {
+  const key = `${leagueId}_w${week}`;
+  const { error } = locked
+    ? await supabase.from("pb_locked_weeks").upsert({ key })
+    : await supabase.from("pb_locked_weeks").delete().eq("key", key);
+  if (error) throw error;
+}
+
+// v1.16.0 — write (or remove, with null) a league's playoff bracket. It lives
+// on the schedule row as `playoffs`, beside `weeks` rather than inside it, so
+// nothing that totals the regular season ever sees a playoff game (see
+// lib/playoffs.js). Read-modify-write so `weeks` is carried over untouched.
+export async function dbWritePlayoffs(leagueId, playoffs) {
+  const { data, error: e1 } = await supabase
+    .from("pb_schedules").select("data").eq("league_id", leagueId).single();
+  if (e1) throw e1;
+  const next = { ...(data?.data || { weeks: [] }) };
+  if (playoffs) next.playoffs = playoffs;
+  else delete next.playoffs;
+  const { error } = await supabase
+    .from("pb_schedules").upsert({ league_id: leagueId, data: next });
+  if (error) throw error;
+}
+
 // Write (or clear) one player's RSVP for a given week.
 //
 // v1.6.0 — `opts.setByAdmin` records that the commissioner set this on the

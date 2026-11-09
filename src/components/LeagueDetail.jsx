@@ -8,12 +8,16 @@ import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
 import { PartnersMatrix } from "./PartnersMatrix.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
+import { PlayoffsPanel } from "./PlayoffsPanel.jsx";
 import { EmptyState } from "./ui.jsx";
+import { playoffsEnabled } from "../lib/playoffs.js";
 
-export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onShowContacts, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn, onSetPlayerCheckIn, rosterLocked = false }) {
+export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerName, getStandings, onEdit, onDelete, onToggleArchive, onGenerate, onAddPlayer, onShowContacts, onRemovePlayer, onTogglePaid, onToggleLockWeek, isWeekLocked, onEnterScore, onSubmitScore, onEditWeekDateTime, onRebalanceWeek, getCheckIn, onSetPlayerCheckIn, rosterLocked = false, playoffActions = {} }) {
   const isMobile = useIsMobile();
   const openPlay = isOpenPlay(league);
   const isDD = league.competitionType === "dd_partners";
+  // v1.16.0 — D+D leagues can opt into two weeks of playoffs (Edit League).
+  const hasPlayoffs = playoffsEnabled(league);
   const [tab, setTab] = useState(openPlay ? "rsvps" : "schedule");
   const c = COLORS[league.color] || COLORS.csc;
   const weeks = buildDisplayWeeks(league, schedule);
@@ -99,10 +103,13 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
         };
       }
       if (allDone && hasLockedWeeks) {
+        const allLocked = realWeeks.length > 0 && realWeeks.every(w => isWeekLocked(w.week));
         return {
           tone: "done",
-          title: `All ${league.weeks} weeks generated.`,
-          hint: "Lock each week as its scores come in to update standings.",
+          title: allLocked ? "Regular season complete." : `All ${league.weeks} weeks generated.`,
+          hint: hasPlayoffs
+            ? (allLocked ? "Playoffs are next — set them up from the Playoffs tab." : "Lock each week as its scores come in. Playoffs follow on the Playoffs tab.")
+            : "Lock each week as its scores come in to update standings.",
           action: null,
         };
       }
@@ -245,7 +252,9 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
           // Partners only means something where partners rotate weekly, so
           // the tab is limited to the format built around that.
           : league.competitionType === "dd_partners"
-            ? ["schedule", "players", "standings", "partners"]
+            ? (hasPlayoffs
+                ? ["schedule", "playoffs", "players", "standings", "partners"]
+                : ["schedule", "players", "standings", "partners"])
             : ["schedule", "players", "standings"]
         ).map(t => <button key={t} style={S.tab(tab===t, c.bg)} onClick={() => setTab(t)}>{t === "rsvps" ? "RSVPs" : t[0].toUpperCase()+t.slice(1)}</button>)}
       </div>
@@ -507,6 +516,33 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
               );
             })}
           </div>
+        )}
+
+        {tab === "playoffs" && hasPlayoffs && (
+          <PlayoffsPanel
+            league={league}
+            playoffs={schedule?.playoffs || null}
+            standings={getStandings()}
+            seasonComplete={realWeeks.length >= league.weeks && realWeeks.every(w => isWeekLocked(w.week))}
+            lockedRegularWeeks={weeks.filter(w => isWeekLocked(w.week)).length}
+            getScore={getScore}
+            getPlayerName={getPlayerName}
+            getPlayerEmail={pid => db.players[pid]?.email}
+            isWeekLocked={isWeekLocked}
+            color={c}
+            isAdmin
+            regs={regs}
+            getCheckIn={getCheckIn}
+            onSetPlayerCheckIn={onSetPlayerCheckIn}
+            onEnterScore={onEnterScore}
+            onSubmitScore={onSubmitScore}
+            onToggleRoundLock={playoffActions.onToggleRoundLock}
+            onSetup={playoffActions.onSetup}
+            onSetupFinals={playoffActions.onSetupFinals}
+            onUndoFinals={playoffActions.onUndoFinals}
+            onCancel={playoffActions.onCancel}
+            onEditDates={playoffActions.onEditDates}
+            archived={league.status === "archived"} />
         )}
 
         {tab === "partners" && (

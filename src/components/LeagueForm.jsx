@@ -32,6 +32,8 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
     description: initial?.description || "",
     status: initial?.status || "open",
     courtConfig: resizeCourtConfig(initial?.courtConfig, initialNumCourts),
+    // v1.16.0 — D+D only: two weeks of playoffs after the regular season.
+    playoffs: !!initial?.playoffs,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -76,6 +78,10 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       payload.format = "Doubles";
       payload.numCourts = 2;      // two rounds, not two physical courts
       payload.courtConfig = undefined;
+    } else {
+      // Playoffs are seeded 1-8 into fixed teams, which only means something
+      // in the 8-player format.
+      payload.playoffs = false;
     }
     onSubmit(payload);
   }
@@ -157,6 +163,21 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
               <li>You'll partner with everyone exactly twice over the season, and never face the same teams the second time</li>
             </ul>
           </div>
+        )}
+        {isDDPartners && (
+          <label style={{ display: "flex", alignItems: "flex-start", gap: SPACE.sm, margin: `${SPACE.md}px 0 0`, fontSize: 13, color: "var(--color-text-primary)", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.playoffs}
+              onChange={e => set("playoffs", e.target.checked)}
+              style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0 }} />
+            <span>
+              <b>Playoffs after week 14</b>
+              <span style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                Two more weeks. Seeds 1 &amp; 2 play 7 &amp; 8, and 3 &amp; 4 play 5 &amp; 6, best of 5. Then the winners play for the title and the losers for 3rd. Playoff games don't count toward the standings.
+              </span>
+            </span>
+          </label>
         )}
       </div>
       <div><label style={S.label}>Description</label><textarea style={{ ...S.input, minHeight: 64, resize: "vertical" }} value={form.description} onChange={e => set("description", e.target.value)} placeholder="Optional…" /></div>

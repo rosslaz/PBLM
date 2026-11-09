@@ -168,7 +168,11 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <span style={{ ...S.badge("info"), marginBottom: 8, display: "inline-block" }}>{match.court} · Week {match.week} · {formatDate(match.date)}</span>
+        {/* Playoff games borrow week numbers past the regular season (15, 16)
+            for their storage keys; "Week 15" would mean nothing to a player. */}
+        <span style={{ ...S.badge("info"), marginBottom: 8, display: "inline-block" }}>
+          {match.playoff ? `Playoffs · ${match.court}` : `${match.court} · Week ${match.week}`} · {formatDate(match.date)}
+        </span>
         <p style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 600 }}>{labelA} vs {labelB}</p>
         <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Play to 11, win by 2</p>
       </div>

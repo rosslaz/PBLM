@@ -1,7 +1,7 @@
 # Pickleball League Manager — Setup & Deployment
 
 **Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
-**Current version:** 1.15.2
+**Current version:** 1.16.0
 
 This guide covers standing up a fresh instance from scratch. If you're picking
 up the existing deployment, read `PROJECT.md` instead — this file is for
@@ -29,7 +29,7 @@ That creates **10 tables**:
 | `pb_memberships` | `${clubId}_${playerId}` | Which players belong to which clubs |
 | `pb_players` | `id` (`player_1`) | Player identity (name, email, phone, gender) |
 | `pb_leagues` | `id` (`league_1`) | League settings, weeks, format, competition type |
-| `pb_schedules` | `league_id` | Whole-season schedule for one league |
+| `pb_schedules` | `league_id` | Whole-season schedule for one league (`weeks`, plus `playoffs` once a D+D bracket exists) |
 | `pb_registrations` | `${leagueId}_${playerId}` | Who's in which league + paid status |
 | `pb_scores` | `${leagueId}_${week}_${matchId}` | Match results |
 | `pb_locked_weeks` | `${leagueId}_w${week}` | Row exists = week is locked |
@@ -158,6 +158,15 @@ partnered so far. It counts locked weeks plus the current one (not the whole
 generated schedule, which would show every pair at 2 from day one) and
 highlights this week's pairings.
 
+**Playoffs (optional, v1.16.0).** Tick *Playoffs after week 14* under Edit
+League and a **Playoffs tab** appears. It shows the bracket "if the season ended
+today" until all 14 weeks are locked; then the commissioner sets it up from the
+final standings. Week 1: seeds 1 & 2 play 7 & 8, and 3 & 4 play 5 & 6. Week 2:
+the winners play for the title and the losers for 3rd. Every matchup is best of
+5 (first to 3 wins), scored game by game like any other week. The commissioner
+sets up week 2 once both semifinals have a winner, which locks the semifinal
+scores. Playoff games never count toward the standings.
+
 In any format, **clicking a standings row expands it** into a week-by-week
 breakdown — partner, points, wins, losses, points for and against — with any
 dropped weeks struck through.
@@ -186,8 +195,9 @@ pickleball-deploy/
     ├── styles.js             ← S.* style objects
     ├── index.css             ← CSS variables, resets, PWA safe-area
     ├── lib/                  ← constants, clubs, format, session,
-    │                            scheduling, scoring, supabase, backup, a11y
-    └── components/           ← ~25 components (see PROJECT.md)
+    │                            scheduling, scoring, playoffs, supabase,
+    │                            backup, a11y
+    └── components/           ← ~28 components (see PROJECT.md)
 ```
 
 ---

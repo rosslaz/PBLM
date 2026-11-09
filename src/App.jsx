@@ -16,7 +16,7 @@ import {
   dbSoftDeletePlayer, dbRestorePlayer, dbHardDeletePlayer,
   dbRegisterForLeague, dbRemovePlayerFromLeague, dbToggleRegPaid,
   dbWriteSchedule, dbWriteScore, dbWriteWeekDateTime, dbRebalanceWeek,
-  dbToggleLockWeek, dbSetCheckIn,
+  dbToggleLockWeek, dbSetCheckIn, dbSetWeekLock, dbWritePlayoffs,
   dbAddClubAdmin, dbRemoveClubAdmin, dbCreateMembership, dbCreateClub,
   dbUpdateClub, dbTransferOwnership, dbSoftDeleteClub,
 } from "./lib/supabase.js";
@@ -29,12 +29,17 @@ import { S, genderBadgeStyle, headerBtn } from "./styles.js";
 import { standingsPoints, leaguePoints, dropsForLockedWeeks } from "./lib/scoring.js";
 import { buildClubBackup, backupFilename, downloadJSON } from "./lib/backup.js";
 import { pressable } from "./lib/a11y.js";
+import {
+  playoffsEnabled, buildPlayoffs, buildFinalsRound, playoffState,
+  withPlayoffDates, defaultPlayoffSchedule, PLAYOFF_SEEDS,
+} from "./lib/playoffs.js";
 
 import { Modal, Toast, EmptyState, VersionFooter, RefreshButton, PullToRefresh } from "./components/ui.jsx";
 import { UpdateBanner, OfflineBanner } from "./components/StatusBanners.jsx";
 import { PlayerForm } from "./components/PlayerForm.jsx";
 import { LeagueForm } from "./components/LeagueForm.jsx";
 import { EditWeekForm } from "./components/EditWeekForm.jsx";
+import { PlayoffSetupForm } from "./components/PlayoffSetupForm.jsx";
 import { ScoreForm } from "./components/ScoreForm.jsx";
 import { AddPlayerToLeague } from "./components/AddPlayerToLeague.jsx";
 import { LeagueContactsModal } from "./components/LeagueContactsModal.jsx";
@@ -1474,6 +1479,116 @@ export default function App() {
 
   const isWeekLocked = (leagueId, week) => !!(db.lockedWeeks?.[`${leagueId}_w${week}`]);
 
+  // ─── Playoffs (v1.16.0) ─────────────────────────────────────────────────
+  // D+D Weekly Partners only, opt-in per league (Edit League). The bracket is
+  // stored on the schedule row as `playoffs`, beside `weeks` — never inside
+  // it — so nothing that totals the regular season can count a playoff game.
+  // All the bracket logic is in lib/playoffs.js; these are the writes.
+
+  // Every regular-season week locked = the standings are final = seeds can be
+  // taken from them.
+  function regularSeasonComplete(leagueId) {
+    const total = db.leagues[leagueId]?.weeks || 0;
+    if (!total) return false;
+    for (let w = 1; w <= total; w++) if (!isWeekLocked(leagueId, w)) return false;
+    return true;
+  }
+
+  // Opens the setup form with the seeds as they stand. Validation that can be
+  // answered up front happens here so the commissioner isn't shown a form
+  // that can't be submitted.
+  function openPlayoffSetup(leagueId) {
+    const lg = db.leagues[leagueId];
+    const sched = getLeagueSchedule(leagueId);
+    if (!playoffsEnabled(lg)) { showToast("Playoffs aren't turned on for this league (Edit League).", "error"); return; }
+    if (sched.playoffs) { showToast("The playoffs are already set up.", "error"); return; }
+    if (!regularSeasonComplete(leagueId)) {
+      showToast(`Lock all ${lg.weeks} regular-season weeks first — seeds come from the final standings.`, "error");
+      return;
+    }
+    const top = getStandings(leagueId).slice(0, PLAYOFF_SEEDS);
+    if (top.length < PLAYOFF_SEEDS) { showToast(`Playoffs need ${PLAYOFF_SEEDS} players in the standings.`, "error"); return; }
+    setModal({
+      type: "setupPlayoffs", leagueId,
+      seeds: top.map(r => r.id), seedPoints: top.map(r => r.points),
+      defaults: defaultPlayoffSchedule(sched.weeks),
+    });
+  }
+
+  // Seeds are re-read from the standings at the moment of writing, not taken
+  // from the open form, so a score changed in another tab can't leave the
+  // bracket seeded from stale numbers.
+  async function setupPlayoffs(leagueId, { dates, time }) {
+    const lg = db.leagues[leagueId];
+    if (getLeagueSchedule(leagueId).playoffs) { showToast("The playoffs are already set up.", "error"); return; }
+    if (!regularSeasonComplete(leagueId)) { showToast("The regular season isn't complete.", "error"); return; }
+    const top = getStandings(leagueId).slice(0, PLAYOFF_SEEDS);
+    const { error, playoffs } = buildPlayoffs({
+      seeds: top.map(r => r.id), seedPoints: top.map(r => r.points), league: lg, dates, time,
+    });
+    if (error) { showToast(error, "error"); return; }
+    await action(() => dbWritePlayoffs(leagueId, playoffs), "Playoffs set — the semifinals are ready for scores.", "setup-playoffs");
+    setModal(null);
+  }
+
+  // Draws the finals from the semifinal results and locks the semifinal round,
+  // because those scores now decide who is playing whom.
+  async function setupPlayoffFinals(leagueId) {
+    const po = getLeagueSchedule(leagueId).playoffs;
+    if (!po) return;
+    const { error, round } = buildFinalsRound(po, getScore, leagueId);
+    if (error) { showToast(error, "error"); return; }
+    await action(async () => {
+      await dbWritePlayoffs(leagueId, { ...po, rounds: [po.rounds[0], round] });
+      await dbSetWeekLock(leagueId, po.rounds[0].week, true);
+    }, "Finals set — championship and 3rd-place series are ready.", "setup-finals");
+  }
+
+  // Only while no finals game has a score: clears the finals matchups and
+  // unlocks the semifinals so a semifinal score can be corrected.
+  async function undoPlayoffFinals(leagueId) {
+    const po = getLeagueSchedule(leagueId).playoffs;
+    if (!po) return;
+    if (playoffState(po, getScore, leagueId)?.finalsHaveScores) {
+      showToast("The finals already have scores, so the semifinal results can't change now.", "error");
+      return;
+    }
+    await action(async () => {
+      await dbWritePlayoffs(leagueId, { ...po, rounds: [po.rounds[0], { ...po.rounds[1], courts: [] }] });
+      await dbSetWeekLock(leagueId, po.rounds[0].week, false);
+      await dbSetWeekLock(leagueId, po.rounds[1].week, false);
+    }, "Finals cleared. Semifinal scores can be edited again.", "undo-finals");
+  }
+
+  // Only while no playoff game has a score.
+  async function cancelPlayoffs(leagueId) {
+    const po = getLeagueSchedule(leagueId).playoffs;
+    if (!po) return;
+    if (playoffState(po, getScore, leagueId)?.hasScores) {
+      showToast("Playoff games have been scored, so the bracket can't be removed.", "error");
+      return;
+    }
+    await action(async () => {
+      await dbWritePlayoffs(leagueId, null);
+      for (const r of po.rounds) await dbSetWeekLock(leagueId, r.week, false);
+    }, "Playoff bracket removed.", "cancel-playoffs");
+  }
+
+  async function updatePlayoffDates(leagueId, { dates, time }) {
+    const po = getLeagueSchedule(leagueId).playoffs;
+    if (!po) return;
+    await action(() => dbWritePlayoffs(leagueId, withPlayoffDates(po, dates, time)), "Playoff dates updated.", "playoff-dates");
+    setModal(null);
+  }
+
+  async function togglePlayoffRoundLock(leagueId, round) {
+    const locked = isWeekLocked(leagueId, round.week);
+    await action(
+      () => dbSetWeekLock(leagueId, round.week, !locked),
+      `${round.name} ${locked ? "unlocked" : "locked"}.`
+    );
+  }
+
   // Add/remove admins on the currently active club. The DB-layer functions
   // enforce the per-role permissions (any admin can add, only owner can
   // remove). These wrappers are passed to AdminsTab, which is already
@@ -1892,6 +2007,34 @@ export default function App() {
             committing. The headcount summary that used to live in this
             modal is now the preview's `summary` line, and the
             scores-will-be-cleared warning is its `warning` field. */}
+        {modal?.type === "setupPlayoffs" && (
+          <Modal title={`Set up playoffs · ${db.leagues[modal.leagueId]?.name || ""}`} onClose={() => setModal(null)}>
+            <PlayoffSetupForm
+              mode="setup"
+              seeds={modal.seeds}
+              seedPoints={modal.seedPoints}
+              defaults={modal.defaults}
+              getPlayerName={getPlayerName}
+              color={(COLORS[db.leagues[modal.leagueId]?.color] || COLORS.csc).bg}
+              onSubmit={d => setupPlayoffs(modal.leagueId, d)}
+              onCancel={() => setModal(null)} />
+          </Modal>
+        )}
+        {modal?.type === "editPlayoffDates" && (() => {
+          const po = getLeagueSchedule(modal.leagueId).playoffs;
+          if (!po) return null;
+          return (
+            <Modal title="Playoff dates" onClose={() => setModal(null)}>
+              <PlayoffSetupForm
+                mode="dates"
+                defaults={{ dates: po.rounds.map(r => r.date), time: po.rounds[0]?.time || "" }}
+                getPlayerName={getPlayerName}
+                color={(COLORS[db.leagues[modal.leagueId]?.color] || COLORS.csc).bg}
+                onSubmit={d => updatePlayoffDates(modal.leagueId, d)}
+                onCancel={() => setModal(null)} />
+            </Modal>
+          );
+        })()}
         {modal?.type === "editWeek" && (() => {
           const w = modal.weekData;
           const lg = db.leagues[modal.leagueId];
@@ -2147,7 +2290,15 @@ export default function App() {
             onSetPlayerCheckIn={(week, playerId, status, subName) =>
               setPlayerCheckIn(league.id, week, playerId, status, subName)}
             rosterLocked={league.competitionType === "dd_partners"
-              && (leagueHasLockedWeek(league.id) || leagueHasScores(league.id))} />
+              && (leagueHasLockedWeek(league.id) || leagueHasScores(league.id))}
+            playoffActions={{
+              onSetup: () => openPlayoffSetup(league.id),
+              onSetupFinals: () => setupPlayoffFinals(league.id),
+              onUndoFinals: () => undoPlayoffFinals(league.id),
+              onCancel: () => cancelPlayoffs(league.id),
+              onEditDates: () => setModal({ type: "editPlayoffDates", leagueId: league.id }),
+              onToggleRoundLock: round => togglePlayoffRoundLock(league.id, round),
+            }} />
         ) : (
           <>
             <div style={S.tabBar}>

@@ -10,6 +10,8 @@ import { CourtWeekCard } from "./CourtWeekCard.jsx";
 import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
 import { PartnersMatrix } from "./PartnersMatrix.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
+import { PlayoffsPanel } from "./PlayoffsPanel.jsx";
+import { playoffsEnabled, playoffState, playerPlayoffSpot, seriesSummary } from "../lib/playoffs.js";
 import { LeagueRegistrationCard } from "./LeagueRegistrationCard.jsx";
 import { ClubSwitcher } from "./ClubSwitcher.jsx";
 
@@ -175,10 +177,18 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
   // playerTab lives in App state and survives switching between leagues, so a
   // tab that only exists for one format can outlive the league it belongs to.
   // Fall back to the schedule rather than rendering an empty pane.
-  const activeTab = (playerTab === "partners" && selectedLeague?.competitionType !== "dd_partners")
+  // v1.16.0 — the same applies to the Playoffs tab, which only exists for D+D
+  // leagues that have playoffs turned on.
+  const hasPlayoffs = playoffsEnabled(selectedLeague);
+  const activeTab = ((playerTab === "partners" && selectedLeague?.competitionType !== "dd_partners")
+      || (playerTab === "playoffs" && !hasPlayoffs))
     ? "schedule"
     : playerTab;
   const sched = selectedLeagueId ? getLeagueSchedule(selectedLeagueId) : { weeks: [] };
+  // Locked regular-season weeks — the playoff panel's "x of 14 so far".
+  const lockedRegular = selectedLeague
+    ? Array.from({ length: selectedLeague.weeks || 0 }, (_, i) => i + 1).filter(w => isWeekLocked(selectedLeagueId, w)).length
+    : 0;
   const myWeeks = (sched.weeks || []).filter(w => w.courts.some(ct => ct.players.includes(player.id)));
 
   // Group registrations by league so the join cards can show a roster
@@ -417,6 +427,72 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
           );
         }
 
+        // ── Variant 1b (v1.16.0): playoffs ───────────────────────────
+        // Once a bracket exists the regular season is over, so the playoff
+        // series is the thing to show. Unscored regular-season games (above)
+        // still take priority — they're the only thing that could be overdue.
+        if (hasPlayoffs && sched.playoffs) {
+          const pst = playoffState(sched.playoffs, getScore, selectedLeagueId);
+          const teamName = ids => (ids || []).map(getPlayerName).join(" & ");
+          const goToPlayoffs = (
+            <button
+              type="button"
+              onClick={() => setPlayerTab("playoffs")}
+              style={{ marginTop: 8, background: "rgba(0,0,0,0.18)", border: "0.5px solid rgba(255,255,255,0.45)", color: "#fff", borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              See the bracket
+            </button>
+          );
+          if (pst?.stage === "complete") {
+            return (
+              <div style={{ margin: "12px 16px 0" }}>
+                <div style={{ background: c.bg, color: "#fff", borderRadius: 12, padding: "12px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", background: "rgba(0,0,0,0.25)", padding: "2px 8px", borderRadius: 999 }}>
+                      Champions
+                    </span>
+                    <span style={{ fontSize: 12 }}>{selectedLeague.name}</span>
+                  </div>
+                  <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}><span aria-hidden="true">🏆 </span>{teamName(pst.champions)}</p>
+                  <p style={{ margin: 0, fontSize: 13 }}>Runners-up {teamName(pst.runnersUp)} · 3rd place {teamName(pst.third)}</p>
+                  {goToPlayoffs}
+                </div>
+              </div>
+            );
+          }
+          const spot = playerPlayoffSpot(pst, player.id);
+          if (spot) {
+            const { round, series, onA } = spot;
+            const mine = onA ? series.teamA : series.teamB;
+            const theirs = onA ? series.teamB : series.teamA;
+            const partner = mine.find(p => p !== player.id);
+            const finals = pst.rounds[1];
+            let line = `With ${getPlayerName(partner)} vs ${teamName(theirs)} · ${seriesSummary(series, teamName)}`;
+            if (series.decided && pst.stage === "awaitingFinals") {
+              const won = series.winnerTeam.includes(player.id);
+              const hi = Math.max(series.winsA, series.winsB), lo = Math.min(series.winsA, series.winsB);
+              line = `${won ? "You won" : "You lost"} ${series.label.toLowerCase()}, ${won ? hi : lo}\u2013${won ? lo : hi}. Next: ${won ? "the championship" : "the 3rd-place series"}${finals?.date ? `, ${formatDate(finals.date)}` : ""}.`;
+            }
+            const timeLabel = round.time ? formatTime(round.time) : null;
+            return (
+              <div style={{ margin: "12px 16px 0" }}>
+                <div style={{ background: c.bg, color: "#fff", borderRadius: 12, padding: "12px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", background: "rgba(0,0,0,0.25)", padding: "2px 8px", borderRadius: 999 }}>
+                      Playoffs
+                    </span>
+                    <span style={{ fontSize: 12 }}>{round.name} · {series.label}</span>
+                  </div>
+                  <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>
+                    {formatDate(round.date)}{timeLabel ? ` · ${timeLabel}` : ""}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 13 }}>{line}</p>
+                  {goToPlayoffs}
+                </div>
+              </div>
+            );
+          }
+        }
+
         // ── Variant 2: needs to check in for current week ────────────
         if (heroState?.kind === "needs-checkin") {
           const { week: hw } = heroState;
@@ -533,7 +609,7 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
           <>
           <div style={S.tabBar}>
             {(selectedLeague.competitionType === "dd_partners"
-              ? ["schedule", "standings", "partners"]
+              ? (hasPlayoffs ? ["schedule", "playoffs", "standings", "partners"] : ["schedule", "standings", "partners"])
               : ["schedule", "standings"]
             ).map(t => <button key={t} style={S.tab(activeTab===t,c.bg)} onClick={() => setPlayerTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
           </div>
@@ -646,6 +722,24 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
                 </div>
               );
             })()}
+            {activeTab === "playoffs" && hasPlayoffs && (
+              <PlayoffsPanel
+                league={selectedLeague}
+                playoffs={sched.playoffs || null}
+                standings={getStandings(selectedLeagueId)}
+                seasonComplete={lockedRegular >= (selectedLeague.weeks || 0)}
+                lockedRegularWeeks={lockedRegular}
+                getScore={getScore}
+                getPlayerName={getPlayerName}
+                isWeekLocked={wk => isWeekLocked(selectedLeagueId, wk)}
+                color={c}
+                myId={player.id}
+                getCheckIn={getCheckIn}
+                onSetCheckIn={(week, status, subName) => setCheckIn(selectedLeagueId, week, player.id, status, subName)}
+                onEnterScore={match => setModal({ type: "enterScore", match, leagueId: selectedLeagueId })}
+                onSubmitScore={(home, away, match, actionId) => submitScoreInline(selectedLeagueId, home, away, match, actionId)}
+                archived={selectedLeague.status === "archived"} />
+            )}
             {activeTab === "partners" && (
               <PartnersMatrix
                 playerIds={(regsByLeague[selectedLeagueId] || []).map(r => r.playerId)}
