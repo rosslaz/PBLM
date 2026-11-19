@@ -2,32 +2,27 @@ import { useState } from "react";
 import { S } from "../styles.js";
 import { SPACE } from "../lib/constants.js";
 import { useIsMobile } from "../lib/session.js";
-import { semifinalPairings, PLAYOFF_BEST_OF, PLAYOFF_WINS_NEEDED } from "../lib/playoffs.js";
+import { playoffGroups, PLAYOFF_GAME_TO } from "../lib/playoffs.js";
 import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
-// v1.16.0 — the commissioner's playoff setup, and the same form for moving
-// the dates later.
+// v1.17.0 — the commissioner's playoff setup, and the same form for moving
+// the night later.
 //
-//   mode "setup"  shows the seeds (final standings order) and the semifinal
-//                 pairings they produce, then asks for the two dates
-//   mode "dates"  just the dates and start time
+//   mode "setup"  shows the seeds (final standings order), the two groups and
+//                 the three games each plays, then asks for the date
+//   mode "dates"  just the date and start time
 //
 // Seeds aren't editable here on purpose: they come from the standings, which
 // is the whole fairness argument for the format. If the standings are wrong,
-// the fix is the scores, not a hand-edited bracket.
+// the fix is the scores, not hand-edited groups.
 export function PlayoffSetupForm({ mode = "setup", seeds = [], seedPoints, getPlayerName, defaults, onSubmit, onCancel, color }) {
   const isMobile = useIsMobile();
   const actionId = mode === "setup" ? "setup-playoffs" : "playoff-dates";
   const isPending = useIsActionPending(actionId);
-  const [semiDate, setSemiDate] = useState(defaults?.dates?.[0] || "");
-  const [finalDate, setFinalDate] = useState(defaults?.dates?.[1] || "");
+  const [date, setDate] = useState(defaults?.date || "");
   const [time, setTime] = useState(defaults?.time || "");
 
-  const error = !semiDate || !finalDate
-    ? "Pick a date for both playoff weeks."
-    : finalDate < semiDate
-      ? "The finals can't be before the semifinals."
-      : null;
+  const error = !date ? "Pick a date for the playoff night." : null;
   const team = ids => ids.map(getPlayerName).join(" & ");
   const fmtPts = v => {
     if (v == null) return "";
@@ -50,28 +45,27 @@ export function PlayoffSetupForm({ mode = "setup", seeds = [], seedPoints, getPl
               ))}
             </ol>
           </div>
-          <div>
-            <p style={{ ...S.label, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Semifinals</p>
-            {semifinalPairings(seeds).map(sf => (
-              <div key={sf.key} style={{ padding: "8px 12px", marginBottom: SPACE.xs, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13 }}>
-                <span style={{ fontWeight: 600 }}>{sf.label}:</span>{" "}
-                {team(sf.teamA)} <span style={{ color: "var(--color-text-secondary)" }}>({sf.seedsA.join(" & ")})</span>
-                {" vs "}
-                {team(sf.teamB)} <span style={{ color: "var(--color-text-secondary)" }}>({sf.seedsB.join(" & ")})</span>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: SPACE.sm }}>
+            {playoffGroups(seeds).map(g => (
+              <div key={g.key} style={{ minWidth: 0, padding: "8px 12px", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, fontSize: 13 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>
+                  {g.label} <span style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}>· seeds {g.seeds[0]}–{g.seeds[3]}</span>
+                </p>
+                {g.games.map((game, i) => (
+                  <p key={i} style={{ margin: "2px 0 0" }}>
+                    <span style={{ color: "var(--color-text-secondary)" }}>G{i + 1}</span> {team(game.team1)} <span style={{ color: "var(--color-text-secondary)" }}>vs</span> {team(game.team2)}
+                  </p>
+                ))}
               </div>
             ))}
           </div>
         </>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: SPACE.md }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: SPACE.md }}>
         <div style={{ minWidth: 0 }}>
-          <label htmlFor="po-semi-date" style={S.label}>Semifinals</label>
-          <input id="po-semi-date" style={S.input} type="date" value={semiDate} onChange={e => setSemiDate(e.target.value)} />
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <label htmlFor="po-final-date" style={S.label}>Finals &amp; 3rd place</label>
-          <input id="po-final-date" style={S.input} type="date" value={finalDate} onChange={e => setFinalDate(e.target.value)} />
+          <label htmlFor="po-date" style={S.label}>Playoff night</label>
+          <input id="po-date" style={S.input} type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
         <div style={{ minWidth: 0 }}>
           <label htmlFor="po-time" style={S.label}>Start time</label>
@@ -80,22 +74,19 @@ export function PlayoffSetupForm({ mode = "setup", seeds = [], seedPoints, getPl
       </div>
 
       <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-        Every matchup is best of {PLAYOFF_BEST_OF}: the first team to win {PLAYOFF_WINS_NEEDED} games takes the series.
-        Week 2 is set from the week 1 results: winners play for the title, losers for 3rd.
-        Playoff games don't count toward the standings{mode === "setup" ? ", and the seeds are fixed once the bracket is created." : "."}
+        Each group plays all three partner combos, one game each, to {PLAYOFF_GAME_TO} (win by 2). Most wins tops the group;
+        ties go to point differential, then seed. Playoff games don't count toward the standings
+        {mode === "setup" ? ", and the groups are fixed once they're created." : "."}
       </p>
-
-      {error && (semiDate || finalDate) && (
-        <p style={{ margin: 0, fontSize: 13, color: "var(--color-text-danger)" }}>{error}</p>
-      )}
 
       <div style={{ ...S.row, justifyContent: "flex-end", gap: SPACE.sm }}>
         <button style={S.btn("secondary")} onClick={onCancel} disabled={isPending}>Cancel</button>
         <button
           style={{ ...S.btn("primary"), background: color, opacity: error ? 0.5 : 1, minWidth: 150 }}
           disabled={!!error || isPending}
-          onClick={() => onSubmit({ dates: [semiDate, finalDate], time })}>
-          {isPending ? <><Spinner /> Saving…</> : mode === "setup" ? "Create bracket" : "Save dates"}
+          title={error || undefined}
+          onClick={() => onSubmit({ date, time })}>
+          {isPending ? <><Spinner /> Saving…</> : mode === "setup" ? "Create playoffs" : "Save date"}
         </button>
       </div>
     </div>

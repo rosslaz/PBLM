@@ -1,53 +1,71 @@
-// ─── Playoffs (v1.16.0) — D+D Weekly Partners only ──────────────────────────
+// ─── Playoffs (v1.17.0) — D+D Weekly Partners only ──────────────────────────
 //
-// Two weeks after the 14-week regular season:
+// One playoff night after the 14-week regular season. The final standings
+// split the league into two groups of four:
 //
-//   Week 1 (semifinals)  seeds 1&2 v 7&8   and   seeds 3&4 v 5&6
-//   Week 2 (finals)      the two winners play for the title,
-//                        the two losers play for 3rd place
+//   Title group   seeds 1-4, playing for 1st-4th
+//   5th-8th       seeds 5-8, playing for 5th-8th
 //
-// Every matchup is a best-of-5 series: first team to 3 game wins takes it.
-// Teams are fixed for the whole playoffs — seeds 1 and 2 partner each other,
-// and so on — which is the point: the regular season decides who you play with.
+// Each group plays all three ways of splitting four players into two teams,
+// one game each, so everyone partners each player in the group once and plays
+// against him twice:
 //
-// WHERE IT LIVES. The bracket is stored on the league's schedule row as
+//   Game 1   1&2 v 3&4        (seed numbers within the group: 1st, 2nd, ...)
+//   Game 2   1&3 v 2&4
+//   Game 3   1&4 v 2&3
+//
+// Games are to 15, win by 2 (PLAYOFF_GAME_TO). A game won counts as a win for
+// both partners. The group is ranked by wins, then point differential (raw
+// scores), then regular-season seed. The top of the title group is champion.
+//
+// This replaced v1.16.0's two-week bracket (fixed teams 1&2 v 7&8 and 3&4 v
+// 5&6, best of 5) after the league voted for it. No league ever stored a
+// bracket in the old shape, so there is nothing to migrate; playoffState()
+// still recognises one so the commissioner could remove it.
+//
+// WHERE IT LIVES. The playoffs are stored on the league's schedule row as
 // `schedule.playoffs`, deliberately NOT in `schedule.weeks`. Everything that
 // adds up the regular season — standings, drop weeks, the Partners matrix, the
 // roster-drift notice, the stats dashboard's queries — reads `weeks`, so none
-// of it can count a playoff game by accident. Playoff rounds borrow week
-// numbers 15 and 16 (league.weeks + 1 and + 2) purely so scores, locks and
-// check-ins can reuse the existing row keys:
+// of it can count a playoff game by accident. The playoff night borrows week
+// number 15 (league.weeks + 1) purely so scores, the lock and check-ins can
+// reuse the existing row keys:
 //
-//   score    `${leagueId}_15_w15_c0_m2`   (round 1, semifinal 1, game 3)
+//   score    `${leagueId}_15_w15_c0_m2`   (title group, game 3)
 //   lock     `${leagueId}_w15`
 //   check-in `${leagueId}_w15_${playerId}`
 //
-// Match objects keep the same shape as every other doubles match, so
-// CourtWeekCard, ScoreForm and the score toast work on them unchanged. A court
-// carries a `series` descriptor; that's what switches CourtWeekCard into
-// series mode (game numbers, "if needed", running series score).
+// Match objects keep the shape of every other doubles match, plus `gameTo`,
+// so CourtWeekCard, ScoreForm and the score toast work on them unchanged and
+// score entry knows these games go to 15.
 //
 // Everything in this file is pure: no React, no database.
 
-export const PLAYOFF_BEST_OF = 5;
-export const PLAYOFF_WINS_NEEDED = Math.ceil(PLAYOFF_BEST_OF / 2); // 3
 export const PLAYOFF_SEEDS = 8;
+export const PLAYOFF_GAME_TO = 15;
+export const PLAYOFF_FORMAT = "groups";
 
 // Seed numbers are 1-based, as people say them.
-export const SEMIFINALS = [
-  { key: "sf1", label: "Semifinal 1", seedsA: [1, 2], seedsB: [7, 8] },
-  { key: "sf2", label: "Semifinal 2", seedsA: [3, 4], seedsB: [5, 6] },
+export const PLAYOFF_GROUPS = [
+  { key: "title", label: "Title group", seeds: [1, 2, 3, 4], firstPlace: 1 },
+  { key: "places", label: "5th–8th", seeds: [5, 6, 7, 8], firstPlace: 5 },
 ];
 
-// Playoffs are a per-league opt-in, and only exist for the format built around
-// fixed seeds: 8 players, so 4 teams of 2.
+// The three ways to split a group of four into two teams, as indexes into the
+// group's players (best seed first).
+export const PARTNER_COMBOS = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]],
+];
+
+// Playoffs are a per-league opt-in, and only exist for the 8-player format.
 export function playoffsEnabled(league) {
   return league?.competitionType === "dd_partners" && !!league.playoffs;
 }
 
 // YYYY-MM-DD + n days, computed at local noon so a daylight-saving change in
-// between can't shift the result a day (the bug queued for v1.17.0 in the
-// regular-season generators).
+// between can't shift the result a day.
 export function addDaysISO(iso, n) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-").map(Number);
@@ -58,176 +76,159 @@ export function addDaysISO(iso, n) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
-// The two playoff rounds sit right after the regular season.
-export function playoffWeekNumbers(league) {
-  const base = league?.weeks || 14;
-  return [base + 1, base + 2];
+// The playoff night sits right after the regular season.
+export function playoffWeekNumber(league) {
+  return (league?.weeks || 14) + 1;
 }
 
-// Default dates and time: one and two weeks after the last regular week, at
-// that week's start time.
+// Default date and time: one week after the last regular week, at that
+// week's start time.
 export function defaultPlayoffSchedule(regularWeeks) {
   const real = (regularWeeks || []).filter(w => !w.placeholder && w.date);
   const last = real.reduce((a, w) => (!a || w.week > a.week ? w : a), null);
-  return {
-    dates: last ? [addDaysISO(last.date, 7), addDaysISO(last.date, 14)] : ["", ""],
-    time: last?.time || "",
-  };
+  return { date: last ? addDaysISO(last.date, 7) : "", time: last?.time || "" };
 }
 
-const teamFromSeeds = (seeds, nums) => nums.map(n => seeds[n - 1]);
-
-// Five game rows for one series. ids follow the w{week}_c{court}_m{index}
-// pattern every other match uses, so score keys need no special handling.
-function seriesMatches({ week, round, courtIdx, label, team1, team2, date }) {
-  return Array.from({ length: PLAYOFF_BEST_OF }, (_, g) => ({
-    id: `w${week}_c${courtIdx}_m${g}`,
-    team1,
-    team2,
-    sitOut: null,
-    week,
-    court: `${label} · Game ${g + 1}`,
-    date,
-    format: "doubles",
-    round,
-    game: g + 1,
-    playoff: true,
-  }));
+// Both groups from a seed list (player ids, best first): who is in each and
+// the three games they play. Used for the "if the season ended today" preview,
+// the setup form, and to build the real thing.
+export function playoffGroups(seeds) {
+  return PLAYOFF_GROUPS.map(g => {
+    const players = g.seeds.map(n => seeds[n - 1]);
+    return {
+      ...g,
+      players,
+      games: PARTNER_COMBOS.map(([a, b]) => ({
+        team1: a.map(i => players[i]),
+        team2: b.map(i => players[i]),
+        seeds1: a.map(i => g.seeds[i]),
+        seeds2: b.map(i => g.seeds[i]),
+      })),
+    };
+  });
 }
 
-function seriesCourt({ week, round, courtIdx, series, team1, team2, date }) {
-  return {
-    courtName: series.label,
-    players: [...team1, ...team2],
-    round,
-    series: { ...series, bestOf: PLAYOFF_BEST_OF },
-    matches: seriesMatches({ week, round, courtIdx, label: series.label, team1, team2, date }),
-  };
-}
-
-// Projected or actual semifinal pairings from a seed list (player ids in seed
-// order). Used both for the "if the season ended today" preview and for setup.
-export function semifinalPairings(seeds) {
-  return SEMIFINALS.map(sf => ({
-    ...sf,
-    teamA: teamFromSeeds(seeds, sf.seedsA),
-    teamB: teamFromSeeds(seeds, sf.seedsB),
-  }));
-}
-
-// Build the bracket when the regular season is over.
+// Build the playoffs when the regular season is over.
 //   seeds        player ids, best first (final standings order), exactly 8
 //   seedPoints   matching standings Points, kept for display
-//   league       for the week numbers
-//   dates        [round1, round2] as YYYY-MM-DD
+//   league       for the week number
+//   date         YYYY-MM-DD
 //   time         "HH:MM" or ""
-export function buildPlayoffs({ seeds, seedPoints, league, dates, time, now }) {
+export function buildPlayoffs({ seeds, seedPoints, league, date, time, gameTo = PLAYOFF_GAME_TO, now }) {
   if (!Array.isArray(seeds) || seeds.length !== PLAYOFF_SEEDS || new Set(seeds).size !== PLAYOFF_SEEDS) {
     return { error: `Playoffs need ${PLAYOFF_SEEDS} different seeded players.` };
   }
-  if (!dates?.[0] || !dates?.[1]) return { error: "Pick a date for both playoff weeks." };
-  if (dates[1] < dates[0]) return { error: "The finals can't be before the semifinals." };
-  const [w1, w2] = playoffWeekNumbers(league);
-  const courts = semifinalPairings(seeds).map((sf, ci) => seriesCourt({
-    week: w1, round: 1, courtIdx: ci, date: dates[0],
-    series: { key: sf.key, label: sf.label, seedsA: sf.seedsA, seedsB: sf.seedsB },
-    team1: sf.teamA, team2: sf.teamB,
+  if (!date) return { error: "Pick a date for the playoff night." };
+  const week = playoffWeekNumber(league);
+  const courts = playoffGroups(seeds).map((g, ci) => ({
+    courtName: g.label,
+    players: g.players,
+    round: 1,
+    group: { key: g.key, label: g.label, seeds: g.seeds, firstPlace: g.firstPlace },
+    // ids follow the w{week}_c{court}_m{index} pattern every other match
+    // uses, so score keys need no special handling.
+    matches: g.games.map((game, gi) => ({
+      id: `w${week}_c${ci}_m${gi}`,
+      team1: game.team1,
+      team2: game.team2,
+      sitOut: null,
+      week,
+      court: `${g.label} · Game ${gi + 1}`,
+      date,
+      format: "doubles",
+      round: 1,
+      game: gi + 1,
+      gameTo,
+      playoff: true,
+    })),
   }));
   return {
     playoffs: {
-      version: 1,
+      version: 2,
+      format: PLAYOFF_FORMAT,
       createdAt: now || new Date().toISOString(),
-      bestOf: PLAYOFF_BEST_OF,
+      gameTo,
       seeds: [...seeds],
       seedPoints: seedPoints ? [...seedPoints] : null,
-      rounds: [
-        { week: w1, round: 1, name: "Semifinals", date: dates[0], time: time || null, courts },
-        // Finals are a placeholder until both semis are decided — who plays
-        // whom isn't known yet. The date is fixed now so players can plan.
-        { week: w2, round: 2, name: "Finals", date: dates[1], time: time || null, courts: [] },
-      ],
+      rounds: [{ week, round: 1, name: "Playoff night", date, time: time || null, courts }],
     },
   };
 }
 
-// ─── Series scoring ─────────────────────────────────────────────────────────
-// Walk the games in order, counting wins until one side reaches 3. Each game
-// comes back with a status:
-//   counted    scored, and part of the series
-//   pending    not scored yet, and still needed
-//   notNeeded  the series was already decided before this game
-//   extra      has a score, but the series was already decided before it —
-//              only possible if an earlier game was edited afterwards; shown,
-//              never counted
-export function seriesState(court, getScore, leagueId) {
-  const matches = court?.matches || [];
-  const teamA = matches[0]?.team1 || [];
-  const teamB = matches[0]?.team2 || [];
-  let winsA = 0, winsB = 0, winner = null;
-  const games = matches.map(match => {
-    const score = getScore(leagueId, match.week, match.id);
-    if (winner) return { match, score, status: score ? "extra" : "notNeeded" };
-    if (!score) return { match, score: null, status: "pending" };
-    const aWon = +score.homeScore > +score.awayScore;
-    if (aWon) winsA++; else winsB++;
-    if (winsA >= PLAYOFF_WINS_NEEDED) winner = "A";
-    else if (winsB >= PLAYOFF_WINS_NEEDED) winner = "B";
-    return { match, score, status: "counted", aWon };
+// ─── Group tables ───────────────────────────────────────────────────────────
+// One row per player: wins, losses, points for and against (raw scores), and
+// the differential. Order: wins, then differential, then seed. `tiebreak` on a
+// row says what put it ahead of the row below when they finished level on
+// wins — "diff" or "seed" — and is null otherwise.
+export function groupTable(court, getScore, leagueId, seedOf) {
+  const players = court?.players || [];
+  const rows = Object.fromEntries(players.map(id => [id, { id, wins: 0, losses: 0, pf: 0, pa: 0, played: 0 }]));
+  let scored = 0;
+  for (const m of court?.matches || []) {
+    const s = getScore(leagueId, m.week, m.id);
+    if (!s) continue;
+    scored++;
+    const h = +s.homeScore, a = +s.awayScore, team1Won = h > a;
+    for (const [team, won, pf, pa] of [[m.team1, team1Won, h, a], [m.team2, !team1Won, a, h]]) {
+      for (const id of team) {
+        const r = rows[id];
+        if (!r) continue;
+        r.played++; r.pf += pf; r.pa += pa;
+        if (won) r.wins++; else r.losses++;
+      }
+    }
+  }
+  const table = Object.values(rows)
+    .map(r => ({ ...r, diff: r.pf - r.pa, seed: seedOf(r.id) }))
+    .sort((x, y) => y.wins - x.wins || y.diff - x.diff || (x.seed ?? 99) - (y.seed ?? 99));
+  const first = court?.group?.firstPlace || 1;
+  table.forEach((r, i) => {
+    r.place = first + i;
+    const next = table[i + 1];
+    r.tiebreak = next && next.wins === r.wins ? (next.diff === r.diff ? "seed" : "diff") : null;
   });
-  const nextIndex = winner ? -1 : games.findIndex(g => g.status === "pending");
-  return {
-    key: court?.series?.key || null,
-    label: court?.series?.label || court?.courtName || "",
-    seedsA: court?.series?.seedsA || null,
-    seedsB: court?.series?.seedsB || null,
-    teamA, teamB, winsA, winsB,
-    winner,
-    decided: !!winner,
-    winnerTeam: winner === "A" ? teamA : winner === "B" ? teamB : null,
-    loserTeam: winner === "A" ? teamB : winner === "B" ? teamA : null,
-    winnerSeeds: winner === "A" ? court?.series?.seedsA : winner === "B" ? court?.series?.seedsB : null,
-    loserSeeds: winner === "A" ? court?.series?.seedsB : winner === "B" ? court?.series?.seedsA : null,
-    games,
-    nextIndex,
-    played: winsA + winsB,
-  };
+  const total = (court?.matches || []).length;
+  return { rows: table, scored, total, complete: total > 0 && scored === total };
 }
 
-// "Ryan M. & Alex G. lead 2–1", "Tied 1–1", "Ryan M. & Alex G. win 3–1".
-export function seriesSummary(state, teamName) {
-  if (!state) return "";
-  const { winsA, winsB, decided, winner, teamA, teamB } = state;
-  const hi = Math.max(winsA, winsB), lo = Math.min(winsA, winsB);
-  if (decided) return `${teamName(winner === "A" ? teamA : teamB)} win ${hi}–${lo}`;
-  if (winsA + winsB === 0) return `Best of ${PLAYOFF_BEST_OF} · first to ${PLAYOFF_WINS_NEEDED}`;
-  if (winsA === winsB) return `Tied ${winsA}–${winsB}`;
-  return `${teamName(winsA > winsB ? teamA : teamB)} lead ${hi}–${lo}`;
-}
-
-// The whole bracket's status in one pass.
-//   stage: "semis" | "awaitingFinals" | "finals" | "complete"
+// The whole playoff night's status in one pass.
+//   stage: "scheduled" (no scores) | "inProgress" | "complete" | "legacy"
 export function playoffState(playoffs, getScore, leagueId) {
-  if (!playoffs?.rounds?.length) return null;
-  const rounds = playoffs.rounds.map(r => {
-    const series = (r.courts || []).map(c => seriesState(c, getScore, leagueId));
-    return { ...r, series, setUp: (r.courts || []).length > 0, decided: series.length > 0 && series.every(s => s.decided) };
-  });
-  const [semis, finals] = rounds;
-  const final = finals?.series.find(s => s.key === "final") || null;
-  const third = finals?.series.find(s => s.key === "third") || null;
-  const stage = !semis.decided ? "semis"
-    : !finals?.setUp ? "awaitingFinals"
-    : !finals.decided ? "finals"
-    : "complete";
+  if (!playoffs) return null;
+  if (playoffs.format !== PLAYOFF_FORMAT || !playoffs.rounds?.length) {
+    // A v1.16.0 bracket. None was ever created; this keeps the tab from
+    // breaking if one turns up, and offers removal.
+    const scored = (playoffs.rounds || []).some(r => (r.courts || []).some(c => (c.matches || []).some(m => getScore(leagueId, m.week, m.id))));
+    return { legacy: true, stage: "legacy", round: null, groups: [], hasScores: scored, scoredGames: 0, totalGames: 0, champion: null };
+  }
+  const round = playoffs.rounds[0];
+  const seedOf = id => {
+    const i = (playoffs.seeds || []).indexOf(id);
+    return i >= 0 ? i + 1 : null;
+  };
+  const groups = (round.courts || []).map(court => ({
+    key: court.group?.key,
+    label: court.group?.label || court.courtName,
+    seeds: court.group?.seeds || [],
+    firstPlace: court.group?.firstPlace || 1,
+    court,
+    ...groupTable(court, getScore, leagueId, seedOf),
+  }));
+  const scoredGames = groups.reduce((t, g) => t + g.scored, 0);
+  const totalGames = groups.reduce((t, g) => t + g.total, 0);
+  const title = groups.find(g => g.key === "title") || groups[0];
+  const stage = scoredGames === 0 ? "scheduled" : scoredGames < totalGames ? "inProgress" : "complete";
   return {
-    rounds,
+    round,
+    groups,
     stage,
-    champions: final?.winnerTeam || null,
-    runnersUp: final?.loserTeam || null,
-    third: third?.winnerTeam || null,
-    fourth: third?.loserTeam || null,
-    hasScores: rounds.some(r => r.series.some(s => s.games.some(g => g.score))),
-    finalsHaveScores: !!finals && finals.series.some(s => s.games.some(g => g.score)),
+    scoredGames,
+    totalGames,
+    hasScores: scoredGames > 0,
+    // The champion is known once the title group's three games are in, even
+    // if the 5th-8th group is still playing.
+    champion: title?.complete ? title.rows[0].id : null,
+    titleComplete: !!title?.complete,
   };
 }
 
@@ -237,66 +238,42 @@ export function seedOf(playoffs, playerId) {
   return i >= 0 ? i + 1 : null;
 }
 
-// Lower seed numbers first, so the team holding the best remaining seed is
-// listed (and scored) as team 1.
-const bestSeed = seeds => Math.min(...(seeds || [99]));
-const bySeed = (x, y) => bestSeed(x.seeds) - bestSeed(y.seeds);
-
-// Fill in the finals week once both semifinals are decided:
-//   Championship — the two semifinal winners
-//   3rd place    — the two semifinal losers
-// Returns { round } (the finals round with courts) or { error }.
-export function buildFinalsRound(playoffs, getScore, leagueId) {
-  const state = playoffState(playoffs, getScore, leagueId);
-  if (!state) return { error: "No playoffs to update." };
-  const [semis, finals] = state.rounds;
-  if (!semis.decided) return { error: "Both semifinals need a winner first." };
-  if (finals.setUp) return { error: "The finals are already set." };
-  const winners = semis.series.map(s => ({ team: s.winnerTeam, seeds: s.winnerSeeds })).sort(bySeed);
-  const losers = semis.series.map(s => ({ team: s.loserTeam, seeds: s.loserSeeds })).sort(bySeed);
-  const week = finals.week, date = finals.date;
-  const courts = [
-    seriesCourt({
-      week, round: 2, courtIdx: 0, date,
-      series: { key: "final", label: "Championship", seedsA: winners[0].seeds, seedsB: winners[1].seeds },
-      team1: winners[0].team, team2: winners[1].team,
-    }),
-    seriesCourt({
-      week, round: 2, courtIdx: 1, date,
-      series: { key: "third", label: "3rd place", seedsA: losers[0].seeds, seedsB: losers[1].seeds },
-      team1: losers[0].team, team2: losers[1].team,
-    }),
-  ];
-  const { name, time } = playoffs.rounds[1];
-  return { round: { week, round: 2, name, date, time, courts } };
-}
-
-// Change the dates/time of both rounds. Matches carry their own date (the
-// score form and the hero card read it), so they're rewritten too.
-export function withPlayoffDates(playoffs, dates, time) {
+// Move the playoff night. Matches carry their own date (the score form and
+// the hero card read it), so they're rewritten too.
+export function withPlayoffDate(playoffs, date, time) {
   return {
     ...playoffs,
-    rounds: playoffs.rounds.map((r, i) => {
-      const date = dates[i] || r.date;
-      return {
-        ...r,
-        date,
-        time: time || null,
-        courts: (r.courts || []).map(c => ({ ...c, matches: c.matches.map(m => ({ ...m, date })) })),
-      };
-    }),
+    rounds: playoffs.rounds.map(r => ({
+      ...r,
+      date: date || r.date,
+      time: time || null,
+      courts: (r.courts || []).map(c => ({ ...c, matches: c.matches.map(m => ({ ...m, date: date || m.date })) })),
+    })),
   };
 }
 
-// The round a player should be looking at right now, and their series in it:
-// the latest round that's been set up and includes them. Returns null when
-// they aren't in the playoffs.
-export function playerPlayoffSpot(state, playerId) {
-  if (!state) return null;
-  for (let i = state.rounds.length - 1; i >= 0; i--) {
-    const r = state.rounds[i];
-    const s = r.series.find(x => x.teamA.includes(playerId) || x.teamB.includes(playerId));
-    if (s) return { round: r, series: s, onA: s.teamA.includes(playerId) };
-  }
-  return null;
+// A player's view of the night: their group, their row in its table, and
+// their three games with partner and opponents. Null when they aren't in it.
+export function playerPlayoffSpot(state, playerId, getScore, leagueId) {
+  if (!state || state.legacy) return null;
+  const group = state.groups.find(g => g.court.players.includes(playerId));
+  if (!group) return null;
+  const games = group.court.matches.map(m => {
+    const onTeam1 = m.team1.includes(playerId);
+    const mine = onTeam1 ? m.team1 : m.team2;
+    const score = getScore(leagueId, m.week, m.id);
+    return {
+      match: m,
+      partner: mine.find(p => p !== playerId),
+      opponents: onTeam1 ? m.team2 : m.team1,
+      score,
+      won: score ? (onTeam1 ? +score.homeScore > +score.awayScore : +score.awayScore > +score.homeScore) : null,
+    };
+  });
+  return {
+    group,
+    row: group.rows.find(r => r.id === playerId),
+    games,
+    next: games.find(g => !g.score) || null,
+  };
 }

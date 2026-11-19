@@ -11,7 +11,7 @@ import { OpenPlayWeeks } from "./OpenPlayWeeks.jsx";
 import { PartnersMatrix } from "./PartnersMatrix.jsx";
 import { StandingsTable } from "./StandingsTable.jsx";
 import { PlayoffsPanel } from "./PlayoffsPanel.jsx";
-import { playoffsEnabled, playoffState, playerPlayoffSpot, seriesSummary } from "../lib/playoffs.js";
+import { playoffsEnabled, playoffState, playerPlayoffSpot } from "../lib/playoffs.js";
 import { LeagueRegistrationCard } from "./LeagueRegistrationCard.jsx";
 import { ClubSwitcher } from "./ClubSwitcher.jsx";
 
@@ -427,68 +427,68 @@ export function PlayerView({ headerTopClass, db, player, myLeagues, unregistered
           );
         }
 
-        // ── Variant 1b (v1.16.0): playoffs ───────────────────────────
-        // Once a bracket exists the regular season is over, so the playoff
-        // series is the thing to show. Unscored regular-season games (above)
-        // still take priority — they're the only thing that could be overdue.
+        // ── Variant 1b (v1.16.0; one-night groups since v1.17.0) ─────
+        // Once the playoffs exist the regular season is over, so the playoff
+        // night is the thing to show: your next game, then your finish, and
+        // the champion once the title group is done. Unscored regular-season
+        // games (above) still take priority — they're the only thing that
+        // could be overdue.
         if (hasPlayoffs && sched.playoffs) {
           const pst = playoffState(sched.playoffs, getScore, selectedLeagueId);
           const teamName = ids => (ids || []).map(getPlayerName).join(" & ");
+          const ordinal = n => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
+          const spot = playerPlayoffSpot(pst, player.id, getScore, selectedLeagueId);
+          const titleGroup = pst?.groups?.find(g => g.key === "title");
           const goToPlayoffs = (
             <button
               type="button"
               onClick={() => setPlayerTab("playoffs")}
               style={{ marginTop: 8, background: "rgba(0,0,0,0.18)", border: "0.5px solid rgba(255,255,255,0.45)", color: "#fff", borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-              See the bracket
+              See the playoffs
             </button>
           );
-          if (pst?.stage === "complete") {
-            return (
-              <div style={{ margin: "12px 16px 0" }}>
-                <div style={{ background: c.bg, color: "#fff", borderRadius: 12, padding: "12px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", background: "rgba(0,0,0,0.25)", padding: "2px 8px", borderRadius: 999 }}>
-                      Champions
-                    </span>
-                    <span style={{ fontSize: 12 }}>{selectedLeague.name}</span>
-                  </div>
-                  <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}><span aria-hidden="true">🏆 </span>{teamName(pst.champions)}</p>
-                  <p style={{ margin: 0, fontSize: 13 }}>Runners-up {teamName(pst.runnersUp)} · 3rd place {teamName(pst.third)}</p>
-                  {goToPlayoffs}
+          const card = (pill, label, big, line) => (
+            <div style={{ margin: "12px 16px 0" }}>
+              <div style={{ background: c.bg, color: "#fff", borderRadius: 12, padding: "12px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", background: "rgba(0,0,0,0.25)", padding: "2px 8px", borderRadius: 999 }}>
+                    {pill}
+                  </span>
+                  <span style={{ fontSize: 12 }}>{label}</span>
                 </div>
+                <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>{big}</p>
+                <p style={{ margin: 0, fontSize: 13 }}>{line}</p>
+                {goToPlayoffs}
               </div>
+            </div>
+          );
+          if (spot?.next) {
+            const { group, row, next } = spot;
+            const round = pst.round;
+            const timeLabel = round.time ? formatTime(round.time) : null;
+            return card(
+              "Playoffs",
+              `${group.label} · seed #${row.seed}`,
+              `${formatDate(round.date)}${timeLabel ? ` · ${timeLabel}` : ""}`,
+              `${row.played ? `${row.wins}\u2013${row.losses} so far. ` : ""}Next: with ${getPlayerName(next.partner)} vs ${teamName(next.opponents)}, to ${next.match.gameTo || 15}.`,
             );
           }
-          const spot = playerPlayoffSpot(pst, player.id);
+          if (pst?.champion && titleGroup) {
+            return card(
+              "Champion",
+              selectedLeague.name,
+              <><span aria-hidden="true">🏆 </span>{getPlayerName(pst.champion)}</>,
+              spot && spot.row.id !== pst.champion
+                ? `You finished ${ordinal(spot.row.place)} (${spot.row.wins}\u2013${spot.row.losses}).`
+                : titleGroup.rows.slice(1).map(r => `${ordinal(r.place)} ${getPlayerName(r.id)}`).join(" · "),
+            );
+          }
           if (spot) {
-            const { round, series, onA } = spot;
-            const mine = onA ? series.teamA : series.teamB;
-            const theirs = onA ? series.teamB : series.teamA;
-            const partner = mine.find(p => p !== player.id);
-            const finals = pst.rounds[1];
-            let line = `With ${getPlayerName(partner)} vs ${teamName(theirs)} · ${seriesSummary(series, teamName)}`;
-            if (series.decided && pst.stage === "awaitingFinals") {
-              const won = series.winnerTeam.includes(player.id);
-              const hi = Math.max(series.winsA, series.winsB), lo = Math.min(series.winsA, series.winsB);
-              line = `${won ? "You won" : "You lost"} ${series.label.toLowerCase()}, ${won ? hi : lo}\u2013${won ? lo : hi}. Next: ${won ? "the championship" : "the 3rd-place series"}${finals?.date ? `, ${formatDate(finals.date)}` : ""}.`;
-            }
-            const timeLabel = round.time ? formatTime(round.time) : null;
-            return (
-              <div style={{ margin: "12px 16px 0" }}>
-                <div style={{ background: c.bg, color: "#fff", borderRadius: 12, padding: "12px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", background: "rgba(0,0,0,0.25)", padding: "2px 8px", borderRadius: 999 }}>
-                      Playoffs
-                    </span>
-                    <span style={{ fontSize: 12 }}>{round.name} · {series.label}</span>
-                  </div>
-                  <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>
-                    {formatDate(round.date)}{timeLabel ? ` · ${timeLabel}` : ""}
-                  </p>
-                  <p style={{ margin: 0, fontSize: 13 }}>{line}</p>
-                  {goToPlayoffs}
-                </div>
-              </div>
+            return card(
+              "Playoffs",
+              spot.group.label,
+              `You finished ${ordinal(spot.row.place)}`,
+              `${spot.row.wins}\u2013${spot.row.losses} on the night. The title group is still playing.`,
             );
           }
         }

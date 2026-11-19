@@ -16,7 +16,7 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
   const isMobile = useIsMobile();
   const openPlay = isOpenPlay(league);
   const isDD = league.competitionType === "dd_partners";
-  // v1.16.0 — D+D leagues can opt into two weeks of playoffs (Edit League).
+  // v1.16.0 — D+D leagues can opt into a playoff night (Edit League).
   const hasPlayoffs = playoffsEnabled(league);
   const [tab, setTab] = useState(openPlay ? "rsvps" : "schedule");
   const c = COLORS[league.color] || COLORS.csc;
@@ -538,8 +538,6 @@ export function LeagueDetail({ league, db, regs, schedule, getScore, getPlayerNa
             onSubmitScore={onSubmitScore}
             onToggleRoundLock={playoffActions.onToggleRoundLock}
             onSetup={playoffActions.onSetup}
-            onSetupFinals={playoffActions.onSetupFinals}
-            onUndoFinals={playoffActions.onUndoFinals}
             onCancel={playoffActions.onCancel}
             onEditDates={playoffActions.onEditDates}
             archived={league.status === "archived"} />

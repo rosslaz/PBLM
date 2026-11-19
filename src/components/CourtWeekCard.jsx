@@ -6,9 +6,8 @@ import { formatDate, formatDateTime, formatTime, resolveCourtName, resolveCourtT
 import { useIsMobile } from "../lib/session.js";
 import { CheckInRow } from "./CheckInRow.jsx";
 import { CheckInSummary } from "./CheckInSummary.jsx";
-import { matchSides, validatePickleballScore } from "./ScoreForm.jsx";
+import { matchSides, validatePickleballScore, gameTarget } from "./ScoreForm.jsx";
 import { Spinner, useIsActionPending } from "./Spinner.jsx";
-import { seriesState, seriesSummary, PLAYOFF_WINS_NEEDED } from "../lib/playoffs.js";
 
 // ─── Inline score entry ────────────────────────────────────────────────────
 // Compact two-input + submit-button group that sits in place of the "Score"
@@ -34,7 +33,7 @@ function InlineScoreEntry({ match, onSubmit, accentColor }) {
   const clean = v => v.replace(/[^0-9]/g, "").slice(0, 2);
 
   const both = home !== "" && away !== "";
-  const validation = both ? validatePickleballScore(home, away) : null;
+  const validation = both ? validatePickleballScore(home, away, gameTarget(match)) : null;
   const isValid = validation === "valid";
 
   function handleSubmit() {
@@ -159,28 +158,21 @@ function InlineScoreEntry({ match, onSubmit, accentColor }) {
 // league: the league record (used to resolve league-level court defaults)
 // onSetPlayerCheckIn: (v1.6.0) admin-only — set any player's RSVP on their behalf
 //
-// v1.16.0 — playoff rounds reuse this card. A court carrying a `series`
-// descriptor (lib/playoffs.js) switches into series mode: games are numbered,
-// only the next game needed can be scored inline, games after the series is
-// decided read "Not needed", and the court label shows the running series
-// score instead of the player list. Three props exist for playoff rounds:
-//   title        header label in place of "Week N" (e.g. "Semifinals")
+// v1.16.0 — the playoff night reuses this card (one court per playoff group;
+// see lib/playoffs.js). Matches carrying a `game` number get a G1-G3 label,
+// and inline entry validates against each match's own target score (`gameTo`,
+// 15 in the playoffs). Three props exist for it:
+//   title        header label in place of "Week N" (e.g. "Playoff night")
 //   lockLabels   { lock, unlock, lockTitle, unlockTitle } for the lock button,
-//                since "Lock & Update Standings" is wrong for a playoff round
-//   scoresFrozen nobody can enter or edit scores — the semifinals once the
-//                finals have been drawn from them; `frozenNote` says why
-export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, defaultExpanded = false, myCheckIn, onSetCheckIn, onSetPlayerCheckIn, regs, getCheckInForPlayer, title, lockLabels, scoresFrozen = false, frozenNote }) {
+//                since "Lock & Update Standings" is wrong for the playoffs
+//   scoresFrozen nobody can enter or edit scores (an archived league)
+export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore, getPlayerName, getPlayerEmail, onEnterScore, onSubmitScore, onToggleLock, onEditDateTime, onRebalance, myId, myCourtPlayers, isLocked, isAdmin, isCurrentWeek, defaultExpanded = false, myCheckIn, onSetCheckIn, onSetPlayerCheckIn, regs, getCheckInForPlayer, title, lockLabels, scoresFrozen = false }) {
   // Opens expanded when this is the week the user is most likely to act on
   // (the first week still unlocked). Everything else stays collapsed so a
   // mid-season schedule remains scannable.
   const [expanded, setExpanded] = useState(defaultExpanded);
   const isMobile = useIsMobile();
   const weekTitle = title || `Week ${weekData.week}`;
-
-  // Series mode (playoffs). One state per court, null for ordinary courts.
-  const seriesByCourt = (weekData.courts || []).map(ct => (ct.series ? seriesState(ct, getScore, leagueId) : null));
-  const seriesMode = seriesByCourt.some(Boolean);
-  const teamName = ids => (ids || []).map(getPlayerName).join(" & ");
 
   // Compute the time summary for the week header.
   // Default: the week's single time, e.g. "Wed Oct 15 · 8:00 AM".
@@ -202,13 +194,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
   })();
   const totalMatches = weekData.courts.reduce((s, c) => s + c.matches.length, 0);
   const scoredMatches = weekData.courts.reduce((s, c) => s + c.matches.filter(m => getScore(leagueId, m.week, m.id)).length, 0);
-  // A best-of-5 is finished when someone reaches 3, not when all 5 games have
-  // scores, so series rounds count decided series instead of scored games.
-  const seriesTotal = seriesByCourt.filter(Boolean).length;
-  const seriesDecided = seriesByCourt.filter(s => s?.decided).length;
-  const allScored = seriesMode
-    ? seriesTotal > 0 && seriesDecided === seriesTotal
-    : scoredMatches === totalMatches && totalMatches > 0;
+  const allScored = scoredMatches === totalMatches && totalMatches > 0;
   // Players can't enter scores for weeks that haven't happened yet. The
   // commissioner can score any week regardless (for testing / corrections).
   const weekIsCurrentOrPast = isCurrentOrPastWeek(weekData.date);
@@ -307,9 +293,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
           )}
           {!weekData.placeholder && (
             <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              {seriesMode
-                ? (isMobile ? `${seriesDecided}/${seriesTotal} decided` : `${seriesDecided} of ${seriesTotal} series decided`)
-                : (isMobile ? `${scoredMatches}/${totalMatches} matches` : `${scoredMatches} of ${totalMatches} matches scored`)}
+              {isMobile ? `${scoredMatches}/${totalMatches} matches` : `${scoredMatches} of ${totalMatches} matches scored`}
             </span>
           )}
           <span aria-hidden="true" style={{ fontSize: 12, color: "var(--color-text-tertiary)", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
@@ -325,12 +309,7 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
           )}
           {!weekData.placeholder && isLocked && !isAdmin && !scoresFrozen && (
             <div style={{ margin: "12px 16px 0", padding: "8px 12px", background: "#FAEEDA", borderRadius: 6, fontSize: 12, color: "#854F0B" }}>
-              {seriesMode ? "This round" : "This week"} has been locked by the commissioner. Scores can no longer be edited.
-            </div>
-          )}
-          {scoresFrozen && frozenNote && (
-            <div style={{ margin: "12px 16px 0", padding: "8px 12px", background: "#FAEEDA", borderRadius: 6, fontSize: 12, color: "#854F0B" }}>
-              {frozenNote}
+              {title ? `${title} has` : "This week has"} been locked by the commissioner. Scores can no longer be edited.
             </div>
           )}
           {/* Future-week notice: shown to players (not the commissioner) for
@@ -367,7 +346,6 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
           )}
           {weekData.courts.map((court, ci) => {
             const courtColor = COURT_COLORS[ci] || CSC.blue;
-            const series = seriesByCourt[ci];
             // Players see EVERY court, not just their own — knowing what the
             // rest of the league is playing is part of the experience, and
             // in formats like D+D Weekly Partners the other courts are the
@@ -415,37 +393,12 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                       · {formatTime(courtTime)}
                     </span>
                   )}
-                  {series ? (
-                    // The running series score is what matters in a playoff
-                    // matchup; the names are on every game row below.
-                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {series.decided ? "✓ " : ""}{seriesSummary(series, teamName)}
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 11, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {court.players.map(id => getPlayerName(id)).join(" · ")}
-                    </span>
-                  )}
+                  <span style={{ fontSize: 11, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {court.players.map(id => getPlayerName(id)).join(" · ")}
+                  </span>
                 </div>
                 {/* Match rows */}
-                {court.matches.map((match, mi) => {
-                  // Series mode: a game that isn't needed (the series is over)
-                  // or isn't next (an earlier game still needs a score) gets a
-                  // slim placeholder row instead of a full scoring row. Games
-                  // must be entered in order so the series score can't skip.
-                  const game = series ? series.games[mi] : null;
-                  if (game && (game.status === "notNeeded" || (game.status === "pending" && mi !== series.nextIndex))) {
-                    return (
-                      <div key={match.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: isMobile ? "6px 8px" : "6px 10px", borderRadius: 8, marginBottom: 4, border: "0.5px dashed var(--color-border-secondary)", fontSize: 12, color: "var(--color-text-secondary)" }}>
-                        <span style={{ fontWeight: 600 }}>Game {mi + 1}</span>
-                        <span>
-                          {game.status === "notNeeded"
-                            ? "Not needed"
-                            : mi >= PLAYOFF_WINS_NEEDED ? "If needed" : `After game ${mi}`}
-                        </span>
-                      </div>
-                    );
-                  }
+                {court.matches.map((match) => {
                   const score = getScore(leagueId, match.week, match.id);
                   const hasScore = !!score;
                   const sideAWon = hasScore && score.homeScore > score.awayScore;
@@ -502,8 +455,8 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
 
                   return (
                     <div key={match.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: isMobile ? 4 : 6, padding: isMobile ? "7px 8px" : "7px 10px", borderRadius: 8, marginBottom: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                      {game && (
-                        <span title={`Game ${mi + 1}`} style={{ flexShrink: 0, width: 20, fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)" }}>G{mi + 1}</span>
+                      {match.game && (
+                        <span title={`Game ${match.game}`} style={{ flexShrink: 0, width: 20, fontSize: 11, fontWeight: 700, color: "var(--color-text-secondary)" }}>G{match.game}</span>
                       )}
                       {renderSide(sideA, myOnSideA, "right")}
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
@@ -525,9 +478,6 @@ export function CourtWeekCard({ weekData, league, leagueId, leagueName, getScore
                       {renderSide(sideB, myOnSideB, "left")}
                       <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: isMobile ? 3 : 5 }}>
                         {mySat && <span style={{ ...S.badge("info"), fontSize: 10 }}>You sit</span>}
-                        {game?.status === "extra" && (
-                          <span style={{ ...S.badge("warning"), fontSize: 10 }} title="The series was already decided before this game">Not counted</span>
-                        )}
                         {myInMatch && hasScore && <span style={S.badge(myWon ? "success" : "danger")}>{myWon ? "W" : "L"}</span>}
                         {isLocked && hasScore && isAdmin && <span style={{ ...S.badge("warning"), fontSize: 10 }}>🔒</span>}
                         {canEdit && hasScore && (

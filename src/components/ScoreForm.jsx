@@ -4,15 +4,22 @@ import { useIsMobile } from "../lib/session.js";
 import { formatDate } from "../lib/format.js";
 import { Spinner, useIsActionPending } from "./Spinner.jsx";
 
-export function validatePickleballScore(h, a) {
+// v1.17.0 — `target` is the score a game is played to: 11 everywhere except
+// playoff games, which carry `gameTo: 15` on the match (see lib/playoffs.js).
+export function gameTarget(match) {
+  const t = Number(match?.gameTo);
+  return Number.isInteger(t) && t > 0 ? t : 11;
+}
+
+export function validatePickleballScore(h, a, target = 11) {
   const hi = parseInt(h, 10), ai = parseInt(a, 10);
   if (isNaN(hi) || isNaN(ai)) return null;
   if (hi < 0 || ai < 0) return "Scores cannot be negative.";
   const winner = Math.max(hi, ai), loser = Math.min(hi, ai);
-  if (winner < 11) return "Winner must reach at least 11.";
+  if (winner < target) return `Winner must reach at least ${target}.`;
   if (winner === loser) return "Scores cannot be tied — someone must win.";
-  if (winner === 11 && loser > 9) return "At 11, winner must lead by 2 (e.g. 11–9 or less).";
-  if (winner > 11 && (winner - loser) !== 2) return "When over 11, winner must lead by exactly 2 (win by 2).";
+  if (winner === target && loser > target - 2) return `At ${target}, winner must lead by 2 (e.g. ${target}–${target - 2} or less).`;
+  if (winner > target && (winner - loser) !== 2) return `When over ${target}, winner must lead by exactly 2 (win by 2).`;
   return "valid";
 }
 
@@ -28,9 +35,9 @@ export function matchSides(match) {
 // Brand blue at 30% alpha.
 const CSC_BLUE_30 = "rgba(27, 108, 193, 0.3)";
 
-// Pickleball winners typically reach exactly 11; anything ≥11 is also a
-// plausible "done typing the winning score" signal for the auto-advance.
-const WINNING_THRESHOLD = 11;
+// Winners typically reach exactly the target (11, or 15 in the playoffs);
+// anything at or above it is also a plausible "done typing the winning score"
+// signal for the auto-advance.
 const AUTO_ADVANCE_MS = 400;
 
 export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, onClose }) {
@@ -40,6 +47,7 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
   const [away, setAway] = useState(existing?.awayScore ?? "");
   const homeRef = useRef(null);
   const awayRef = useRef(null);
+  const target = gameTarget(match);
 
   // Autofocus on mount. The empty side gets focus first; if both are filled
   // (edit case) we focus home and select its contents so the user can
@@ -68,24 +76,24 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
   useEffect(() => {
     if (away !== "") return; // user already moved on — don't yank focus
     const value = parseInt(home, 10);
-    if (!Number.isFinite(value) || value < WINNING_THRESHOLD) return;
+    if (!Number.isFinite(value) || value < target) return;
     // Don't auto-advance from a non-focused home field (e.g. user manually
     // refocused the home input to fix it after entering both scores).
     if (document.activeElement !== homeRef.current) return;
     const t = setTimeout(() => {
       // Re-check at fire time: state may have changed
-      if (parseInt(home, 10) >= WINNING_THRESHOLD && away === "" && document.activeElement === homeRef.current) {
+      if (parseInt(home, 10) >= target && away === "" && document.activeElement === homeRef.current) {
         awayRef.current?.focus();
       }
     }, AUTO_ADVANCE_MS);
     return () => clearTimeout(t);
-  }, [home, away]);
+  }, [home, away, target]);
 
   const { sideA, sideB } = matchSides(match);
   const labelA = sideA.map(getPlayerName).join(" + ");
   const labelB = sideB.map(getPlayerName).join(" + ");
 
-  const validation = (home !== "" && away !== "") ? validatePickleballScore(home, away) : null;
+  const validation = (home !== "" && away !== "") ? validatePickleballScore(home, away, target) : null;
   const isValid = validation === "valid";
   const errorMsg = validation && validation !== "valid" ? validation : null;
 
@@ -168,13 +176,13 @@ export function ScoreForm({ match, leagueId, existing, getPlayerName, onSubmit, 
   return (
     <div>
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        {/* Playoff games borrow week numbers past the regular season (15, 16)
+        {/* Playoff games borrow a week number past the regular season (15)
             for their storage keys; "Week 15" would mean nothing to a player. */}
         <span style={{ ...S.badge("info"), marginBottom: 8, display: "inline-block" }}>
           {match.playoff ? `Playoffs · ${match.court}` : `${match.court} · Week ${match.week}`} · {formatDate(match.date)}
         </span>
         <p style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 600 }}>{labelA} vs {labelB}</p>
-        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Play to 11, win by 2</p>
+        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>Play to {target}, win by 2</p>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 12, alignItems: "end", marginBottom: 12 }}>
         <div style={{ textAlign: "center" }}>

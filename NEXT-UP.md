@@ -1,9 +1,10 @@
 # Next Up — Backlog
 
-**Status:** v1.16.0 — playoffs for D+D Weekly Partners, built for the end of
-Season 3 (week 14 is Dec 14). The rest of the October 2026 code review is
-queued below as **v1.17.0** (section 0, renumbered from v1.16.0 when playoffs
-jumped the queue); nothing else is in progress.
+**Status:** v1.17.0 — the D+D playoffs reworked into one night of group round
+robins (games to 15) after a league vote, for the end of Season 3 (week 14 is
+Dec 14, the playoff night the week after). The rest of the October 2026 code
+review is queued below as **v1.18.0** (section 0, renumbered twice as playoff
+work jumped the queue); nothing else is in progress.
 
 Read `PROJECT.md` first for architecture. This is the candidate list, roughly
 ordered by value per unit of risk.
@@ -80,13 +81,27 @@ end in a headless browser against a stateful mock database: setup, both
 rounds, undo/redo of the finals, date edits, player score entry, champions —
 light and dark, zero contrast failures, standings unchanged.
 
+**v1.17.0** — Playoffs reworked after the league voted (November 2026). The
+v1.16.0 semifinals were near-certain blowouts (the favorites were 99% and 92%
+per game on the projected seeds) and finishing 2nd handed you the #1 seed as a
+partner. Now: one night; seeds 1–4 play for the title and 5–8 for 5th–8th,
+each group playing all three partner splits once, games to 15; ranked by wins,
+point differential, then seed. Score entry validates against each game's own
+target (`gameTo`), so 15 works in the inline row and the modal. Series mode is
+gone from week cards. Games to 15 are also the timing test for Season 4.
+Tested end to end the same way as v1.16.0 (34 checks, light and dark):
+projection, setup, refused 11–9 / 16–13, deuce 17–15, point-differential and
+seed tiebreaks, champion, modal edit, lock, date edit, player entry, removal;
+standings unchanged. The only contrast flag is the pre-existing dimmed
+"Submit Score" button on an invalid score.
+
 **Data work** — orphan rows purged; three duplicate player records merged; a
 junk club (created when someone pasted a join code into the club-name field)
 trashed; the create-club form now catches that mistake as it's made.
 
 ---
 
-## 0. v1.17.0 — before next season (from the October 2026 code review)
+## 0. v1.18.0 — before next season (from the October 2026 code review)
 
 Every item here was confirmed against the code — and, where possible, the live
 DB or a test run. None threatens the current season; all should land before the
@@ -188,9 +203,16 @@ for real users. A phase, not a session. **Don't start it mid-season.**
 ---
 
 **Candidate: a "clear score" action.** There's no way to delete a score from
-the app — only edit it. Mostly harmless, but it means a wrong playoff semifinal
-score can't be fixed once the finals have results (Undo finals is refused then,
-by design). A commissioner-only "Clear" on the score form would close that.
+the app — only edit it. Mostly harmless, but a score entered on the wrong game
+needs the database, and on the playoff night any score hides **Remove
+playoffs**. A commissioner-only "Clear" on the score form would close that.
+
+**Candidate: Season 4 night format.** The league wants each pair to play every
+other pair each night (one game to 15 each) — three rounds instead of two.
+Needs: a `gameTo` league setting (score entry already honours `match.gameTo`
+since v1.17.0), the Points caps (`MAX_POINTS_WINNER/LOSER`, hard-coded at
+11/10) scaled to it, and the D+D generator producing all three matchups a week.
+Check the playoff night's timing first — it's the same three games to 15.
 
 ## C. Stats and standings
 
@@ -230,9 +252,9 @@ something else justifies standing up a backend.**
 ## Suggested order
 
 1. **B** — now. Cheap and mostly one-liners.
-2. **0 (v1.17.0)** — before the next season starts; the date fix first if that
+2. **0 (v1.18.0)** — before the next season starts; the date fix first if that
    season runs through March.
-3. **Finish the current season.** D+D Season 3 is at week 8 of 14 and is the
+3. **Finish the current season.** D+D Season 3 is at week 10 of 14 and is the
    first format to run end to end. The last few releases all came from real
    usage rather than this list, which is the pattern to keep.
 4. **A** — off-season, as a dedicated phase.
@@ -255,9 +277,9 @@ something else justifies standing up a backend.**
   `dbRegisterForLeague` / `dbRemovePlayerFromLeague` — see `PROJECT.md` §7.
 - **In D+D a player is on two courts a week.** "Which court is this player
   on?" must be `filter`, not `find`.
-- **Playoff rounds never go in `schedule.weeks`.** They live in
-  `schedule.playoffs` so nothing that totals the season can count them
-  (`PROJECT.md` §8). They borrow week numbers 15/16 only for row keys.
+- **The playoff night never goes in `schedule.weeks`.** It lives in
+  `schedule.playoffs` so nothing that totals the season can count it
+  (`PROJECT.md` §8). It borrows week number 15 only for row keys.
 - **Don't reintroduce `skipWaiting()`** in `sw.js`. It's absent on purpose.
 - **A hardcoded background with theme-variable text is always a dark-mode bug**
   — and so is hardcoded coloured text on a themed background. Use the

@@ -32,7 +32,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
     description: initial?.description || "",
     status: initial?.status || "open",
     courtConfig: resizeCourtConfig(initial?.courtConfig, initialNumCourts),
-    // v1.16.0 — D+D only: two weeks of playoffs after the regular season.
+    // v1.16.0 — D+D only: a playoff night after the regular season.
     playoffs: !!initial?.playoffs,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -79,7 +79,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
       payload.numCourts = 2;      // two rounds, not two physical courts
       payload.courtConfig = undefined;
     } else {
-      // Playoffs are seeded 1-8 into fixed teams, which only means something
+      // Playoffs seed 1-8 into two groups of four, which only means something
       // in the 8-player format.
       payload.playoffs = false;
     }
@@ -174,7 +174,7 @@ export function LeagueForm({ initial, onSubmit, onCancel }) {
             <span>
               <b>Playoffs after week 14</b>
               <span style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                Two more weeks. Seeds 1 &amp; 2 play 7 &amp; 8, and 3 &amp; 4 play 5 &amp; 6, best of 5. Then the winners play for the title and the losers for 3rd. Playoff games don't count toward the standings.
+                One more night. Seeds 1–4 play for the title and seeds 5–8 for 5th–8th: each group plays every partner combo once, games to 15. Most wins tops the group. Playoff games don't count toward the standings.
               </span>
             </span>
           </label>

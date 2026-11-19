@@ -1,7 +1,7 @@
 # Pickleball League Manager — Setup & Deployment
 
 **Stack:** React 18 + Vite 5 → Vercel · Supabase (Postgres) · PWA
-**Current version:** 1.16.0
+**Current version:** 1.17.0
 
 This guide covers standing up a fresh instance from scratch. If you're picking
 up the existing deployment, read `PROJECT.md` instead — this file is for
@@ -29,7 +29,7 @@ That creates **10 tables**:
 | `pb_memberships` | `${clubId}_${playerId}` | Which players belong to which clubs |
 | `pb_players` | `id` (`player_1`) | Player identity (name, email, phone, gender) |
 | `pb_leagues` | `id` (`league_1`) | League settings, weeks, format, competition type |
-| `pb_schedules` | `league_id` | Whole-season schedule for one league (`weeks`, plus `playoffs` once a D+D bracket exists) |
+| `pb_schedules` | `league_id` | Whole-season schedule for one league (`weeks`, plus `playoffs` once a D+D playoff night is set up) |
 | `pb_registrations` | `${leagueId}_${playerId}` | Who's in which league + paid status |
 | `pb_scores` | `${leagueId}_${week}_${matchId}` | Match results |
 | `pb_locked_weeks` | `${leagueId}_w${week}` | Row exists = week is locked |
@@ -158,14 +158,15 @@ partnered so far. It counts locked weeks plus the current one (not the whole
 generated schedule, which would show every pair at 2 from day one) and
 highlights this week's pairings.
 
-**Playoffs (optional, v1.16.0).** Tick *Playoffs after week 14* under Edit
-League and a **Playoffs tab** appears. It shows the bracket "if the season ended
-today" until all 14 weeks are locked; then the commissioner sets it up from the
-final standings. Week 1: seeds 1 & 2 play 7 & 8, and 3 & 4 play 5 & 6. Week 2:
-the winners play for the title and the losers for 3rd. Every matchup is best of
-5 (first to 3 wins), scored game by game like any other week. The commissioner
-sets up week 2 once both semifinals have a winner, which locks the semifinal
-scores. Playoff games never count toward the standings.
+**Playoffs (optional; one-night format since v1.17.0).** Tick *Playoffs after
+week 14* under Edit League and a **Playoffs tab** appears. It shows both groups
+"if the season ended today" until all 14 weeks are locked; then the
+commissioner sets up the playoff night from the final standings. Seeds 1–4 play
+for the title and seeds 5–8 for 5th–8th. Each group plays all three partner
+splits (1 & 2 v 3 & 4, 1 & 3 v 2 & 4, 1 & 4 v 2 & 3), one game each, to 15,
+win by 2 — score entry knows these games go to 15. Most wins tops the group;
+ties go to point differential, then seed. Lock the night when the scores are
+in. Playoff games never count toward the standings.
 
 In any format, **clicking a standings row expands it** into a week-by-week
 breakdown — partner, points, wins, losses, points for and against — with any

@@ -623,9 +623,8 @@ export async function dbToggleLockWeek(leagueId, week) {
 
 // v1.16.0 — set a lock to an explicit state. The toggle above reads the row
 // first and flips it, which is right for a button but wrong for a step that
-// must leave a week locked (or unlocked) whatever state it was in — setting up
-// the playoff finals locks the semifinal round so its scores can't change
-// underneath the matchups they decided.
+// must leave a week unlocked (or locked) whatever state it was in — removing
+// the playoffs clears the playoff night's lock so a later setup starts clean.
 export async function dbSetWeekLock(leagueId, week, locked) {
   const key = `${leagueId}_w${week}`;
   const { error } = locked
@@ -634,7 +633,7 @@ export async function dbSetWeekLock(leagueId, week, locked) {
   if (error) throw error;
 }
 
-// v1.16.0 — write (or remove, with null) a league's playoff bracket. It lives
+// v1.16.0 — write (or remove, with null) a league's playoffs. They live
 // on the schedule row as `playoffs`, beside `weeks` rather than inside it, so
 // nothing that totals the regular season ever sees a playoff game (see
 // lib/playoffs.js). Read-modify-write so `weeks` is carried over untouched.
